@@ -1,0 +1,27 @@
+{
+  "firestore": {
+    "rules": "firestore.rules"
+  },
+  "flutter": {
+    "platforms": {
+      "android": {
+        "default": {
+          "projectId": "rahhal-ai",
+          "appId": "1:226504199183:android:dd40e93a4bd8b24f9ba77a",
+          "fileOutput": "android/app/google-services.json"
+        }
+      },
+      "dart": {
+        "lib/firebase_options.dart": {
+          "projectId": "rahhal-ai",
+          "configurations": {
+            "android": "1:226504199183:android:dd40e93a4bd8b24f9ba77a",
+            "ios": "1:226504199183:ios:6ca5168a4119816b9ba77a",
+            "web": "1:226504199183:web:a0b12a3e366472f49ba77a",
+            "windows": "1:226504199183:web:3f18495cb8d13e669ba77a"
+          }
+        }
+      }
+    }
+  }
+}
