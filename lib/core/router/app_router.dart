@@ -3,13 +3,14 @@ import 'package:go_router/go_router.dart';
 import '../../features/auth/presentation/screens/splash_screen.dart';
 import '../../features/auth/presentation/screens/onboarding_screen.dart';
 import '../../features/auth/presentation/screens/auth_screen.dart';
-import '../../features/saved_trips/presentation/screens/saved_trips_screen.dart';
+import '../../features/trip_planner/presentation/screens/saved_trips_screen.dart';
 import '../../features/trip_planner/presentation/screens/trip_input_screen.dart';
 import '../../features/trip_planner/presentation/screens/generating_screen.dart';
 import '../../features/trip_planner/presentation/screens/trip_dashboard_screen.dart';
 import '../../features/map/presentation/screens/map_full_screen.dart';
 import '../../features/ai_chat/presentation/screens/chat_screen.dart';
 import '../../features/auth/presentation/screens/settings_screen.dart';
+import '../../features/auth/presentation/screens/profile_screen.dart';
 import '../../features/itinerary/presentation/screens/stop_detail_screen.dart';
 import '../../features/favorites/presentation/screens/favorites_screen.dart';
 import '../../features/trip_documents/presentation/screens/documents_screen.dart';
@@ -96,6 +97,13 @@ class AppRouter {
             path: '/settings',
             name: 'settings',
             builder: (context, state) => const SettingsScreen(),
+          ),
+
+          // ── Profile ──────────────────────────────────────────────────────────
+          GoRoute(
+            path: '/profile',
+            name: 'profile',
+            builder: (context, state) => const ProfileScreen(),
           ),
 
           // ── Favorites ────────────────────────────────────────────────────────

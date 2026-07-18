@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:url_launcher/url_launcher.dart';
 import 'package:go_router/go_router.dart';
@@ -15,6 +16,7 @@ import '../../../trip_planner/domain/entities/stop_entity.dart';
 import '../../domain/repositories/itinerary_repository.dart';
 import '../../../../core/constants/app_strings.dart';
 import '../../../../shared/widgets/cached_hero_image.dart';
+import '../../../../core/services/map_launcher_service.dart';
 
 class StopDetailScreen extends StatefulWidget {
   final String stopId;
@@ -277,14 +279,52 @@ class _StopDetailScreenState extends State<StopDetailScreen> {
                       ),
                     ),
                     const SizedBox(height: 8),
-                    // Open in full map button
-                    TextButton.icon(
-                      onPressed: () => context.pop(),
-                      icon: const Icon(Icons.map_rounded, color: AppColors.accentAmber),
-                      label: Text(
-                        AppStrings.of(context).viewOnFullMap,
-                        style: AppTextStyles.bodySmall.copyWith(color: AppColors.accentAmber),
-                      ),
+                    const SizedBox(height: 12),
+                    // Action Buttons: Google Maps & Uber
+                    Row(
+                      children: [
+                        Expanded(
+                          child: ElevatedButton.icon(
+                            onPressed: () => MapLauncherService.openInGoogleMaps(
+                              placeName: stop.displayName(context),
+                              lat: stop.latitude,
+                              lon: stop.longitude,
+                            ),
+                            icon: const Icon(Icons.directions_outlined, size: 18),
+                            label: Text(
+                              AppStrings.of(context).openInMaps,
+                              style: AppTextStyles.labelMedium.copyWith(color: AppColors.adaptiveBgPrimary(context)),
+                            ),
+                            style: ElevatedButton.styleFrom(
+                              backgroundColor: AppColors.accentAmber,
+                              foregroundColor: AppColors.adaptiveBgPrimary(context),
+                              padding: const EdgeInsets.symmetric(vertical: 12),
+                              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                              elevation: 0,
+                            ),
+                          ),
+                        ),
+                        const SizedBox(width: 8),
+                        Expanded(
+                          child: OutlinedButton.icon(
+                            onPressed: () => MapLauncherService.openUberRide(
+                              placeName: stop.displayName(context),
+                              lat: stop.latitude,
+                              lon: stop.longitude,
+                            ),
+                            icon: const Icon(Icons.local_taxi_rounded, size: 18, color: AppColors.accentAmber),
+                            label: Text(
+                              AppStrings.of(context).orderUber,
+                              style: AppTextStyles.labelMedium.copyWith(color: AppColors.accentAmber),
+                            ),
+                            style: OutlinedButton.styleFrom(
+                              side: const BorderSide(color: AppColors.accentAmber),
+                              padding: const EdgeInsets.symmetric(vertical: 12),
+                              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                            ),
+                          ),
+                        ),
+                      ],
                     ),
                     const SizedBox(height: 20),
                   ],
@@ -308,21 +348,6 @@ class _StopDetailScreenState extends State<StopDetailScreen> {
             ),
           ),
       ],
-    );
-  }
-
-  Widget _buildPlaceholderImage() {
-    return Container(
-      decoration: const BoxDecoration(
-        gradient: LinearGradient(
-          colors: [Color(0xFF1B2A47), Color(0xFF0F1B29)],
-          begin: Alignment.topLeft,
-          end: Alignment.bottomRight,
-        ),
-      ),
-      child: const Center(
-        child: Text('📍', style: TextStyle(fontSize: 72)),
-      ),
     );
   }
 
@@ -352,10 +377,52 @@ class _StopDetailScreenState extends State<StopDetailScreen> {
   }
 
   Future<void> _openBookingUrl(String? url) async {
-    if (url == null || url.isEmpty) return;
-    final uri = Uri.parse(url);
-    if (await canLaunchUrl(uri)) {
-      await launchUrl(uri, mode: LaunchMode.externalApplication);
+    if (url == null || url.trim().isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('لا يوجد رابط حجز متاح لهذا المكان'),
+          backgroundColor: AppColors.error,
+        ),
+      );
+      return;
+    }
+
+    final uri = Uri.tryParse(url);
+    if (uri == null) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('رابط الحجز غير صالح'),
+            backgroundColor: AppColors.error,
+          ),
+        );
+      }
+      return;
+    }
+
+    try {
+      final launched = await launchUrl(uri, mode: LaunchMode.externalApplication);
+      if (!launched && mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('تعذّر فتح رابط الحجز. انسخ الرابط يدوياً: $url'),
+            action: SnackBarAction(
+              label: 'نسخ',
+              onPressed: () => Clipboard.setData(ClipboardData(text: url)),
+            ),
+            duration: const Duration(seconds: 6),
+          ),
+        );
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('خطأ في فتح الرابط'),
+            backgroundColor: AppColors.error,
+          ),
+        );
+      }
     }
   }
 }

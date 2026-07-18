@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart';
 import 'package:sqflite/sqflite.dart';
 import 'package:path/path.dart';
 
@@ -16,13 +17,33 @@ class DatabaseHelper {
 
   // ─── Init ─────────────────────────────────────────────────────────────────
 
+  static const int _dbVersion = 3;
+  static const String _dbName = 'rahhal_ai.db';
+
+  static final Map<int, List<String>> _migrations = {
+    2: [
+      _createUsersTable,
+      _createFavoritesTable,
+      _createExpensesTable,
+      _createDocumentsTable,
+      _createPackingListTable,
+      ..._createIndexesV2,
+    ],
+    3: [
+      'ALTER TABLE restaurants ADD COLUMN name_en TEXT;',
+      'ALTER TABLE trips ADD COLUMN destination_en TEXT;',
+      'ALTER TABLE trips ADD COLUMN is_mock_data INTEGER NOT NULL DEFAULT 0;',
+      'ALTER TABLE stops ADD COLUMN image_url TEXT;',
+    ],
+  };
+
   Future<Database> _initDatabase() async {
     final dbPath = await getDatabasesPath();
-    final path = join(dbPath, 'rahhal_ai.db');
+    final path = join(dbPath, _dbName);
 
     return openDatabase(
       path,
-      version: 3,
+      version: _dbVersion,
       onCreate: _onCreate,
       onUpgrade: _onUpgrade,
       onOpen: (db) => db.execute('PRAGMA foreign_keys = ON'),
@@ -54,25 +75,24 @@ class DatabaseHelper {
   }
 
   Future<void> _onUpgrade(Database db, int oldVersion, int newVersion) async {
-    if (oldVersion < 2) {
-      await db.transaction((txn) async {
-        await txn.execute(_createUsersTable);
-        await txn.execute(_createFavoritesTable);
-        await txn.execute(_createExpensesTable);
-        await txn.execute(_createDocumentsTable);
-        await txn.execute(_createPackingListTable);
+    debugPrint('[DB] Upgrading database from v$oldVersion to v$newVersion');
 
-        // Indexes
-        for (final indexQuery in _createIndexesV2) {
-          await txn.execute(indexQuery);
+    await db.transaction((txn) async {
+      for (int v = oldVersion + 1; v <= newVersion; v++) {
+        final statements = _migrations[v];
+        if (statements != null) {
+          for (final stmt in statements) {
+            try {
+              await txn.execute(stmt);
+              debugPrint('[DB] Applied migration v$v: $stmt');
+            } catch (e) {
+              debugPrint('[DB] Migration v$v statement skipped (may already exist): $e');
+              // Continue — don't crash on "column already exists" errors
+            }
+          }
         }
-      });
-    }
-
-    if (oldVersion < 3) {
-      await db.execute('ALTER TABLE restaurants ADD COLUMN name_en TEXT;');
-      await db.execute('ALTER TABLE trips ADD COLUMN destination_en TEXT;');
-    }
+      }
+    });
   }
 
   // ─── Table schemas ─────────────────────────────────────────────────────────

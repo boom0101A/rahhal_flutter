@@ -1,7 +1,7 @@
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:equatable/equatable.dart';
-import '../../../trip_planner/domain/repositories/trip_repository.dart';
-import '../../../trip_planner/domain/entities/trip_entity.dart';
+import '../../domain/repositories/trip_repository.dart';
+import '../../domain/entities/trip_entity.dart';
 
 part 'saved_trips_state.dart';
 

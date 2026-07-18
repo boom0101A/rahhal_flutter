@@ -151,9 +151,17 @@ class AuthRepositoryImpl implements AuthRepository {
         clientId: kIsWeb
             ? '226504199183-fr97u1d1v5df6kt6n2666c432rfe0pcg.apps.googleusercontent.com'
             : null,
+        scopes: ['email', 'profile'],
       );
+
+      // Sign out first to force account picker for better UX
+      try {
+        await googleSignIn.signOut();
+      } catch (_) {}
+
       final googleUser = await googleSignIn.signIn();
       if (googleUser == null) {
+        debugPrint('[GoogleSignIn] User cancelled sign-in');
         return const Left(AuthFailure('auth/google-sign-in-canceled'));
       }
 
@@ -196,9 +204,11 @@ class AuthRepositoryImpl implements AuthRepository {
       );
       return Right(userEntity);
     } on firebase_auth.FirebaseAuthException catch (e) {
+      debugPrint('[GoogleSignIn] Firebase error: ${e.code} — ${e.message}');
       return Left(AuthFailure('auth/${e.code}'));
     } catch (e) {
-      return Left(AuthFailure('auth/unexpected-error: ${e.toString()}'));
+      debugPrint('[GoogleSignIn] Unexpected error: $e');
+      return Left(AuthFailure('auth/google-sign-in-failed: ${e.toString()}'));
     }
   }
 

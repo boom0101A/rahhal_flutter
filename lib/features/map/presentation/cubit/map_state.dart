@@ -16,11 +16,13 @@ class MapReady extends MapState {
   final List<StopEntity> stops;
   final List<StopEntity> filteredStops;
   final String? selectedStopId;
+  final LatLng? userLocation;
 
   const MapReady({
     required this.stops,
     required this.filteredStops,
     this.selectedStopId,
+    this.userLocation,
   });
 
   StopEntity? get selectedStop => selectedStopId == null
@@ -31,6 +33,7 @@ class MapReady extends MapState {
     List<StopEntity>? stops,
     List<StopEntity>? filteredStops,
     Object? selectedStopId = _unset,
+    LatLng? userLocation,
   }) {
     return MapReady(
       stops: stops ?? this.stops,
@@ -38,11 +41,12 @@ class MapReady extends MapState {
       selectedStopId: identical(selectedStopId, _unset)
           ? this.selectedStopId
           : selectedStopId as String?,
+      userLocation: userLocation ?? this.userLocation,
     );
   }
 
   @override
-  List<Object?> get props => [stops, filteredStops, selectedStopId];
+  List<Object?> get props => [stops, filteredStops, selectedStopId, userLocation];
 }
 
 class MapError extends MapState {

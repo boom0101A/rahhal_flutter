@@ -22,6 +22,7 @@ class TripEntity extends Equatable {
   final String? bestTimeToVisit;
   final String currency;
   final String timezone;
+  final bool isMockData;
   final DateTime createdAt;
   final DateTime updatedAt;
   final DateTime? syncedAt;
@@ -46,6 +47,7 @@ class TripEntity extends Equatable {
     this.bestTimeToVisit,
     this.currency = 'USD',
     this.timezone = 'UTC',
+    this.isMockData = false,
     required this.createdAt,
     required this.updatedAt,
     this.syncedAt,

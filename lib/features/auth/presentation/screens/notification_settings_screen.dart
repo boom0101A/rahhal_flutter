@@ -3,6 +3,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'package:go_router/go_router.dart';
 import '../../../../core/constants/app_colors.dart';
 import '../../../../core/constants/app_text_styles.dart';
+import '../../../../core/constants/app_strings.dart';
 
 class NotificationSettingsScreen extends StatefulWidget {
   const NotificationSettingsScreen({super.key});
@@ -49,6 +50,8 @@ class _NotificationSettingsScreenState extends State<NotificationSettingsScreen>
 
   @override
   Widget build(BuildContext context) {
+    final strings = AppStrings.of(context);
+
     return Scaffold(
       backgroundColor: AppColors.adaptiveBgPrimary(context),
       appBar: AppBar(
@@ -60,8 +63,10 @@ class _NotificationSettingsScreenState extends State<NotificationSettingsScreen>
             color: AppColors.adaptiveTextPrimary(context), size: 20),
         ),
         title: Text(
-          'الإشعارات',
-          style: AppTextStyles.headlineMedium,
+          strings.settingsNotifications,
+          style: AppTextStyles.headlineMedium.copyWith(
+            color: AppColors.adaptiveTextPrimary(context),
+          ),
         ),
         centerTitle: true,
       ),
@@ -73,17 +78,29 @@ class _NotificationSettingsScreenState extends State<NotificationSettingsScreen>
               padding: const EdgeInsets.all(20),
               children: [
                 _buildToggleCard(
-                  title: 'تذكير الرحلات القادمة',
-                  subtitle: 'تلقي إشعارات لتذكيرك بمواعيد رحلاتك المجدولة',
+                  title: strings.notifTripReminders,
+                  subtitle: strings.notifTripRemindersDesc,
                   value: _tripReminders,
                   onChanged: _toggleTripReminders,
                 ),
                 const SizedBox(height: 16),
                 _buildToggleCard(
-                  title: 'اقتراحات ذكية من الذكاء الاصطناعي',
-                  subtitle: 'احصل على نصائح سفر وتوصيات مخصصة لرحلاتك القادمة',
+                  title: strings.notifAiSuggestions,
+                  subtitle: strings.notifAiSuggestionsDesc,
                   value: _aiSuggestions,
                   onChanged: _toggleAiSuggestions,
+                ),
+                const SizedBox(height: 24),
+                Padding(
+                  padding: const EdgeInsets.all(16),
+                  child: Text(
+                    strings.notifComingSoon,
+                    style: AppTextStyles.bodySmall.copyWith(
+                      color: AppColors.adaptiveTextSecondary(context),
+                      fontStyle: FontStyle.italic,
+                    ),
+                    textAlign: TextAlign.center,
+                  ),
                 ),
               ],
             ),

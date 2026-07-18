@@ -1,12 +1,16 @@
+import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:flutter_map/flutter_map.dart';
 import 'package:latlong2/latlong.dart' hide Path;
 import 'package:flutter_animate/flutter_animate.dart';
+import 'package:geolocator/geolocator.dart';
 import '../../../../../core/constants/app_colors.dart';
 import '../../../../../core/constants/app_text_styles.dart';
 import '../../../../../shared/widgets/glass_card.dart';
 import '../../../../../shared/widgets/app_badges.dart';
+import '../../../../../core/services/location_service.dart';
+import '../../../../../core/di/injection.dart';
 import '../cubit/map_cubit.dart';
 import '../../../trip_planner/domain/entities/stop_entity.dart';
 import '../../../../core/constants/app_strings.dart';
@@ -51,17 +55,139 @@ class _MapView extends StatefulWidget {
   State<_MapView> createState() => _MapViewState();
 }
 
-class _MapViewState extends State<_MapView> {
+class _MapViewState extends State<_MapView> with WidgetsBindingObserver {
   late final MapController _mapController;
+  final LocationService _locationService = sl<LocationService>();
+
+  double? _userLat;
+  double? _userLng;
+  LatLng? _userLocation;
+  bool _isLocatingUser = false;
+  bool _fetchingLocation = false;
+  StreamSubscription<ServiceStatus>? _serviceStatusSub;
+  StreamSubscription<Position>? _positionSub;
 
   @override
   void initState() {
     super.initState();
     _mapController = MapController();
+    WidgetsBinding.instance.addObserver(this);
+
+    // Initial check from Cubit state if available
+    if (widget.state.userLocation != null) {
+      _userLocation = widget.state.userLocation;
+      _userLat = widget.state.userLocation!.latitude;
+      _userLng = widget.state.userLocation!.longitude;
+    }
+
+    _fetchUserLocation();
+    _listenToLocationUpdates();
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState lifecycleState) {
+    if (lifecycleState == AppLifecycleState.resumed) {
+      _fetchUserLocation();
+    }
+  }
+
+  void _listenToLocationUpdates() {
+    _serviceStatusSub = Geolocator.getServiceStatusStream().listen((status) {
+      if (status == ServiceStatus.enabled) {
+        _fetchUserLocation();
+      }
+    });
+
+    Geolocator.checkPermission().then((permission) {
+      if (permission == LocationPermission.always || permission == LocationPermission.whileInUse) {
+        _positionSub = Geolocator.getPositionStream(
+          locationSettings: const LocationSettings(
+            accuracy: LocationAccuracy.high,
+            distanceFilter: 10,
+          ),
+        ).listen((pos) {
+          if (mounted) {
+            setState(() {
+              _userLat = pos.latitude;
+              _userLng = pos.longitude;
+              _userLocation = LatLng(pos.latitude, pos.longitude);
+            });
+          }
+        });
+      }
+    });
+  }
+
+  Future<void> _fetchUserLocation() async {
+    if (_fetchingLocation) return;
+    _fetchingLocation = true;
+    try {
+      final loc = await _locationService.getCurrentLocation();
+      if (loc != null && mounted) {
+        setState(() {
+          _userLat = loc.latitude;
+          _userLng = loc.longitude;
+          _userLocation = LatLng(loc.latitude, loc.longitude);
+        });
+      }
+    } finally {
+      _fetchingLocation = false;
+    }
+  }
+
+  Future<void> _goToMyLocation() async {
+    if (_isLocatingUser) return;
+    setState(() => _isLocatingUser = true);
+
+    try {
+      LocationPermission permission = await Geolocator.checkPermission();
+      if (permission == LocationPermission.denied) {
+        permission = await Geolocator.requestPermission();
+      }
+      if (permission == LocationPermission.denied ||
+          permission == LocationPermission.deniedForever) {
+        if (mounted) {
+          setState(() => _isLocatingUser = false);
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('تعذّر الوصول للموقع. فعّل الإذن من الإعدادات.'),
+              backgroundColor: Colors.red,
+            ),
+          );
+        }
+        return;
+      }
+
+      final position = await Geolocator.getCurrentPosition(
+        locationSettings: const LocationSettings(
+          accuracy: LocationAccuracy.medium,
+          timeLimit: Duration(seconds: 8),
+        ),
+      );
+
+      if (mounted) {
+        _mapController.move(
+          LatLng(position.latitude, position.longitude),
+          15.0,
+        );
+        setState(() {
+          _userLat = position.latitude;
+          _userLng = position.longitude;
+          _userLocation = LatLng(position.latitude, position.longitude);
+          _isLocatingUser = false;
+        });
+      }
+    } catch (e) {
+      debugPrint('Map location error: $e');
+      if (mounted) setState(() => _isLocatingUser = false);
+    }
   }
 
   @override
   void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
+    _serviceStatusSub?.cancel();
+    _positionSub?.cancel();
     _mapController.dispose();
     super.dispose();
   }
@@ -72,7 +198,13 @@ class _MapViewState extends State<_MapView> {
         : widget.state.stops;
 
     if (stops.isEmpty) {
-      return const LatLng(25.0, 45.0); // Better world default center
+      if (_userLocation != null) {
+        return _userLocation!;
+      }
+      if (_userLat != null && _userLng != null) {
+        return LatLng(_userLat!, _userLng!);
+      }
+      return const LatLng(25.0, 45.0);
     }
 
     final avgLat =
@@ -105,6 +237,21 @@ class _MapViewState extends State<_MapView> {
               maxZoom: 19,
             ),
 
+            // User Location Pulse Circle Layer
+            if (_userLocation != null || (_userLat != null && _userLng != null))
+              CircleLayer(
+                circles: [
+                  CircleMarker(
+                    point: _userLocation ?? LatLng(_userLat!, _userLng!),
+                    radius: 35,
+                    useRadiusInMeter: false,
+                    color: const Color(0x222196F3),
+                    borderColor: const Color(0x662196F3),
+                    borderStrokeWidth: 1.5,
+                  ),
+                ],
+              ),
+
             // Route polyline
             if (stops.length > 1)
               PolylineLayer(
@@ -119,22 +266,34 @@ class _MapViewState extends State<_MapView> {
                 ],
               ),
 
-            // Markers
+            // Stop Markers & User Location Marker
             MarkerLayer(
-              markers: stops.asMap().entries.map((entry) {
-                final i = entry.key;
-                final stop = entry.value;
-                final isSelected = stop.id == widget.state.selectedStopId;
-                return Marker(
-                  point: LatLng(stop.latitude, stop.longitude),
-                  width: isSelected ? 48 : 36,
-                  height: isSelected ? 64 : 52,
-                  child: GestureDetector(
-                    onTap: () => context.read<MapCubit>().selectStop(stop.id),
-                    child: _buildMarker(i + 1, stop, isSelected),
+              markers: [
+                // User Location Blue Dot Marker
+                if (_userLocation != null || (_userLat != null && _userLng != null))
+                  Marker(
+                    point: _userLocation ?? LatLng(_userLat!, _userLng!),
+                    width: 36,
+                    height: 36,
+                    child: _buildUserLocationMarker(),
                   ),
-                );
-              }).toList(),
+
+                // Trip Stop Markers
+                ...stops.asMap().entries.map((entry) {
+                  final i = entry.key;
+                  final stop = entry.value;
+                  final isSelected = stop.id == widget.state.selectedStopId;
+                  return Marker(
+                    point: LatLng(stop.latitude, stop.longitude),
+                    width: isSelected ? 48 : 36,
+                    height: isSelected ? 64 : 52,
+                    child: GestureDetector(
+                      onTap: () => context.read<MapCubit>().selectStop(stop.id),
+                      child: _buildMarker(i + 1, stop, isSelected),
+                    ),
+                  );
+                }),
+              ],
             ),
           ],
         ),
@@ -151,6 +310,37 @@ class _MapViewState extends State<_MapView> {
             ).animate().slideY(begin: 1, end: 0, duration: 300.ms),
           ),
 
+        // Floating Action Button: My Location Button
+        Positioned(
+          bottom: selectedStop != null ? 140 : 20,
+          left: 16,
+          child: Container(
+            decoration: BoxDecoration(
+              color: AppColors.adaptiveBgCard(context),
+              shape: BoxShape.circle,
+              border: Border.all(color: AppColors.adaptiveBorder(context)),
+              boxShadow: AppColors.cardShadow,
+            ),
+            child: IconButton(
+              onPressed: _isLocatingUser ? null : _goToMyLocation,
+              icon: _isLocatingUser
+                  ? const SizedBox(
+                      width: 20,
+                      height: 20,
+                      child: CircularProgressIndicator(
+                        strokeWidth: 2,
+                        color: AppColors.accentAmber,
+                      ),
+                    )
+                  : const Icon(
+                      Icons.my_location_rounded,
+                      color: AppColors.accentAmber,
+                      size: 24,
+                    ),
+            ),
+          ),
+        ),
+
         // Stops count badge
         Positioned(
           top: 16,
@@ -165,6 +355,37 @@ class _MapViewState extends State<_MapView> {
         ),
       ],
     );
+  }
+
+  Widget _buildUserLocationMarker() {
+    return Container(
+      decoration: BoxDecoration(
+        shape: BoxShape.circle,
+        color: Colors.white,
+        boxShadow: [
+          BoxShadow(
+            color: Colors.blue.withValues(alpha: 0.4),
+            blurRadius: 10,
+            spreadRadius: 3,
+          ),
+        ],
+      ),
+      padding: const EdgeInsets.all(3),
+      child: Container(
+        decoration: const BoxDecoration(
+          shape: BoxShape.circle,
+          color: Colors.blueAccent,
+        ),
+        child: const Center(
+          child: Icon(
+            Icons.navigation_rounded,
+            color: Colors.white,
+            size: 14,
+          ),
+        ),
+      ),
+    ).animate(onPlay: (controller) => controller.repeat(reverse: true))
+     .scale(begin: const Offset(0.9, 0.9), end: const Offset(1.1, 1.1), duration: 1200.ms);
   }
 
   Widget _buildMarker(int number, StopEntity stop, bool isSelected) {
@@ -291,3 +512,4 @@ class _StopBottomCard extends StatelessWidget {
     );
   }
 }
+

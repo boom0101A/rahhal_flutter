@@ -13,7 +13,7 @@ class MainNavigationLayout extends StatelessWidget {
     if (location.startsWith('/home')) return 0;
     if (location.startsWith('/plan')) return 1;
     if (location.startsWith('/favorites')) return 2;
-    if (location.startsWith('/settings')) return 3;
+    if (location.startsWith('/profile') || location.startsWith('/settings')) return 3;
     return 0;
   }
 
@@ -29,7 +29,7 @@ class MainNavigationLayout extends StatelessWidget {
         context.go('/favorites');
         break;
       case 3:
-        context.go('/settings');
+        context.go('/profile');
         break;
     }
   }

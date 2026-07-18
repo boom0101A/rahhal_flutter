@@ -1,5 +1,7 @@
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:equatable/equatable.dart';
+import 'package:latlong2/latlong.dart';
+import 'package:geolocator/geolocator.dart';
 import '../../domain/repositories/map_repository.dart';
 import '../../../trip_planner/domain/entities/stop_entity.dart';
 
@@ -19,9 +21,30 @@ class MapCubit extends Cubit<MapState> {
     final result = await _repository.getStopsForTrip(tripId);
     result.fold(
       (failure) => emit(MapError(failure.message)),
-      (stops) {
+      (stops) async {
         _allStops = stops;
-        emit(MapReady(stops: stops, filteredStops: stops));
+
+        // Try to get user location non-blocking
+        LatLng? userLocation;
+        try {
+          final permission = await Geolocator.checkPermission();
+          if (permission == LocationPermission.always ||
+              permission == LocationPermission.whileInUse) {
+            final pos = await Geolocator.getCurrentPosition(
+              locationSettings: const LocationSettings(
+                accuracy: LocationAccuracy.medium,
+                timeLimit: Duration(seconds: 5),
+              ),
+            );
+            userLocation = LatLng(pos.latitude, pos.longitude);
+          }
+        } catch (_) {} // Silently ignore — location is optional
+
+        emit(MapReady(
+          stops: stops,
+          filteredStops: stops,
+          userLocation: userLocation,
+        ));
       },
     );
   }

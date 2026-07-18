@@ -11,6 +11,7 @@ import '../../../../core/constants/app_strings.dart';
 import '../../../../core/di/injection.dart';
 import '../../../../shared/widgets/app_badges.dart';
 import '../../../../shared/widgets/cached_hero_image.dart';
+import '../../../../shared/widgets/weather_widget.dart';
 import '../../domain/entities/trip_entity.dart';
 import '../../../itinerary/presentation/cubit/itinerary_cubit.dart';
 import '../../../itinerary/presentation/widgets/itinerary_tab.dart';
@@ -134,19 +135,50 @@ class _TripDashboardScreenState extends State<TripDashboardScreen>
           headerSliverBuilder: (ctx, innerIsScrolled) => [
             _buildHeroSliver(ctx, innerIsScrolled),
           ],
-          body: TabBarView(
-            controller: _tabController,
+          body: Column(
             children: [
-              ItineraryTab(tripId: widget.tripId),
-              MapTab(tripId: widget.tripId),
-              RestaurantsTab(tripId: widget.tripId),
-              BudgetTab(tripId: widget.tripId),
-              if (_trip != null)
-                PackingListTab(trip: _trip!)
-              else
-                const Center(
-                  child: CircularProgressIndicator(color: AppColors.accentAmber),
+              if (_trip?.isMockData == true)
+                Container(
+                  margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                  padding: const EdgeInsets.all(12),
+                  decoration: BoxDecoration(
+                    color: AppColors.accentAmber.withValues(alpha: 0.12),
+                    borderRadius: BorderRadius.circular(12),
+                    border: Border.all(color: AppColors.accentAmber.withValues(alpha: 0.3)),
+                  ),
+                  child: Row(
+                    children: [
+                      const Icon(Icons.info_outline_rounded, color: AppColors.accentAmber, size: 18),
+                      const SizedBox(width: 8),
+                      Expanded(
+                        child: Text(
+                          'هذه الرحلة أُنشئت سحابةً في وضع عدم الاتصال. أنشئ رحلة جديدة الآن لتوليد خطة حية بالذكاء الاصطناعي ✨',
+                          style: AppTextStyles.bodySmall.copyWith(
+                            color: AppColors.accentAmber,
+                            fontSize: 12,
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
                 ),
+              Expanded(
+                child: TabBarView(
+                  controller: _tabController,
+                  children: [
+                    ItineraryTab(tripId: widget.tripId, countryCode: _trip?.countryCode),
+                    MapTab(tripId: widget.tripId),
+                    RestaurantsTab(tripId: widget.tripId),
+                    BudgetTab(tripId: widget.tripId, countryCode: _trip?.countryCode),
+                    if (_trip != null)
+                      PackingListTab(trip: _trip!)
+                    else
+                      const Center(
+                        child: CircularProgressIndicator(color: AppColors.accentAmber),
+                      ),
+                  ],
+                ),
+              ),
             ],
           ),
         ),
@@ -236,61 +268,77 @@ class _TripDashboardScreenState extends State<TripDashboardScreen>
               right: 0,
               child: Padding(
                 padding: const EdgeInsets.fromLTRB(20, 0, 20, 16),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
+                child: Row(
+                  crossAxisAlignment: CrossAxisAlignment.end,
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
                   children: [
-                    // Badges row
-                    Row(
-                      children: [
-                        const AIBadge(),
-                        const SizedBox(width: 8),
-                        if (trip != null) ...[
-                          Container(
-                            padding: const EdgeInsets.symmetric(
-                                horizontal: 10, vertical: 4),
-                            decoration: BoxDecoration(
-                              color: AppColors.adaptiveGlassStrong(context),
-                              borderRadius: BorderRadius.circular(50),
-                              border: Border.all(
-                                  color: AppColors.adaptiveGlassBorder(context)),
-                            ),
-                            child: Text(
-                              '${trip.durationDays} ${AppStrings.of(context).planDurationDays}',
-                              style: AppTextStyles.labelSmall.copyWith(
-                                color: AppColors.adaptiveTextPrimary(context),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          // Badges row
+                          Row(
+                            children: [
+                              const AIBadge(),
+                              const SizedBox(width: 8),
+                              if (trip != null) ...[
+                                Container(
+                                  padding: const EdgeInsets.symmetric(
+                                      horizontal: 10, vertical: 4),
+                                  decoration: BoxDecoration(
+                                    color: AppColors.adaptiveGlassStrong(context),
+                                    borderRadius: BorderRadius.circular(50),
+                                    border: Border.all(
+                                        color: AppColors.adaptiveGlassBorder(context)),
+                                  ),
+                                  child: Text(
+                                    '${trip.durationDays} ${AppStrings.of(context).planDurationDays}',
+                                    style: AppTextStyles.labelSmall.copyWith(
+                                      color: AppColors.adaptiveTextPrimary(context),
+                                    ),
+                                  ),
+                                ),
+                              ],
+                            ],
+                          ),
+                          const SizedBox(height: 8),
+                          // Destination
+                          Text(
+                            trip?.displayDestination(context) ?? '',
+                            style: AppTextStyles.displayMedium.copyWith(color: AppColors.adaptiveTextPrimary(context)),
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                          const SizedBox(height: 4),
+                          // Budget
+                          if (trip != null)
+                            RichText(
+                              text: TextSpan(
+                                children: [
+                                  TextSpan(
+                                    text:
+                                        '~\$${trip.budgetTotal.toStringAsFixed(0)}',
+                                    style: AppTextStyles.amberBold
+                                        .copyWith(fontSize: 22),
+                                  ),
+                                  TextSpan(
+                                    text: ' ${AppStrings.of(context).budgetTotal}',
+                                    style: AppTextStyles.bodySmall,
+                                  ),
+                                ],
                               ),
                             ),
-                          ),
                         ],
-                      ],
-                    ),
-                    const SizedBox(height: 8),
-                    // Destination
-                    Text(
-                      trip?.displayDestination(context) ?? '',
-                      style: AppTextStyles.displayMedium.copyWith(color: AppColors.adaptiveTextPrimary(context)),
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                    ),
-                    const SizedBox(height: 4),
-                    // Budget
-                    if (trip != null)
-                      RichText(
-                        text: TextSpan(
-                          children: [
-                            TextSpan(
-                              text:
-                                  '~\$${trip.budgetTotal.toStringAsFixed(0)}',
-                              style: AppTextStyles.amberBold
-                                  .copyWith(fontSize: 22),
-                            ),
-                            TextSpan(
-                              text: ' ${AppStrings.of(context).budgetTotal}',
-                              style: AppTextStyles.bodySmall,
-                            ),
-                          ],
-                        ),
                       ),
+                    ),
+                    if (trip != null) ...[
+                      const SizedBox(width: 12),
+                      WeatherWidget(
+                        city: trip.destination,
+                        countryCode: trip.countryCode,
+                      ),
+                    ],
                   ],
                 ),
               ),

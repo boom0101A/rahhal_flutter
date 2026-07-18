@@ -254,14 +254,27 @@ class _ChatScreenState extends State<ChatScreen> {
           textAlign: TextAlign.center,
           style: AppTextStyles.bodyMedium,
         ),
-        const SizedBox(height: 32),
+        const SizedBox(height: 16),
+        // Free-text guidance prompt card
+        GlassCard(
+          padding: const EdgeInsets.all(14),
+          child: Text(
+            'يمكنك سؤالي عن أي شيء: أفضل المطاعم، المواصلات، التكاليف، الطقس، '
+            'ساعات الزيارة، أماكن التسوق، الثقافة المحلية، أو أي تساؤل آخر عن رحلتك! 💬',
+            style: AppTextStyles.bodyMedium,
+            textAlign: TextAlign.center,
+          ),
+        ),
+        const SizedBox(height: 24),
         Text(AppStrings.of(context).chatSuggestions, style: AppTextStyles.titleSmall),
         const SizedBox(height: 12),
         ..._suggestions(context).map((s) => _SuggestionChip(
               text: s,
               onTap: () {
                 _msgCtrl.text = s;
-                _sendMessage(context);
+                _msgCtrl.selection = TextSelection.fromPosition(
+                  TextPosition(offset: _msgCtrl.text.length),
+                );
               },
             )),
       ],

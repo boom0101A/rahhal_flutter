@@ -8,14 +8,16 @@ import '../../../../../core/constants/app_text_styles.dart';
 import '../../../../../shared/widgets/glass_card.dart';
 import '../../../../../shared/widgets/gradient_button.dart';
 import '../../../../../shared/widgets/app_error_widget.dart';
+import '../../../../../shared/widgets/dual_currency_text.dart';
 import '../../../itinerary/domain/entities/day_entity.dart';
 import '../../domain/entities/expense_entity.dart';
 import '../cubit/budget_cubit.dart';
 
 class BudgetTab extends StatefulWidget {
   final String tripId;
+  final String? countryCode;
 
-  const BudgetTab({super.key, required this.tripId});
+  const BudgetTab({super.key, required this.tripId, this.countryCode});
 
   @override
   State<BudgetTab> createState() => _BudgetTabState();
@@ -155,9 +157,10 @@ class _BudgetTabState extends State<BudgetTab> {
                     children: [
                       Text(strings.expenseEstimatedTotal, style: AppTextStyles.bodySmall),
                       const SizedBox(height: 4),
-                      Text(
-                        '\$${estimatedTotal.toStringAsFixed(0)}',
-                        style: AppTextStyles.headlineLarge,
+                      DualCurrencyText(
+                        amountUsd: estimatedTotal,
+                        countryCode: widget.countryCode,
+                        primaryStyle: AppTextStyles.headlineLarge,
                       ),
                     ],
                   ),
@@ -166,9 +169,10 @@ class _BudgetTabState extends State<BudgetTab> {
                     children: [
                       Text(strings.expenseActualTotal, style: AppTextStyles.bodySmall),
                       const SizedBox(height: 4),
-                      Text(
-                        '\$${actualTotal.toStringAsFixed(0)}',
-                        style: AppTextStyles.headlineLarge.copyWith(
+                      DualCurrencyText(
+                        amountUsd: actualTotal,
+                        countryCode: widget.countryCode,
+                        primaryStyle: AppTextStyles.headlineLarge.copyWith(
                           color: isOverBudget ? AppColors.error : AppColors.accentTurquoise,
                         ),
                       ),

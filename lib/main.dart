@@ -6,6 +6,7 @@ import 'package:firebase_app_check/firebase_app_check.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'firebase_options.dart';
 import 'core/di/injection.dart';
+import 'core/services/notification_service.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'core/theme/app_theme.dart';
 import 'core/router/app_router.dart';
@@ -16,6 +17,18 @@ import 'package:sqflite_common_ffi_web/sqflite_ffi_web.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
+
+  // Catch unhandled Flutter errors
+  FlutterError.onError = (FlutterErrorDetails details) {
+    debugPrint('🔴 Flutter Error: ${details.exception}');
+    debugPrint('Stack: ${details.stack}');
+  };
+
+  // Catch unexpected asynchronous Dart errors
+  PlatformDispatcher.instance.onError = (error, stack) {
+    debugPrint('🔴 Platform Error: $error');
+    return true; // handled
+  };
 
   if (kIsWeb) {
     databaseFactory = databaseFactoryFfiWeb;
@@ -41,6 +54,9 @@ void main() async {
 
   // Setup Dependency Injection container
   await setupDependencies();
+
+  // Initialize Local Notification Service
+  await NotificationService.initialize();
 
   runApp(const RahhalApp());
 }

@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'package:flutter/foundation.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:equatable/equatable.dart';
@@ -42,7 +43,7 @@ class AuthCubit extends Cubit<AuthState> {
       (failure) => emit(AuthError(failure.message)),
       (user) {
         emit(AuthAuthenticated(user));
-        _restoreCloudData(user.uid);
+        unawaited(sl<CloudSyncService>().restoreTripsFromCloud(user.uid));
       },
     );
   }

@@ -81,6 +81,7 @@ class TripRepositoryImpl implements TripRepository {
         bestTimeToVisit: response.bestTimeToVisit,
         currency: response.currency,
         timezone: response.timezone,
+        isMockData: response.isMockData,
         createdAt: now,
         updatedAt: now,
       );

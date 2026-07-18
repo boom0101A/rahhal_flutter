@@ -89,6 +89,14 @@ class AppStrings {
   String get validationEmptyDestination => _t('الرجاء إدخال اسم الوجهة', 'Please enter a destination');
   String get validationShortDestination => _t('اسم الوجهة قصير جداً', 'Destination name is too short');
   String get validationEmptyStyles => _t('الرجاء اختيار نمط سفر واحد على الأقل', 'Please select at least one travel style');
+  String get discoverNearbyTitle => _t('اكتشف المعالم السياحية القريبة منك 📍', 'Discover Tourist Spots Near You 📍');
+  String get discoverNearbySubtitle => _t('اضغط هنا لاستخدام موقعك الحالي واكتشاف أفضل الأماكن والمطاعم في مدينتك', 'Tap to use your current location and discover top attractions in your city');
+  String get detectingLocation => _t('جاري تحديد موقعك الجغرافي...', 'Detecting your location...');
+  String get locationPermissionDenied => _t('تعذر الوصول إلى موقعك. يرجى تفعيل إذن الموقع في الإعدادات.', 'Unable to access location. Please grant permission in settings.');
+  String get discoverCurrentCityButton => _t('استكشف مدينتي الحالية', 'Explore My Current City');
+  String get openInMaps => _t('افتح في الخرائط 📍', 'Open in Maps 📍');
+  String get orderUber => _t('اطلب Uber 🚗', 'Order Uber 🚗');
+  String get orderCareem => _t('اطلب Careem 🚕', 'Order Careem 🚕');
 
   // Travel Styles
   String get styleCulture => _t('ثقافة', 'Culture');
@@ -239,6 +247,21 @@ class AppStrings {
   String get notificationReminderSub => _t('تلقي إشعارات لتذكيرك بمواعيد رحلاتك المجدولة', 'Receive notifications to remind you of your scheduled trips');
   String get notificationAITitle => _t('اقتراحات ذكية من الذكاء الاصطناعي', 'Smart AI recommendations');
   String get notificationAISub => _t('احصل على نصائح سفر وتوصيات مخصصة لرحلاتك القادمة', 'Get travel tips and personalized recommendations for your trips');
+
+  String get notifTripReminders => _t('تذكير الرحلات القادمة', 'Upcoming Trip Reminders');
+  String get notifTripRemindersDesc => _t(
+    'تلقي إشعارات لتذكيرك بمواعيد رحلاتك المجدولة',
+    'Receive notifications to remind you of your scheduled trips',
+  );
+  String get notifAiSuggestions => _t('اقتراحات ذكية من الذكاء الاصطناعي', 'Smart AI Suggestions');
+  String get notifAiSuggestionsDesc => _t(
+    'احصل على نصائح سفر وتوصيات مخصصة',
+    'Get personalized travel tips and recommendations',
+  );
+  String get notifComingSoon => _t(
+    'الإشعارات الفعلية قادمة في تحديث قريب',
+    'Actual notifications coming in a future update',
+  );
 
   // Errors
   String get errorNetwork => _t('تحقق من اتصالك بالإنترنت', 'Please check your internet connection');
@@ -442,6 +465,9 @@ class AppStrings {
         ),
     };
   }
+
+  String get authConfirmPassword => _t('تأكيد كلمة المرور', 'Confirm Password');
+  String get authPasswordMismatch => _t('كلمتا المرور غير متطابقتين', 'Passwords do not match');
 
   String get restaurantNotFound => _t('المطعم غير موجود', 'Restaurant not found');
   String get stopNotFound => _t('المحطة غير موجودة', 'Stop not found');

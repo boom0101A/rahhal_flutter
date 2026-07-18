@@ -11,8 +11,10 @@ import '../../../../shared/widgets/shimmer_loader.dart';
 import '../../../../shared/widgets/app_badges.dart';
 import '../../../../shared/widgets/app_error_widget.dart';
 import '../../../../shared/widgets/cached_hero_image.dart';
+import '../../../../shared/widgets/glass_card.dart';
+import '../../../../core/services/location_service.dart';
 import '../cubit/saved_trips_cubit.dart';
-import '../../../trip_planner/domain/entities/trip_entity.dart';
+import '../../domain/entities/trip_entity.dart';
 
 class SavedTripsScreen extends StatefulWidget {
   const SavedTripsScreen({super.key});
@@ -22,6 +24,8 @@ class SavedTripsScreen extends StatefulWidget {
 }
 
 class _SavedTripsScreenState extends State<SavedTripsScreen> {
+  bool _isLocating = false;
+
   @override
   Widget build(BuildContext context) {
     return BlocProvider(
@@ -32,7 +36,9 @@ class _SavedTripsScreenState extends State<SavedTripsScreen> {
           child: Column(
             children: [
               _buildHeader(context),
-              const SizedBox(height: 16),
+              const SizedBox(height: 12),
+              _buildNearbyBanner(context),
+              const SizedBox(height: 12),
               Expanded(
                 child: _buildTripsSection(context),
               ),
@@ -93,6 +99,99 @@ class _SavedTripsScreenState extends State<SavedTripsScreen> {
         ],
       ),
     ).animate().fadeIn(duration: 400.ms);
+  }
+
+  Widget _buildNearbyBanner(BuildContext context) {
+    final strings = AppStrings.of(context);
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 20),
+      child: GlassCard(
+        padding: const EdgeInsets.all(14),
+        child: Row(
+          children: [
+            Container(
+              width: 44,
+              height: 44,
+              decoration: BoxDecoration(
+                shape: BoxShape.circle,
+                color: AppColors.accentAmber.withValues(alpha: 0.15),
+              ),
+              child: const Icon(Icons.near_me_rounded, color: AppColors.accentAmber, size: 24),
+            ),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    strings.discoverNearbyTitle,
+                    style: AppTextStyles.titleMedium.copyWith(fontSize: 14),
+                  ),
+                  const SizedBox(height: 2),
+                  Text(
+                    strings.discoverNearbySubtitle,
+                    style: AppTextStyles.bodySmall.copyWith(fontSize: 11),
+                    maxLines: 2,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                ],
+              ),
+            ),
+            const SizedBox(width: 8),
+            ElevatedButton(
+              onPressed: _isLocating ? null : _exploreNearbyCity,
+              style: ElevatedButton.styleFrom(
+                backgroundColor: AppColors.accentAmber,
+                foregroundColor: AppColors.adaptiveBgPrimary(context),
+                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+                elevation: 0,
+              ),
+              child: _isLocating
+                  ? const SizedBox(
+                      width: 16,
+                      height: 16,
+                      child: CircularProgressIndicator(strokeWidth: 2, color: Colors.black),
+                    )
+                  : const Icon(Icons.arrow_forward_rounded, size: 18),
+            ),
+          ],
+        ),
+      ),
+    ).animate().fadeIn(duration: 400.ms).slideY(begin: -0.05, end: 0);
+  }
+
+  Future<void> _exploreNearbyCity() async {
+    final strings = AppStrings.of(context);
+    setState(() => _isLocating = true);
+    try {
+      final locationData = await sl<LocationService>().getCurrentLocation();
+      if (locationData == null || !mounted) {
+        if (mounted) {
+          setState(() => _isLocating = false);
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text(strings.locationPermissionDenied),
+              backgroundColor: AppColors.error,
+              behavior: SnackBarBehavior.floating,
+            ),
+          );
+        }
+        return;
+      }
+      setState(() => _isLocating = false);
+
+      // Navigate to plan screen with pre-filled destination
+      // The AI will generate a REAL plan based on the real city name
+      context.push('/plan', extra: {
+        'prefillDestination': locationData.fullLocationDisplay,
+        'lat': locationData.latitude,
+        'lng': locationData.longitude,
+        'countryCode': locationData.countryCode,
+      });
+    } catch (e) {
+      if (mounted) setState(() => _isLocating = false);
+    }
   }
 
   Widget _buildTripsSection(BuildContext context) {

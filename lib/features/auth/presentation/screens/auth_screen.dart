@@ -24,6 +24,7 @@ class _AuthScreenState extends State<AuthScreen> {
   final _nameCtrl = TextEditingController();
   final _emailCtrl = TextEditingController();
   final _passwordCtrl = TextEditingController();
+  final _confirmPasswordCtrl = TextEditingController();
   late bool _isLogin;
   bool _obscurePassword = true;
 
@@ -38,6 +39,7 @@ class _AuthScreenState extends State<AuthScreen> {
     _nameCtrl.dispose();
     _emailCtrl.dispose();
     _passwordCtrl.dispose();
+    _confirmPasswordCtrl.dispose();
     super.dispose();
   }
 
@@ -183,6 +185,21 @@ class _AuthScreenState extends State<AuthScreen> {
                                       ? strings.authWeakPassword
                                       : null,
                                 ),
+                                if (!_isLogin) ...[
+                                  const SizedBox(height: 16),
+                                  _buildField(
+                                    controller: _confirmPasswordCtrl,
+                                    label: strings.authConfirmPassword,
+                                    icon: Icons.lock_outline_rounded,
+                                    maxLength: 64,
+                                    obscureText: _obscurePassword,
+                                    validator: (v) {
+                                      if (v == null || v.isEmpty) return strings.authWeakPassword;
+                                      if (v != _passwordCtrl.text) return strings.authPasswordMismatch;
+                                      return null;
+                                    },
+                                  ),
+                                ],
                                 if (_isLogin)
                                   Align(
                                     alignment: AlignmentDirectional.centerEnd,

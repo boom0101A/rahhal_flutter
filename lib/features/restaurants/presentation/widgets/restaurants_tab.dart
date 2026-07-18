@@ -70,13 +70,18 @@ class RestaurantsTab extends StatelessWidget {
           height: 40,
           child: ListView(
             scrollDirection: Axis.horizontal,
-            children: _filters.map((f) {
+            children: _filters.asMap().entries.map((entry) {
+              final i = entry.key;
+              final f = entry.value;
               final isActive = state.activeFilter == f;
               return GestureDetector(
                 onTap: () => context.read<RestaurantsCubit>().applyFilter(f),
                 child: AnimatedContainer(
                   duration: const Duration(milliseconds: 200),
-                  margin: const EdgeInsetsDirectional.only(start: 8),
+                  margin: EdgeInsetsDirectional.only(
+                    start: i == 0 ? 16 : 8,
+                    end: i == _filters.length - 1 ? 16 : 0,
+                  ),
                   padding:
                       const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
                   decoration: BoxDecoration(

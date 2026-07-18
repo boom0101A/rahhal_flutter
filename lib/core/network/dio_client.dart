@@ -1,4 +1,5 @@
 import 'package:dio/dio.dart';
+import 'package:firebase_auth/firebase_auth.dart' as firebase_auth;
 import 'package:flutter/foundation.dart';
 import '../config/app_config.dart';
 import '../di/injection.dart';
@@ -26,7 +27,7 @@ class DioClient {
     final dio = Dio(
       BaseOptions(
         baseUrl: AppConfig.proxyBaseUrl,
-        connectTimeout: const Duration(seconds: 30),
+        connectTimeout: const Duration(seconds: 45), // 45s to allow Render free-tier warmup
         receiveTimeout: const Duration(seconds: 120),
         headers: {
           'Content-Type': 'application/json',
@@ -92,6 +93,25 @@ class _RetryInterceptor extends Interceptor {
   @override
   Future<void> onError(
       DioException err, ErrorInterceptorHandler handler) async {
+    // إذا كان الخطأ 401 (Unauthorized)، جرّب تجديد التوكن تلقائياً
+    if (err.response?.statusCode == 401) {
+      try {
+        final user = firebase_auth.FirebaseAuth.instance.currentUser;
+        if (user != null) {
+          // Force refresh the token
+          final newToken = await user.getIdToken(true); // forceRefresh = true
+          
+          // Retry the request with new token
+          final opts = err.requestOptions;
+          opts.headers['Authorization'] = 'Bearer $newToken';
+          final response = await _dio.fetch(opts);
+          return handler.resolve(response);
+        }
+      } catch (refreshError) {
+        debugPrint('[Auth] Token refresh failed: $refreshError');
+      }
+    }
+
     final extra = err.requestOptions.extra;
     final retryCount = (extra['retryCount'] as int?) ?? 0;
 

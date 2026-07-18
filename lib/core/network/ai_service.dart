@@ -2,6 +2,8 @@ import 'dart:convert';
 import 'package:dio/dio.dart';
 import 'package:flutter/foundation.dart';
 import 'dio_client.dart';
+import '../config/app_config.dart';
+import '../errors/exceptions.dart';
 
 /// Response model for a complete AI-generated trip plan.
 class TripPlanResponse {
@@ -18,6 +20,7 @@ class TripPlanResponse {
   final String bestTimeToVisit;
   final String currency;
   final String timezone;
+  final bool isMockData;
 
   const TripPlanResponse({
     required this.destination,
@@ -33,6 +36,7 @@ class TripPlanResponse {
     required this.bestTimeToVisit,
     required this.currency,
     required this.timezone,
+    this.isMockData = false,
   });
 
   factory TripPlanResponse.fromJson(Map<String, dynamic> json) {
@@ -111,6 +115,8 @@ class StopResponse {
   final bool bookingRequired;
   final String? bookingUrl;
   final String? imageSearchQuery;
+  final String? placeId;
+  final bool coordsVerified;
 
   const StopResponse({
     required this.orderIndex,
@@ -128,9 +134,12 @@ class StopResponse {
     required this.bookingRequired,
     this.bookingUrl,
     this.imageSearchQuery,
+    this.placeId,
+    this.coordsVerified = false,
   });
 
   factory StopResponse.fromJson(Map<String, dynamic> json) {
+    final String addressCandidate = json['google_address'] as String? ?? json['address'] as String? ?? '';
     return StopResponse(
       orderIndex: json['order_index'] as int? ?? 0,
       name: json['name'] as String? ?? '',
@@ -141,12 +150,14 @@ class StopResponse {
       durationMinutes: json['duration_minutes'] as int? ?? 60,
       latitude: (json['latitude'] as num? ?? 0).toDouble(),
       longitude: (json['longitude'] as num? ?? 0).toDouble(),
-      address: json['address'] as String? ?? '',
+      address: addressCandidate,
       costUsd: (json['cost_usd'] as num? ?? 0).toDouble(),
       aiTip: json['ai_tip'] as String? ?? '',
       bookingRequired: json['booking_required'] as bool? ?? false,
       bookingUrl: json['booking_url'] as String?,
       imageSearchQuery: json['image_search_query'] as String?,
+      placeId: json['place_id'] as String?,
+      coordsVerified: json['coords_verified'] as bool? ?? false,
     );
   }
 }
@@ -227,6 +238,34 @@ class AITravelService {
 
   AITravelService() : _dio = DioClient.anthropic;
 
+  // ─── Error classifier ────────────────────────────────────────────────────────
+
+  /// Converts any caught error into a user-friendly [AIException] message.
+  AIException _classifyError(Object e) {
+    if (e is DioException) {
+      final inner = e.error;
+      if (inner is AIException) return inner;
+      if (inner is NetworkException) {
+        return AIException(
+          message: AppConfig.kServerMayNeedWarmup
+              ? 'server-warmup-timeout'
+              : 'network-exception',
+        );
+      }
+      final code = e.response?.statusCode ?? 0;
+      if (code == 401 || code == 403) {
+        return AIException(message: 'invalid-api-key', statusCode: code);
+      }
+      if (code == 429) {
+        return AIException(message: 'rate-limit', statusCode: code);
+      }
+      if (code >= 500) {
+        return AIException(message: 'server-error-$code', statusCode: code);
+      }
+    }
+    return AIException(message: e.toString());
+  }
+
   // ─── Public API ─────────────────────────────────────────────────────────────
 
   /// Generates a complete trip plan using Claude AI.
@@ -254,12 +293,18 @@ class AITravelService {
       final jsonMap = response.data as Map<String, dynamic>;
       return TripPlanResponse.fromJson(jsonMap);
     } catch (e) {
-      debugPrint(
-          '[AITravelService] API Error or no key, using smart mock fallback: $e');
-      // Delay slightly to simulate AI generation
-      await Future.delayed(const Duration(seconds: 2));
-      return _generateMockTripResponse(
-          destination, durationDays, budgetTier, travelersCount);
+      final classified = _classifyError(e);
+      debugPrint('[AITravelService] generateTripPlan failed: $classified');
+
+      // ─── Seamless Fallback: Ensure 100% Uptime for User ─────────────────────
+      // If server is unreachable or asleep, generate a smart city-aware plan
+      try {
+        debugPrint('[AITravelService] Server unreachable → activating smart city fallback');
+        return _generateMockTripResponse(
+            destination, durationDays, budgetTier, travelersCount);
+      } catch (_) {
+        throw classified;
+      }
     }
   }
 
@@ -283,14 +328,176 @@ class AITravelService {
 
       return response.data['reply'] as String;
     } catch (e) {
-      debugPrint(
-          '[AITravelService] Chat error, returning smart mock reply: $e');
-      await Future.delayed(const Duration(milliseconds: 800));
-      return _generateMockChatReply(destination, userMessage);
+      final classified = _classifyError(e);
+      debugPrint('[AITravelService] chatWithAssistant failed: $classified');
+
+      try {
+        return _generateMockChatReply(destination, userMessage);
+      } catch (_) {
+        throw classified;
+      }
     }
   }
 
-  // ─── Smart Mock Generator Fallbacks ────────────────────────────────────────
+  // ─── Destination-Aware City Knowledge Mock Database ──────────────────────────
+
+  static const Map<String, _CityMockData> _cityDatabase = {
+    // Turkey - إسطنبول
+    'إسطنبول': _CityMockData(
+      lat: 41.0082, lng: 28.9784, countryCode: 'TR', currency: 'TRY',
+      landmarks: [
+        _MockPlace('آيا صوفيا', 'Hagia Sophia', 41.0086, 28.9802, 'landmark'),
+        _MockPlace('قصر توبقابي', 'Topkapi Palace', 41.0115, 28.9833, 'palace'),
+        _MockPlace('المسجد الأزرق', 'Blue Mosque', 41.0054, 28.9768, 'mosque'),
+        _MockPlace('البازار الكبير', 'Grand Bazaar', 41.0108, 28.9681, 'market'),
+        _MockPlace('برج غلطة', 'Galata Tower', 41.0256, 28.9740, 'landmark'),
+        _MockPlace('متحف إسطنبول للفنون الحديثة', 'Istanbul Modern Museum', 41.0280, 28.9814, 'museum'),
+        _MockPlace('شارع الاستقلال', 'Istiklal Avenue', 41.0335, 28.9770, 'shopping'),
+        _MockPlace('جسر البوسفور', 'Bosphorus Bridge', 41.0462, 29.0337, 'viewpoint'),
+      ],
+      restaurants: [
+        _MockRestaurant('مطعم النار والبحر', 'Nar ve Deniz', 'مأكولات تركية أصيلة', 41.0220, 28.9756),
+        _MockRestaurant('مطعم بوتيك الكباب', 'Kebapçı Boutique', 'كباب تركي', 41.0105, 28.9680),
+        _MockRestaurant('مقهى بييرلوتي', 'Pierre Loti Café', 'مشروبات وحلويات', 41.0398, 28.9394),
+      ],
+    ),
+    'istanbul': _CityMockData(
+      lat: 41.0082, lng: 28.9784, countryCode: 'TR', currency: 'TRY',
+      landmarks: [
+        _MockPlace('آيا صوفيا', 'Hagia Sophia', 41.0086, 28.9802, 'landmark'),
+        _MockPlace('قصر توبقابي', 'Topkapi Palace', 41.0115, 28.9833, 'palace'),
+        _MockPlace('المسجد الأزرق', 'Blue Mosque', 41.0054, 28.9768, 'mosque'),
+        _MockPlace('البازار الكبير', 'Grand Bazaar', 41.0108, 28.9681, 'market'),
+        _MockPlace('برج غلطة', 'Galata Tower', 41.0256, 28.9740, 'landmark'),
+        _MockPlace('متحف إسطنبول للفنون الحديثة', 'Istanbul Modern Museum', 41.0280, 28.9814, 'museum'),
+        _MockPlace('شارع الاستقلال', 'Istiklal Avenue', 41.0335, 28.9770, 'shopping'),
+        _MockPlace('جسر البوسفور', 'Bosphorus Bridge', 41.0462, 29.0337, 'viewpoint'),
+      ],
+      restaurants: [
+        _MockRestaurant('مطعم النار والبحر', 'Nar ve Deniz', 'مأكولات تركية أصيلة', 41.0220, 28.9756),
+        _MockRestaurant('مطعم بوتيك الكباب', 'Kebapçı Boutique', 'كباب تركي', 41.0105, 28.9680),
+        _MockRestaurant('مقهى بييرلوتي', 'Pierre Loti Café', 'مشروبات وحلويات', 41.0398, 28.9394),
+      ],
+    ),
+
+    // Egypt - القاهرة
+    'القاهرة': _CityMockData(
+      lat: 30.0444, lng: 31.2357, countryCode: 'EG', currency: 'EGP',
+      landmarks: [
+        _MockPlace('المتحف المصري بالتحرير', 'Egyptian Museum', 30.0478, 31.2336, 'museum'),
+        _MockPlace('أهرامات الجيزة والأبو الهول', 'Giza Pyramids', 29.9792, 31.1342, 'landmark'),
+        _MockPlace('قلعة صلاح الدين الأيوبي', 'Cairo Citadel', 30.0290, 31.2597, 'palace'),
+        _MockPlace('خان الخليلي', 'Khan el-Khalili', 30.0477, 31.2627, 'market'),
+        _MockPlace('جامع محمد علي', 'Mohamed Ali Mosque', 30.0285, 31.2599, 'mosque'),
+        _MockPlace('متحف الحضارة المصرية', 'NMEC Museum', 30.0076, 31.2483, 'museum'),
+        _MockPlace('برج القاهرة', 'Cairo Tower', 30.0459, 31.2243, 'viewpoint'),
+      ],
+      restaurants: [
+        _MockRestaurant('كشري أبو طارق', 'Koshary Abou Tarek', 'مأكولات شعبية مصرية', 30.0501, 31.2384),
+        _MockRestaurant('مطعم الفيشاوي', 'El Fishawy Cafe', 'قهوة ومأكولات شرقية', 30.0478, 31.2628),
+        _MockRestaurant('مطعم صبحي كابر', 'Sobhy Kaber', 'مشويات ومقادم', 30.0768, 31.2461),
+      ],
+    ),
+    'cairo': _CityMockData(
+      lat: 30.0444, lng: 31.2357, countryCode: 'EG', currency: 'EGP',
+      landmarks: [
+        _MockPlace('المتحف المصري بالتحرير', 'Egyptian Museum', 30.0478, 31.2336, 'museum'),
+        _MockPlace('أهرامات الجيزة والأبو الهول', 'Giza Pyramids', 29.9792, 31.1342, 'landmark'),
+        _MockPlace('قلعة صلاح الدين الأيوبي', 'Cairo Citadel', 30.0290, 31.2597, 'palace'),
+        _MockPlace('خان الخليلي', 'Khan el-Khalili', 30.0477, 31.2627, 'market'),
+        _MockPlace('جامع محمد علي', 'Mohamed Ali Mosque', 30.0285, 31.2599, 'mosque'),
+      ],
+      restaurants: [
+        _MockRestaurant('كشري أبو طارق', 'Koshary Abou Tarek', 'مأكولات شعبية مصرية', 30.0501, 31.2384),
+      ],
+    ),
+
+    // UAE - دبي
+    'دبي': _CityMockData(
+      lat: 25.2048, lng: 55.2708, countryCode: 'AE', currency: 'AED',
+      landmarks: [
+        _MockPlace('برج خليفة', 'Burj Khalifa', 25.1972, 55.2744, 'landmark'),
+        _MockPlace('دبي مول والنوافير', 'Dubai Mall & Fountains', 25.1978, 55.2796, 'shopping'),
+        _MockPlace('الخور والتكسي البحري', 'Dubai Creek & Abra', 25.2632, 55.3076, 'viewpoint'),
+        _MockPlace('سوق الذهب بالتوابل', 'Gold & Spice Souk', 25.2680, 55.3027, 'market'),
+        _MockPlace('متحف المستقبل', 'Museum of the Future', 25.2197, 55.2828, 'museum'),
+        _MockPlace('شاطئ جميرا', 'Jumeirah Beach', 25.2084, 55.2425, 'beach'),
+        _MockPlace('برج العرب', 'Burj Al Arab', 25.1412, 55.1852, 'landmark'),
+      ],
+      restaurants: [
+        _MockRestaurant('مطعم النافورة', 'Al Nafoorah', 'مطبخ لبناني فاخر', 25.2048, 55.2708),
+        _MockRestaurant('مطعم أتموسفير', 'At.mosphere Burj Khalifa', 'مطبخ عالمي', 25.1972, 55.2744),
+      ],
+    ),
+    'dubai': _CityMockData(
+      lat: 25.2048, lng: 55.2708, countryCode: 'AE', currency: 'AED',
+      landmarks: [
+        _MockPlace('برج خليفة', 'Burj Khalifa', 25.1972, 55.2744, 'landmark'),
+        _MockPlace('دبي مول والنوافير', 'Dubai Mall & Fountains', 25.1978, 55.2796, 'shopping'),
+        _MockPlace('متحف المستقبل', 'Museum of the Future', 25.2197, 55.2828, 'museum'),
+      ],
+      restaurants: [
+        _MockRestaurant('مطعم النافورة', 'Al Nafoorah', 'مطبخ لبناني فاخر', 25.2048, 55.2708),
+      ],
+    ),
+
+    // France - باريس
+    'باريس': _CityMockData(
+      lat: 48.8566, lng: 2.3522, countryCode: 'FR', currency: 'EUR',
+      landmarks: [
+        _MockPlace('برج إيفل', 'Eiffel Tower', 48.8584, 2.2945, 'landmark'),
+        _MockPlace('متحف اللوفر', 'Louvre Museum', 48.8606, 2.3376, 'museum'),
+        _MockPlace('كاتدرائية نوتردام', 'Notre-Dame Cathedral', 48.8530, 2.3499, 'landmark'),
+        _MockPlace('شارع الشانزيليزيه', 'Champs-Élysées', 48.8698, 2.3078, 'shopping'),
+        _MockPlace('متحف أورسيه', "Musée d'Orsay", 48.8600, 2.3266, 'museum'),
+        _MockPlace('قوس النصر', 'Arc de Triomphe', 48.8738, 2.2950, 'landmark'),
+        _MockPlace('مونمارتر وكنيسة ساكريه كور', 'Montmartre & Sacré-Cœur', 48.8867, 2.3431, 'viewpoint'),
+      ],
+      restaurants: [
+        _MockRestaurant('مطعم لو بروكوب', 'Le Procope', 'مطبخ فرنسي كلاسيكي', 48.8524, 2.3399),
+        _MockRestaurant('مطعم بيسترو لو مارايس', 'Le Marais Bistro', 'بيسترو فرنسي', 48.8567, 2.3601),
+      ],
+    ),
+    'paris': _CityMockData(
+      lat: 48.8566, lng: 2.3522, countryCode: 'FR', currency: 'EUR',
+      landmarks: [
+        _MockPlace('برج إيفل', 'Eiffel Tower', 48.8584, 2.2945, 'landmark'),
+        _MockPlace('متحف اللوفر', 'Louvre Museum', 48.8606, 2.3376, 'museum'),
+        _MockPlace('قوس النصر', 'Arc de Triomphe', 48.8738, 2.2950, 'landmark'),
+      ],
+      restaurants: [
+        _MockRestaurant('مطعم لو بروكوب', 'Le Procope', 'مطبخ فرنسي كلاسيكي', 48.8524, 2.3399),
+      ],
+    ),
+
+    // Saudi Arabia - الرياض / جدة / مكة / المدينة
+    'الرياض': _CityMockData(
+      lat: 24.7136, lng: 46.6753, countryCode: 'SA', currency: 'SAR',
+      landmarks: [
+        _MockPlace('برج المملكة وجسر المشاهدة', 'Kingdom Centre Tower', 24.7115, 46.6744, 'viewpoint'),
+        _MockPlace('حي الدرعية التاريخي', 'Historic Diriyah', 24.7340, 46.5772, 'landmark'),
+        _MockPlace('قصر المربع والمتحف الوطني', 'National Museum & Murabba Palace', 24.6473, 46.7112, 'museum'),
+        _MockPlace('بوليفارد رياض سيتي', 'Boulevard Riyadh City', 24.7667, 46.5983, 'shopping'),
+      ],
+      restaurants: [
+        _MockRestaurant('مطعم القرية النجودية', 'Najd Village', 'مأكولات سعودية نجودية', 24.7088, 46.6800),
+        _MockRestaurant('مطعم التمية والفرن', 'Al-Mamoora', 'مشويات ومقبلات', 24.7136, 46.6753),
+      ],
+    ),
+    'جدة': _CityMockData(
+      lat: 21.5433, lng: 39.1728, countryCode: 'SA', currency: 'SAR',
+      landmarks: [
+        _MockPlace('البلد التاريخية وباب مكة', 'Al-Balad Historical Center', 21.4858, 39.1866, 'landmark'),
+        _MockPlace('كورنيش جدة الواجهة البحرية', 'Jeddah Corniche Waterfront', 21.5833, 39.1083, 'viewpoint'),
+        _MockPlace('نافورة الملك فهد', 'King Fahd Fountain', 21.5161, 39.1481, 'landmark'),
+        _MockPlace('مسجد الرحمة العائم', 'Al Rahma Floating Mosque', 21.6508, 39.1042, 'mosque'),
+      ],
+      restaurants: [
+        _MockRestaurant('مطعم السدة للمظبي', 'Al Saddah Restaurant', 'مندي ومظبي أصيل', 21.5433, 39.1728),
+        _MockRestaurant('مطعم البيك', 'Al Baik', 'وجبات سريعة ومأكولات بحرية', 21.5000, 39.1667),
+      ],
+    ),
+  };
 
   TripPlanResponse _generateMockTripResponse(
     String destination,
@@ -298,6 +505,33 @@ class AITravelService {
     String budgetTier,
     int travelersCount,
   ) {
+    // Look up destination in database (case-insensitive & partial match)
+    final destLower = destination.toLowerCase().trim();
+    _CityMockData? cityData;
+
+    for (final entry in _cityDatabase.entries) {
+      if (destLower.contains(entry.key.toLowerCase()) ||
+          entry.key.toLowerCase().contains(destLower)) {
+        cityData = entry.value;
+        break;
+      }
+    }
+
+    final double baseLat = cityData?.lat ?? 24.7136;
+    final double baseLng = cityData?.lng ?? 46.6753;
+    final String countryCode = cityData?.countryCode ?? 'SA';
+    final String currency = cityData?.currency ?? 'SAR';
+    final landmarks = cityData?.landmarks ?? [
+      _MockPlace('المعلم التاريخي الشهير في $destination', 'Historic Landmark in $destination', baseLat + 0.005, baseLng + 0.005, 'landmark'),
+      _MockPlace('المتحف المركزي بـ $destination', 'Central Museum of $destination', baseLat - 0.003, baseLng + 0.008, 'museum'),
+      _MockPlace('السوق القديم والمنتزه', 'Old Souk & Park', baseLat + 0.008, baseLng - 0.004, 'market'),
+      _MockPlace('المطل البانورامي', 'Panoramic Overlook', baseLat - 0.006, baseLng - 0.005, 'viewpoint'),
+    ];
+    final restaurants = cityData?.restaurants ?? [
+      _MockRestaurant('مطعم الأصالة بـ $destination', 'Authentic Dining', 'مأكولات محلية', baseLat + 0.002, baseLng + 0.003),
+      _MockRestaurant('كافيه ومقهى $destination', 'Café & Pastry', 'حلويات ومشروبات', baseLat - 0.004, baseLng + 0.006),
+    ];
+
     final double costPerDay = switch (budgetTier) {
       'economy' => 60,
       'mid' => 150,
@@ -306,123 +540,107 @@ class AITravelService {
     };
     final double budgetTotal = costPerDay * durationDays * travelersCount;
 
-    // Coordinate offsets based on destination name hash to make it look stable but dynamic
-    final int destHash = destination.hashCode;
-    final double baseLat = 41.0082 + (destHash % 100) / 1000.0;
-    final double baseLng = 28.9784 + ((destHash >> 2) % 100) / 1000.0;
-
+    // Build days — ensuring no landmark is repeated across days
     final List<DayPlanResponse> mockDays = [];
+    int landmarkIndex = 0;
+
     for (int day = 1; day <= durationDays; day++) {
-      final List<StopResponse> mockStops = [
-        StopResponse(
+      final List<StopResponse> mockStops = [];
+
+      // Morning Attraction (Unique per day)
+      if (landmarkIndex < landmarks.length) {
+        final place = landmarks[landmarkIndex++];
+        mockStops.add(StopResponse(
           orderIndex: 0,
-          name: 'زيارة المعالم التاريخية في $destination',
-          nameEn: 'Historical Sightseeing in $destination',
-          category: 'landmark',
+          name: place.nameAr,
+          nameEn: place.nameEn,
+          category: place.category,
           timeOfDay: 'morning',
           startTime: '09:30',
           durationMinutes: 120,
-          latitude: baseLat + 0.005 * day,
-          longitude: baseLng - 0.003 * day,
-          address: 'وسط مدينة $destination',
+          latitude: place.lat,
+          longitude: place.lng,
+          address: '$destination - ${place.nameAr}',
           costUsd: budgetTier == 'economy' ? 0.0 : 15.0,
-          aiTip: 'انصح بالذهاب مبكراً لتجنب الازدحام الشديد.',
-          bookingRequired: false,
-          imageSearchQuery: '$destination landmark historic city center',
-        ),
-        StopResponse(
+          aiTip: 'ينصح بالوصول مبكراً للاستمتاع بالجولة وتجنب أوقات الذروة.',
+          bookingRequired: place.category == 'museum',
+          imageSearchQuery: '${place.nameEn} $destination',
+        ));
+      }
+
+      // Afternoon / Evening Attraction (Unique per day)
+      if (landmarkIndex < landmarks.length) {
+        final place = landmarks[landmarkIndex++];
+        mockStops.add(StopResponse(
           orderIndex: 1,
-          name: 'المتحف الوطني الرئيسي',
-          nameEn: 'National Grand Museum',
-          category: 'museum',
+          name: place.nameAr,
+          nameEn: place.nameEn,
+          category: place.category,
           timeOfDay: 'afternoon',
-          startTime: '13:00',
-          durationMinutes: 150,
-          latitude: baseLat - 0.002 * day,
-          longitude: baseLng + 0.006 * day,
-          address: 'شارع الثقافة، $destination',
-          costUsd: budgetTier == 'economy' ? 5.0 : 25.0,
-          aiTip: 'يتوفر دليل صوتي باللغة العربية مجاناً عند إظهار الهوية.',
-          bookingRequired: true,
-          bookingUrl: 'https://example.com/booking',
-          imageSearchQuery: '$destination national museum interior exhibits',
-        ),
-        StopResponse(
-          orderIndex: 2,
-          name: 'الحديقة العامة والمطل البانورامي',
-          nameEn: 'Central Park and Scenic Overlook',
-          category: 'park',
-          timeOfDay: 'evening',
-          startTime: '17:30',
+          startTime: '14:30',
           durationMinutes: 90,
-          latitude: baseLat + 0.008 * day,
-          longitude: baseLng + 0.002 * day,
-          address: 'تل الإطلالة، $destination',
+          latitude: place.lat,
+          longitude: place.lng,
+          address: '$destination - ${place.nameAr}',
           costUsd: 0.0,
-          aiTip: 'أفضل مكان لمشاهدة غروب الشمس والتقاط الصور التذكارية.',
+          aiTip: 'مكان رائع لالتقاط الصور التذكارية والاسترخاء.',
           bookingRequired: false,
-          imageSearchQuery: '$destination park sunset panoramic view',
-        ),
-      ];
+          imageSearchQuery: '${place.nameEn} $destination',
+        ));
+      }
+
+      // Recommended restaurant for this day
+      final restaurant = restaurants.isNotEmpty
+          ? restaurants[(day - 1) % restaurants.length]
+          : null;
 
       mockDays.add(DayPlanResponse(
         dayNumber: day,
-        theme: 'يوم الاستكشاف والثقافة - اليوم $day',
+        theme: _dayTheme(day),
         dateOffset: day - 1,
-        summary:
-            'سنقوم اليوم بزيارة أشهر المعالم التاريخية والثقافية والمتاحف بوسط المدينة.',
+        summary: mockStops.isNotEmpty
+            ? 'جولة متميزة تشمل زيارة ${mockStops.map((s) => s.name).join(" و ")}.'
+            : 'يوم استكشاف وثقافة حرة بوسط مدينة $destination.',
         stops: mockStops,
-        recommendedRestaurant: RestaurantResponse(
-          name: 'مطعم مذاق $destination التقليدي',
-          cuisineType: 'مأكولات محلية',
-          halalCertified: true,
-          rating: 4.8,
-          pricePerPersonUsd: budgetTier == 'economy' ? 10.0 : 30.0,
-          address: 'شارع المطاعم القديم، $destination',
-          latitude: baseLat + 0.001 * day,
-          longitude: baseLng + 0.001 * day,
-          aiDescription:
-              'يقدم ألذ المأكولات الشعبية التقليدية بطابع أصيل وخدمة ممتازة.',
-          imageSearchQuery: '$destination traditional restaurant local food',
-        ),
+        recommendedRestaurant: restaurant != null
+            ? RestaurantResponse(
+                name: restaurant.nameAr,
+                nameEn: restaurant.nameEn,
+                cuisineType: restaurant.cuisineType,
+                halalCertified: true,
+                rating: 4.6 + (day % 4) * 0.1,
+                pricePerPersonUsd: budgetTier == 'economy' ? 12.0 : 30.0,
+                address: '$destination - ${restaurant.nameAr}',
+                latitude: restaurant.lat,
+                longitude: restaurant.lng,
+                aiDescription: 'مطعم شهير وموصى به يقدم أشهى الوجبات في $destination.',
+                imageSearchQuery: '${restaurant.cuisineType} restaurant $destination food',
+              )
+            : null,
       ));
     }
 
-    final mockAllRestaurants = [
-      RestaurantResponse(
-        name: 'مطعم الجمر والفرن',
-        cuisineType: 'مشويات شرقية',
-        halalCertified: true,
-        rating: 4.7,
-        pricePerPersonUsd: 25.0,
-        address: 'منطقة الميناء البحري',
-        latitude: baseLat + 0.012,
-        longitude: baseLng - 0.008,
-        aiDescription: 'متميز في تقديم اللحوم الطازجة على الفحم بخلطات سرية.',
-        imageSearchQuery: 'grilled meat restaurant eastern cuisine charcoal',
-      ),
-      RestaurantResponse(
-        name: 'كافيه البسفور والمطل',
-        cuisineType: 'مشروبات وحلويات',
-        halalCertified: true,
-        rating: 4.9,
-        pricePerPersonUsd: 12.0,
-        address: 'كورنيش المشاة السياحي',
-        latitude: baseLat - 0.008,
-        longitude: baseLng + 0.015,
-        aiDescription:
-            'إطلالة خيالية مباشرة على البحر وقهوة عربية مختصة مع الحلويات الشرقية.',
-        imageSearchQuery: 'cafe sea view arabic coffee oriental sweets',
-      ),
-    ];
+    final mockAllRestaurants = restaurants.map((r) => RestaurantResponse(
+      name: r.nameAr,
+      nameEn: r.nameEn,
+      cuisineType: r.cuisineType,
+      halalCertified: true,
+      rating: 4.8,
+      pricePerPersonUsd: 25.0,
+      address: destination,
+      latitude: r.lat,
+      longitude: r.lng,
+      aiDescription: 'تجربة طعام ممتازة بـ $destination.',
+      imageSearchQuery: '${r.cuisineType} food',
+    )).toList();
 
     return TripPlanResponse(
       destination: destination,
-      countryCode: 'TR',
+      countryCode: countryCode,
       aiSummary:
-          'رحلة مميزة إلى $destination لتجربة أروع المعالم التاريخية والثقافية والترفيهية.',
+          'خطة سياحية مخصصة ومفصلة لزيارة مدينة $destination واكتشاف أشهر معالمها الثقافية والترفيهية.',
       budgetTotalUsd: budgetTotal,
-      heroImageQuery: '$destination tourism sights sunset',
+      heroImageQuery: '$destination travel landmark view',
       days: mockDays,
       allRestaurants: mockAllRestaurants,
       budgetBreakdown: BudgetBreakdownResponse(
@@ -433,35 +651,74 @@ class AITravelService {
         shoppingUsd: budgetTotal * 0.05,
       ),
       travelTips: [
-        'تأكد من شراء بطاقة المواصلات العامة لتوفير المال والوقت.',
-        'احرص على شرب المياه المعبأة دائماً وتجنب مياه الصنبور.',
-        'يفضل الاحتفاظ ببعض المبالغ النقدية المحلية للمشتريات الصغيرة.',
-        'قم بتحميل تطبيق الخرائط دون اتصال بالإنترنت للوصول بسهولة.'
+        'احرص على استخدام وسائل النقل الرسمية وتأكيد حجز الفنادق المباشر.',
+        'يفضل الاحتفاظ بمبالغ نقدية بسيطة من العملة المحلية ($currency).',
+        'تأكد من تنزيل الخرائط دون اتصال بالإنترنت أثناء التنقل.'
       ],
-      bestTimeToVisit: 'من سبتمبر إلى نوفمبر (الخريف المعتدل)',
-      currency: 'USD',
+      bestTimeToVisit: 'الربيع والخريف (الطقس معتدل ومناسب للرحلات)',
+      currency: currency,
       timezone: 'UTC+3',
+      isMockData: true,
     );
   }
 
+  String _dayTheme(int day) {
+    const themes = [
+      'يوم المعالم التاريخية والتراثية',
+      'يوم الثقافة والمتاحف الكبرى',
+      'يوم الطبيعة والاسترخاء البانورامي',
+      'يوم التسوق والأسواق القديمة والحديثة',
+      'يوم الترفيه والجولات السياحية البحرية',
+      'يوم استكشاف المطاعم والنكهات المحلية',
+      'يوم المغامرة والجولات المفتوحة',
+    ];
+    return themes[(day - 1) % themes.length];
+  }
+
   String _generateMockChatReply(String destination, String userMessage) {
-    final msg = userMessage.toLowerCase();
-    if (msg.contains('مطعم') ||
-        msg.contains('أكل') ||
-        msg.contains('غداء') ||
-        msg.contains('عشاء')) {
-      return 'أنصحك بتجربة المطاعم الشعبية القريبة من وسط المدينة، حيث تقدم وجبات حلال تقليدية شهية وبأسعار مناسبة. كما يمكنك التحقق من تبويب "المطاعم" المخصص في رحلتك.';
+    return _contextAwareFallback(destination, userMessage);
+  }
+
+  String _contextAwareFallback(String destination, String userMessage) {
+    final msg = userMessage.trim();
+
+    // Food & Restaurants
+    if (RegExp(r'مطعم|أكل|طعام|غداء|عشاء|فطور|وجبة|حلال|مأكولات|طبق|مشويات|كافيه|حلويات').hasMatch(msg)) {
+      return 'بخصوص الطعام في $destination، أنصحك بالبحث عن المطاعم المحلية في المناطق السياحية الرئيسية للمدينة. تأكد من التحقق من تقييمات Google Maps والبحث عن علامة "حلال" إذا كان ذلك مهماً لك. تبويب المطاعم في رحلتك يحتوي على توصياتنا المخصصة.';
     }
-    if (msg.contains('سعر') ||
-        msg.contains('تكلفة') ||
-        msg.contains('تذاكر') ||
-        msg.contains('حجز')) {
-      return 'معظم الأماكن السياحية تتطلب حجوزات مسبقة لتفادي الطوابير الطويلة. يمكنك استخدام روابط الحجز المباشرة المتوفرة داخل تفاصيل كل محطة في جدولك.';
+
+    // Transit & Transport
+    if (RegExp(r'مواصلات|تاكسي|مترو|حافلة|أوبر|كريم|سيارة|وصول|كيف أصل|تأجير|طيران').hasMatch(msg)) {
+      return 'للتنقل في $destination، يُنصح باستخدام تطبيقات النقل الذكي مثل Uber أو Careem لراحة أكبر. يمكنك أيضاً استخدام زر "احجز رحلة" في كل محطة من محطات رحلتك للوصول المباشر.';
     }
-    if (msg.contains('طقس') || msg.contains('جو') || msg.contains('مطر')) {
-      return 'الطقس حالياً معتدل ومناسب جداً للزيارات الخارجية والجولات السياحية. يفضل دائماً ارتداء حذاء مريح وحمل مظلة خفيفة للاحتياط.';
+
+    // Weather & Clothing
+    if (RegExp(r'طقس|جو|درجة حرارة|مطر|ملابس|برد|حر|شمس|فصل').hasMatch(msg)) {
+      return 'للاطلاع على الطقس الحالي في $destination، يُنصح بمراجعة تطبيق الطقس المحلي أو شريط الطقس بـ التطبيق. احمل معك طبقات من الملابس للتكيف مع تغيرات الطقس اليومية.';
     }
-    return 'سؤال ممتاز! بخصوص $destination، أنصحك دائماً بمتابعة المسار المخطط له والتأكد من الانطلاق باكراً في الصباح لتحقيق أقصى استفادة من يومك سياحياً. هل تود معرفة أي تفاصيل إضافية؟';
+
+    // Budget, Prices, Currency
+    if (RegExp(r'سعر|تكلفة|ميزانية|غالي|رخيص|دولار|عملة|صرف|فلوس|مبلغ').hasMatch(msg)) {
+      return 'تبويب "الميزانية" في تطبيقك يحتوي على التكاليف التقريبية المفصّلة لرحلتك إلى $destination. للصرف، ابحث عن أقرب محطة صرافة أو استخدم بطاقة ائتمانية دولية في معظم الأماكن السياحية.';
+    }
+
+    // Booking & Tickets & Timings
+    if (RegExp(r'حجز|تذكرة|موعد|متوفر|مغلق|مفتوح|ساعات|دوام|تأشيرة|فيزا').hasMatch(msg)) {
+      return 'للحجز المسبق في $destination، زر الموقع الرسمي لكل معلم سياحي. معظم المتاحف والمعالم الكبرى تتيح الحجز أونلاين بأسعار مخفضة. تجد روابط الحجز داخل تفاصيل كل محطة في جدول رحلتك.';
+    }
+
+    // Shopping & Souvenirs
+    if (RegExp(r'تسوق|سوق|بازار|مشتريات|هدايا|تذكارات|مول|متاجر').hasMatch(msg)) {
+      return 'للتسوق في $destination، ابحث عن الأسواق الشعبية التقليدية للحصول على أفضل الأسعار وأصالة التجربة. المساومة مقبولة في الأسواق التقليدية لكن ليس في المتاجر الحديثة.';
+    }
+
+    // Safety & Etiquette & Emergency
+    if (RegExp(r'أمان|آمن|محظور|عادات|ثقافة|احترام|قانون|طوارئ|إرشادات').hasMatch(msg)) {
+      return 'عند زيارة $destination، احترم العادات والتقاليد المحلية. تأكد من مراجعة سفارة بلدك للاطلاع على أحدث التحذيرات السفرية. في حالة الطوارئ اتصل برقم الطوارئ المحلي.';
+    }
+
+    // Smart default
+    return 'بخصوص سؤالك عن $destination: أنصحك بالبحث عن هذا الموضوع تحديداً على موقع TripAdvisor أو Lonely Planet للحصول على معلومات دقيقة ومحدّثة. هل تريد معرفة تفاصيل أخرى عن رحلتك؟';
   }
 
   /// Generates a packing list using Claude AI. If it fails or is offline, falls back to a smart mock.
@@ -511,8 +768,13 @@ Example JSON output:
         'category': item['category'] as String? ?? 'other',
       }).toList();
     } catch (e) {
-      debugPrint('[AITravelService] Packing list generation error, using fallback: $e');
-      return _generateMockPackingList(destination, durationDays, travelStyles);
+      final classified = _classifyError(e);
+      debugPrint('[AITravelService] generatePackingListAI failed: $classified');
+
+      if (AppConfig.kUseMockFallback) {
+        return _generateMockPackingList(destination, durationDays, travelStyles);
+      }
+      throw classified;
     }
   }
 
@@ -574,4 +836,56 @@ Example JSON output:
 
     return items;
   }
+}
+
+// ─── Data Classes for City Knowledge Base ─────────────────────────────────────
+
+class _CityMockData {
+  final double lat;
+  final double lng;
+  final String countryCode;
+  final String currency;
+  final List<_MockPlace> landmarks;
+  final List<_MockRestaurant> restaurants;
+
+  const _CityMockData({
+    required this.lat,
+    required this.lng,
+    required this.countryCode,
+    required this.currency,
+    required this.landmarks,
+    required this.restaurants,
+  });
+}
+
+class _MockPlace {
+  final String nameAr;
+  final String nameEn;
+  final double lat;
+  final double lng;
+  final String category;
+
+  const _MockPlace(
+    this.nameAr,
+    this.nameEn,
+    this.lat,
+    this.lng,
+    this.category,
+  );
+}
+
+class _MockRestaurant {
+  final String nameAr;
+  final String nameEn;
+  final String cuisineType;
+  final double lat;
+  final double lng;
+
+  const _MockRestaurant(
+    this.nameAr,
+    this.nameEn,
+    this.cuisineType,
+    this.lat,
+    this.lng,
+  );
 }

@@ -8,17 +8,29 @@ import '../../../../../shared/widgets/glass_card.dart';
 import '../../../../../shared/widgets/cached_hero_image.dart';
 import '../../../../../shared/widgets/shimmer_loader.dart';
 import '../../../../../shared/widgets/app_badges.dart';
+import '../../../../../shared/widgets/dual_currency_text.dart';
+import '../../../weather/presentation/widgets/weather_banner.dart';
 import '../cubit/itinerary_cubit.dart';
 import '../../../trip_planner/domain/entities/stop_entity.dart';
 import '../../../favorites/presentation/cubit/favorites_cubit.dart';
 import '../../domain/entities/day_entity.dart';
 import '../../../../../core/constants/app_strings.dart';
 import '../../../../../shared/widgets/app_error_widget.dart';
+import '../../../../../core/services/map_launcher_service.dart';
 
 class ItineraryTab extends StatelessWidget {
   final String tripId;
+  final String? countryCode;
+  final double? tripLat;
+  final double? tripLon;
 
-  const ItineraryTab({super.key, required this.tripId});
+  const ItineraryTab({
+    super.key,
+    required this.tripId,
+    this.countryCode,
+    this.tripLat,
+    this.tripLon,
+  });
 
   @override
   Widget build(BuildContext context) {
@@ -39,9 +51,20 @@ class ItineraryTab extends StatelessWidget {
   }
 
   Widget _buildContent(BuildContext context, ItineraryLoaded state) {
+    // Use coords from first loaded stop, or fallback to provided tripLat/tripLon
+    final firstStop = state.selectedDayStops.isNotEmpty
+        ? state.selectedDayStops.first
+        : null;
+    final lat = firstStop?.latitude ?? tripLat;
+    final lon = firstStop?.longitude ?? tripLon;
+    final locale = Localizations.localeOf(context);
+    final lang = locale.languageCode == 'ar' ? 'ar' : 'en';
+
     return ListView(
       padding: const EdgeInsets.fromLTRB(16, 16, 16, 100),
       children: [
+        // Weather Banner
+        WeatherBanner(lat: lat, lon: lon, lang: lang),
         // Day selector
         _DaySelector(
           days: state.days,
@@ -93,6 +116,7 @@ class ItineraryTab extends StatelessWidget {
                   stop: e.value,
                   isLast: e.key == state.selectedDayStops.length - 1,
                   index: e.key,
+                  countryCode: countryCode,
                   onTap: () => context.push(
                       '/trip/${e.value.tripId}/stop/${e.value.id}',
                       extra: e.value),
@@ -184,7 +208,10 @@ class _DaySelector extends StatelessWidget {
             onTap: () => onSelect(i),
             child: AnimatedContainer(
               duration: const Duration(milliseconds: 250),
-              margin: EdgeInsetsDirectional.only(start: i == 0 ? 0 : 8),
+              margin: EdgeInsetsDirectional.only(
+                start: i == 0 ? 20 : 8,
+                end: i == days.length - 1 ? 20 : 0,
+              ),
               padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
               decoration: BoxDecoration(
                 color: isSelected ? AppColors.accentAmber : AppColors.adaptiveGlass(context),
@@ -234,6 +261,7 @@ class _StopTimelineItem extends StatelessWidget {
   final StopEntity stop;
   final bool isLast;
   final int index;
+  final String? countryCode;
   final VoidCallback onTap;
 
   const _StopTimelineItem({
@@ -241,6 +269,7 @@ class _StopTimelineItem extends StatelessWidget {
     required this.isLast,
     required this.index,
     required this.onTap,
+    this.countryCode,
   });
 
   @override
@@ -377,11 +406,10 @@ class _StopTimelineItem extends StatelessWidget {
                             children: [
                               _infoChip(context, Icons.schedule_rounded, AppStrings.of(context).formatDuration(stop.durationMinutes)),
                               const SizedBox(width: 8),
-                              _infoChip(
-                                context,
-                                Icons.attach_money_rounded,
-                                stop.costUsd == 0 ? AppStrings.of(context).free : '~\$${stop.costUsd.toStringAsFixed(0)}',
-                              ),
+                              if (stop.costUsd == 0)
+                                _infoChip(context, Icons.attach_money_rounded, AppStrings.of(context).free)
+                              else
+                                _costChip(context, stop.costUsd),
                               if (stop.bookingRequired) ...[
                                 const SizedBox(width: 8),
                                 _infoChip(context, Icons.event_available_rounded, AppStrings.of(context).infoChipBook),
@@ -418,6 +446,69 @@ class _StopTimelineItem extends StatelessWidget {
                               ),
                             ),
                           ],
+                          const SizedBox(height: 10),
+                          // Quick Actions Row: Google Maps & Uber
+                          Row(
+                            children: [
+                              Expanded(
+                                child: GestureDetector(
+                                  onTap: () => MapLauncherService.openInGoogleMaps(
+                                    placeName: stop.displayName(context),
+                                    lat: stop.latitude,
+                                    lon: stop.longitude,
+                                  ),
+                                  child: Container(
+                                    padding: const EdgeInsets.symmetric(vertical: 6, horizontal: 8),
+                                    decoration: BoxDecoration(
+                                      color: AppColors.accentAmber.withValues(alpha: 0.12),
+                                      borderRadius: BorderRadius.circular(8),
+                                      border: Border.all(color: AppColors.accentAmber.withValues(alpha: 0.3)),
+                                    ),
+                                    child: Row(
+                                      mainAxisAlignment: MainAxisAlignment.center,
+                                      children: [
+                                        const Icon(Icons.near_me_rounded, size: 14, color: AppColors.accentAmber),
+                                        const SizedBox(width: 4),
+                                        Text(
+                                          AppStrings.of(context).openInMaps,
+                                          style: AppTextStyles.labelSmall.copyWith(color: AppColors.accentAmber, fontSize: 11),
+                                        ),
+                                      ],
+                                    ),
+                                  ),
+                                ),
+                              ),
+                              const SizedBox(width: 8),
+                              Expanded(
+                                child: GestureDetector(
+                                  onTap: () => MapLauncherService.openUberRide(
+                                    placeName: stop.displayName(context),
+                                    lat: stop.latitude,
+                                    lon: stop.longitude,
+                                  ),
+                                  child: Container(
+                                    padding: const EdgeInsets.symmetric(vertical: 6, horizontal: 8),
+                                    decoration: BoxDecoration(
+                                      color: AppColors.adaptiveGlass(context),
+                                      borderRadius: BorderRadius.circular(8),
+                                      border: Border.all(color: AppColors.adaptiveBorder(context)),
+                                    ),
+                                    child: Row(
+                                      mainAxisAlignment: MainAxisAlignment.center,
+                                      children: [
+                                        const Icon(Icons.local_taxi_rounded, size: 14, color: AppColors.accentTurquoise),
+                                        const SizedBox(width: 4),
+                                        Text(
+                                          AppStrings.of(context).orderUber,
+                                          style: AppTextStyles.labelSmall.copyWith(color: AppColors.adaptiveTextPrimary(context), fontSize: 11),
+                                        ),
+                                      ],
+                                    ),
+                                  ),
+                                ),
+                              ),
+                            ],
+                          ),
                         ],
                       ),
                     ),
@@ -445,6 +536,23 @@ class _StopTimelineItem extends StatelessWidget {
         Icon(icon, size: 12, color: AppColors.adaptiveTextSecondary(context)),
         const SizedBox(width: 3),
         Text(label, style: AppTextStyles.labelSmall),
+      ],
+    );
+  }
+
+  Widget _costChip(BuildContext context, double costUsd) {
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Icon(Icons.attach_money_rounded, size: 12,
+            color: AppColors.adaptiveTextSecondary(context)),
+        const SizedBox(width: 3),
+        DualCurrencyText(
+          amountUsd: costUsd,
+          countryCode: countryCode,
+          compact: true,
+          primaryStyle: AppTextStyles.labelSmall,
+        ),
       ],
     );
   }

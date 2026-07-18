@@ -4,6 +4,12 @@ const axios = require('axios');
 const rateLimit = require('express-rate-limit');
 require('dotenv').config();
 
+// ─── In-Memory Caches ────────────────────────────────────────────────────────
+// Google Places verification cache: key = "name_en|city", value = { lat, lng, address, placeId, rating }
+// TTL: 24 hours — reduces Places API costs significantly
+const placesCache = new Map();
+const PLACES_CACHE_TTL_MS = 24 * 60 * 60 * 1000; // 24 hours
+
 const app = express();
 const PORT = process.env.PORT || 3000;
 
@@ -19,7 +25,60 @@ const limiter = rateLimit({
   message: { error: 'Too many requests from this IP, please try again later.' },
 });
 
+// Rate limiter for heavy trip generation endpoint (Max 10 requests per minute)
+const tripLimiter = rateLimit({
+  windowMs: 60 * 1000,
+  max: 10,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { error: 'Too many trip generation requests, please try again in a minute.' },
+});
+
+// Dedicated rate limiter for interactive AI Chat (Max 30 requests per minute)
+const chatLimiter = rateLimit({
+  windowMs: 60 * 1000,
+  max: 30,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { error: 'Too many chat messages, please wait a few seconds.' },
+});
+
+// ─── Firebase ID Token Verification Middleware ──────────────────────────────
+// Validates Firebase Auth Bearer Token sent by Flutter app via _FirebaseTokenInterceptor
+async function authenticateFirebaseToken(req, res, next) {
+  const authHeader = req.headers.authorization;
+  if (!authHeader || !authHeader.startsWith('Bearer ')) {
+    return res.status(401).json({ error: 'Unauthorized: Missing or invalid Authorization header' });
+  }
+
+  const token = authHeader.split('Bearer ')[1].trim();
+  if (!token || token.length < 10) {
+    return res.status(401).json({ error: 'Unauthorized: Invalid token format' });
+  }
+
+  // If Firebase Admin SDK is configured with service account, verify token cryptographically
+  if (process.env.FIREBASE_SERVICE_ACCOUNT) {
+    try {
+      if (!admin.apps.length) {
+        const serviceAccount = JSON.parse(process.env.FIREBASE_SERVICE_ACCOUNT);
+        admin.initializeApp({ credential: admin.credential.cert(serviceAccount) });
+      }
+      const decodedToken = await admin.auth().verifyIdToken(token);
+      req.user = decodedToken;
+      return next();
+    } catch (err) {
+      console.error('[AUTH ERROR] Firebase ID token verification failed:', err.message);
+      return res.status(403).json({ error: 'Unauthorized: Invalid or expired Firebase ID token' });
+    }
+  }
+
+  // Basic token presence verification when service account JSON is not yet provided in .env
+  next();
+}
+
 app.use('/api/', limiter);
+app.use('/api/generate-trip', tripLimiter, authenticateFirebaseToken);
+app.use('/api/chat', chatLimiter, authenticateFirebaseToken);
 
 // Health Check Endpoints for cloud hosting services (Render / Railway)
 app.get('/', (req, res) => {
@@ -52,6 +111,7 @@ async function callClaude(systemPrompt, messages, maxTokens = 4000) {
           'anthropic-version': '2023-06-01',
           'content-type': 'application/json',
         },
+        timeout: 90000,
       }
     );
 
@@ -74,6 +134,245 @@ async function callClaude(systemPrompt, messages, maxTokens = 4000) {
   }
 }
 
+// Helper function to call Google Gemini API (Fallback when Claude key is missing)
+async function callGemini(systemPrompt, messages, maxTokens = 4000, apiKey) {
+  const contents = messages.map(m => ({
+    role: m.role === 'assistant' || m.role === 'model' ? 'model' : 'user',
+    parts: [{ text: m.content }]
+  }));
+
+  const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${apiKey}`;
+
+  const requestBody = {
+    contents: contents,
+    generationConfig: {
+      temperature: 0.7,
+      maxOutputTokens: maxTokens,
+    }
+  };
+
+  if (systemPrompt) {
+    requestBody.system_instruction = {
+      parts: [{ text: systemPrompt }]
+    };
+  }
+
+  try {
+    const response = await axios.post(url, requestBody, {
+      headers: { 'Content-Type': 'application/json' },
+      timeout: 90000
+    });
+
+    if (response.data && response.data.candidates && response.data.candidates[0]) {
+      const candidate = response.data.candidates[0];
+      if (candidate.content && candidate.content.parts && candidate.content.parts[0]) {
+        return candidate.content.parts[0].text;
+      }
+    }
+    throw new Error('Invalid response from Gemini API');
+  } catch (error) {
+    if (error.response) {
+      const status = error.response.status;
+      console.error('[GEMINI ERROR]', status, error.response.data);
+      if (status === 401 || status === 403) throw new Error('invalid-api-key');
+      if (status === 429) throw new Error('rate-limit');
+      throw new Error(`api-error-${status}`);
+    }
+    throw error;
+  }
+}
+
+// Unified AI Engine Call: Tries Claude first, automatically falls back to Gemini!
+async function callAI(systemPrompt, messages, maxTokens = 4000) {
+  const claudeKey = process.env.ANTHROPIC_API_KEY;
+  if (claudeKey && claudeKey !== 'your_anthropic_api_key_here') {
+    try {
+      return await callClaude(systemPrompt, messages, maxTokens);
+    } catch (e) {
+      console.warn('[AI Engine] Claude call failed, falling back to Gemini:', e.message);
+    }
+  }
+
+  const googleKey = process.env.GEMINI_API_KEY || process.env.GOOGLE_PLACES_API_KEY;
+  if (googleKey && googleKey !== 'your_google_places_api_key_here' && googleKey !== 'your_anthropic_api_key_here') {
+    console.log('[AI Engine] Utilizing Google Gemini API for request...');
+    return await callGemini(systemPrompt, messages, maxTokens, googleKey);
+  }
+
+  throw new Error('missing-api-key');
+}
+
+// ─── Google Places API: verify a place and return real coordinates ────────────
+//
+// Strategy:
+//   1. Check in-memory cache (24hr TTL) to avoid redundant API calls.
+//   2. Call Places Text Search API with "name_en + city".
+//   3. If found, call Place Details to get rating, place_id, and formatted address.
+//   4. Return verified data; caller merges it into the Claude response.
+//   5. If no GOOGLE_PLACES_API_KEY is set, skip gracefully (log a warning).
+async function verifyPlaceWithGoogle(nameEn, cityEn) {
+  const placesKey = process.env.GOOGLE_PLACES_API_KEY;
+  if (!placesKey || placesKey === 'your_google_places_api_key_here') {
+    return null; // Places API not configured — skip gracefully
+  }
+
+  const cacheKey = `${nameEn.toLowerCase().trim()}|${cityEn.toLowerCase().trim()}`;
+  const now = Date.now();
+
+  // Return cached result if still fresh
+  if (placesCache.has(cacheKey)) {
+    const cached = placesCache.get(cacheKey);
+    if (now - cached.timestamp < PLACES_CACHE_TTL_MS) {
+      return cached.data; // may be null if previously not found
+    }
+    placesCache.delete(cacheKey);
+  }
+
+  try {
+    // Step 1: Text Search
+    const searchRes = await axios.get(
+      'https://maps.googleapis.com/maps/api/place/textsearch/json',
+      {
+        params: {
+          query: `${nameEn} ${cityEn}`,
+          key: placesKey,
+          language: 'en',
+        },
+        timeout: 6000,
+      }
+    );
+
+    const results = searchRes.data.results;
+    if (!results || results.length === 0) {
+      placesCache.set(cacheKey, { data: null, timestamp: now });
+      console.warn(`[PLACES] Not found: "${nameEn}" in ${cityEn}`);
+      return null;
+    }
+
+    const top = results[0];
+    const placeId = top.place_id;
+    const lat = top.geometry.location.lat;
+    const lng = top.geometry.location.lng;
+    const formattedAddress = top.formatted_address || top.vicinity || '';
+    const textSearchRating = top.rating || null;
+
+    // Step 2: Place Details for richer data
+    let rating = textSearchRating;
+    let phoneNumber = null;
+    let website = null;
+    try {
+      const detailsRes = await axios.get(
+        'https://maps.googleapis.com/maps/api/place/details/json',
+        {
+          params: {
+            place_id: placeId,
+            fields: 'rating,user_ratings_total,formatted_phone_number,website',
+            key: placesKey,
+            language: 'en',
+          },
+          timeout: 5000,
+        }
+      );
+      const d = detailsRes.data.result;
+      if (d) {
+        rating = d.rating || textSearchRating;
+        phoneNumber = d.formatted_phone_number || null;
+        website = d.website || null;
+      }
+    } catch (detailsErr) {
+      console.warn(`[PLACES] Details failed for place_id ${placeId}:`, detailsErr.message);
+    }
+
+    const verified = { lat, lng, address: formattedAddress, placeId, rating, phoneNumber, website };
+    placesCache.set(cacheKey, { data: verified, timestamp: now });
+    console.log(`[PLACES] Verified: "${nameEn}" → lat=${lat}, lng=${lng}, placeId=${placeId}`);
+    return verified;
+
+  } catch (err) {
+    console.error(`[PLACES] Text Search error for "${nameEn}":`, err.message);
+    placesCache.set(cacheKey, { data: null, timestamp: now });
+    return null;
+  }
+}
+
+// ─── Verify ALL stops & restaurants in a parsed Claude trip response ──────────
+//
+// Runs Google Places verification in parallel (with concurrency cap of 5)
+// to avoid hammering the API quota.
+async function verifyAllPlacesInTrip(tripData, destinationEn) {
+  const placesKey = process.env.GOOGLE_PLACES_API_KEY;
+  if (!placesKey || placesKey === 'your_google_places_api_key_here') {
+    console.warn('[PLACES] GOOGLE_PLACES_API_KEY not set — skipping place verification.');
+    return tripData; // Return as-is
+  }
+
+  // Collect all items to verify: { ref to stop/restaurant, nameEn }
+  const tasks = [];
+
+  if (Array.isArray(tripData.days)) {
+    for (const day of tripData.days) {
+      if (Array.isArray(day.stops)) {
+        for (const stop of day.stops) {
+          if (stop.name_en) {
+            tasks.push({ item: stop, nameEn: stop.name_en });
+          }
+        }
+      }
+      if (day.recommended_restaurant && day.recommended_restaurant.name_en) {
+        tasks.push({ item: day.recommended_restaurant, nameEn: day.recommended_restaurant.name_en });
+      }
+    }
+  }
+  if (Array.isArray(tripData.all_restaurants)) {
+    for (const r of tripData.all_restaurants) {
+      if (r.name_en) {
+        tasks.push({ item: r, nameEn: r.name_en });
+      }
+    }
+  }
+
+  // Process in batches of 5 concurrent requests
+  const CONCURRENCY = 5;
+  for (let i = 0; i < tasks.length; i += CONCURRENCY) {
+    const batch = tasks.slice(i, i + CONCURRENCY);
+    await Promise.all(
+      batch.map(async ({ item, nameEn }) => {
+        const verified = await verifyPlaceWithGoogle(nameEn, destinationEn);
+        if (verified) {
+          // Overwrite Claude's hallucinated coordinates with real Google data
+          item.latitude  = verified.lat;
+          item.longitude = verified.lng;
+          if (verified.address) {
+            item.google_address = verified.address; // keep original Arabic address too
+          }
+          if (verified.placeId) {
+            item.place_id = verified.placeId;
+          }
+          if (verified.rating !== null && verified.rating !== undefined) {
+            item.rating = verified.rating; // overwrite Claude's guessed rating
+          }
+          if (verified.website) {
+            item.booking_url = item.booking_url || verified.website;
+          }
+          item.coords_verified = true;
+        } else {
+          // Place not found in Google — flag it but keep Claude's data
+          item.coords_verified = false;
+          console.warn(`[PLACES] Using unverified coords for: ${nameEn}`);
+        }
+      })
+    );
+  }
+
+  const verifiedCount = tasks.filter((_, idx) => {
+    // Re-check by looping tasks after all resolved
+    return true; // just for counting
+  }).length;
+  console.log(`[PLACES] Verification done: ${tasks.length} places processed for "${destinationEn}"`);
+
+  return tripData;
+}
+
 // ─── POST /api/generate-trip ────────────────────────────────────────────────
 app.post('/api/generate-trip', async (req, res) => {
   const { destination, durationDays, budgetTier, travelStyles, travelersCount, startDate } = req.body;
@@ -83,7 +382,35 @@ app.post('/api/generate-trip', async (req, res) => {
   }
 
   const systemPrompt = `You are a professional travel planner expert in creating highly detailed, realistic, and personalized trip itineraries.
-Your output MUST be a single, valid, and minified JSON object matching the schema below. 
+
+ABSOLUTE RULES — NEVER VIOLATE THESE:
+
+RULE 1 — NO REPETITION:
+Every attraction, restaurant, park, market, or any place mentioned across ALL days MUST be UNIQUE. If a place appears on Day 1, it CANNOT appear on Day 2, 3, or any other day.
+This applies to: stops, recommended_restaurant, and all_restaurants.
+COUNT your places before submitting — if any name appears twice, REWRITE that day.
+
+RULE 2 — REAL PLACE NAMES ONLY:
+ALL names must be REAL, specific places that actually exist in ${destination}.
+FORBIDDEN generic names: "National Museum", "Central Park", "Main Landmark", "Grand Bazaar" (unless that is the ACTUAL name of a place in that city).
+REQUIRED: Use official local names with correct Arabic transliterations.
+
+RULE 3 — DAY VARIETY:
+Each day MUST have a distinct theme and explore a DIFFERENT part of the city:
+- Day 1: Historic/Cultural district
+- Day 2: Nature/Parks/Waterfront  
+- Day 3: Shopping/Markets/Local neighborhoods
+- Day 4: Modern attractions/Viewpoints
+- Day 5+: Repeat themes with completely different places
+
+RULE 4 — RESTAURANT VARIETY:
+Each day's recommended_restaurant must be a DIFFERENT restaurant.
+all_restaurants list must contain UNIQUE restaurants (not repeating recommended_restaurant).
+
+RULE 5 — ACCURATE COORDINATES:
+Every latitude/longitude must be the actual GPS coordinates of that specific real place. Google Maps-verifiable coordinates only.
+
+Your output MUST be a single, valid, and minified JSON object matching the schema below.
 You must NOT include any conversational filler, markdown formatting (do NOT wrap in \`\`\`json ... \`\`\`), or extra text explanation before or after the JSON.
 The text values inside the JSON (such as themes, summaries, addresses, descriptions, tips, and names) MUST be in ARABIC (except for English name fields or URLs).
 
@@ -91,7 +418,7 @@ Required JSON Schema:
 {
   "destination": "Name of the destination in Arabic",
   "destination_en": "Name of the destination in English (e.g. 'Istanbul', 'Cairo', 'Paris')",
-  "country_code": "2-letter ISO country code (e.g., 'TR', 'EG', 'FR')",
+  "country_code": "2-letter ISO country code (e.g., 'TR', 'EG', 'FR', 'AE', 'SA')",
   "ai_summary": "Overall engaging summary of the trip in Arabic",
   "budget_total_usd": 123.45 (double, total cost estimate),
   "hero_image_query": "English keywords for a search query of a representative high-quality image of the destination (e.g. 'istanbul sunset bosporus')",
@@ -117,7 +444,7 @@ Required JSON Schema:
           "ai_tip": "Arabic helper tip for visitors",
           "booking_required": false (boolean),
           "booking_url": "https://example.com/tickets or null",
-          "image_search_query": "3-5 English keywords for a beautiful photo of this specific place (e.g., 'Hagia Sophia Istanbul interior', 'Eiffel Tower Paris night', 'Tokyo shibuya crossing')"
+          "image_search_query": "3-5 specific English keywords for a beautiful photo of this exact place"
         }
       ],
       "recommended_restaurant": {
@@ -131,7 +458,7 @@ Required JSON Schema:
         "latitude": 41.0082 (double),
         "longitude": 28.9784 (double),
         "ai_description": "Arabic paragraph describing why this restaurant is recommended",
-        "image_search_query": "3-5 English keywords for a beautiful photo of this restaurant or its cuisine type (e.g., 'Turkish kebab restaurant Istanbul', 'sushi restaurant Tokyo interior')"
+        "image_search_query": "3-5 English keywords for food/restaurant photo"
       }
     }
   ],
@@ -147,7 +474,7 @@ Required JSON Schema:
       "latitude": 41.008,
       "longitude": 28.978,
       "ai_description": "Arabic description",
-      "image_search_query": "3-5 English keywords for a beautiful food photo (e.g., 'fresh sushi plate Japan', 'Turkish baklava dessert')"
+      "image_search_query": "3-5 English keywords for this restaurant cuisine photo"
     }
   ],
   "budget_breakdown": {
@@ -164,9 +491,7 @@ Required JSON Schema:
   "best_time_to_visit": "Arabic description of best travel season",
   "currency": "3-letter currency code (e.g., 'TRY', 'EUR')",
   "timezone": "Timezone offset string (e.g. 'UTC+3', 'GMT+2')"
-}
-
-Ensure the latitude and longitude of all attractions and restaurants are real and correct coordinates for the destination city to display correctly on maps.`;
+}`;
 
   const userPrompt = `Generate a customized travel itinerary for:
 - Destination: ${destination}
@@ -181,7 +506,9 @@ ${startDate ? `- Start Date: ${startDate}` : ''}`;
   ];
 
   try {
-    const rawReply = await callClaude(systemPrompt, messages, 4000);
+    const estimatedTokens = Math.max(4000, durationDays * 1200); // ~1200 tokens per day
+    const MAX_TOKENS = Math.min(estimatedTokens, 8000); // Cap at 8000
+    const rawReply = await callAI(systemPrompt, messages, MAX_TOKENS);
     
     // Clean up response if Claude accidentally wrapped it in markdown code blocks
     let cleanJson = rawReply.trim();
@@ -192,8 +519,29 @@ ${startDate ? `- Start Date: ${startDate}` : ''}`;
         cleanJson = cleanJson.substring(firstLineBreak + 1, lastBackticks).trim();
       }
     }
-    
-    const parsedData = JSON.parse(cleanJson);
+
+    // Validate JSON before parsing
+    if (!cleanJson.startsWith('{')) {
+      console.error('[TRIP] Response does not start with { — possible truncation');
+      console.error('[TRIP] Response length:', cleanJson.length, 'chars');
+      console.error('[TRIP] Response preview:', cleanJson.substring(0, 200));
+      return res.status(500).json({
+        error: 'AI response was incomplete or malformed. Try reducing trip duration.'
+      });
+    }
+
+    let parsedData = JSON.parse(cleanJson);
+
+    // ── Deduplicate Trip Plan ────────────────────────────────────────────────
+    parsedData = deduplicateTripPlan(parsedData);
+
+    // ── Google Places Verification ────────────────────────────────────────────
+    // Extract the English city name from Claude's response for Places Search queries.
+    // This is used as the search context for all stops/restaurants.
+    const destinationEn = parsedData.destination_en || destination;
+    parsedData = await verifyAllPlacesInTrip(parsedData, destinationEn);
+    // ─────────────────────────────────────────────────────────────────────────
+
     return res.status(200).json(parsedData);
   } catch (error) {
     console.error('[API ERROR] generate-trip failed:', error.message);
@@ -209,6 +557,61 @@ ${startDate ? `- Start Date: ${startDate}` : ''}`;
     return res.status(500).json({ error: 'Failed to generate trip plan: ' + error.message });
   }
 });
+
+// Helper to remove duplicate stops and restaurants across days
+function deduplicateTripPlan(plan) {
+  if (!plan) return plan;
+  const seenPlaces = new Set();
+  const seenRestaurants = new Set();
+
+  if (plan.days && Array.isArray(plan.days)) {
+    for (const day of plan.days) {
+      if (day.stops && Array.isArray(day.stops)) {
+        day.stops = day.stops.filter(stop => {
+          const key = stop.name_en?.toLowerCase().trim() || stop.name?.toLowerCase().trim();
+          if (!key) return true;
+          if (seenPlaces.has(key)) {
+            console.warn(`[DEDUP] Removed duplicate stop: ${stop.name_en || stop.name}`);
+            return false;
+          }
+          seenPlaces.add(key);
+          return true;
+        });
+
+        day.stops.forEach((stop, i) => {
+          stop.order_index = i;
+        });
+      }
+
+      if (day.recommended_restaurant) {
+        const rKey = day.recommended_restaurant.name_en?.toLowerCase().trim() ||
+                     day.recommended_restaurant.name?.toLowerCase().trim();
+        if (rKey) {
+          if (seenRestaurants.has(rKey)) {
+            console.warn(`[DEDUP] Repeated restaurant: ${day.recommended_restaurant.name_en || day.recommended_restaurant.name}`);
+          }
+          seenRestaurants.add(rKey);
+        }
+      }
+    }
+  }
+
+  const seenAllRest = new Set();
+  if (plan.all_restaurants && Array.isArray(plan.all_restaurants)) {
+    plan.all_restaurants = plan.all_restaurants.filter(r => {
+      const key = r.name_en?.toLowerCase().trim() || r.name?.toLowerCase().trim();
+      if (!key) return true;
+      if (seenAllRest.has(key)) return false;
+      seenAllRest.add(key);
+      return true;
+    });
+  }
+
+  const totalStops = (plan.days || []).reduce((sum, d) => sum + (d.stops?.length || 0), 0);
+  console.log(`[DEDUP] Final: ${totalStops} unique stops, ${(plan.all_restaurants || []).length} restaurants`);
+
+  return plan;
+}
 
 // Helper to translate Arabic city names to English for better stock photo search results
 function sanitizePhotoQuery(rawQuery) {
@@ -337,14 +740,32 @@ app.post('/api/chat', async (req, res) => {
     return res.status(400).json({ error: 'Missing required parameters' });
   }
 
-  const systemPrompt = `You are a helpful, expert AI travel assistant built into the "Rahhal" application.
-You are helping a traveler visiting: ${destination}.
-Here is the summary of their current trip:
-${tripSummary || 'No summary details provided.'}
+  const systemPrompt = `You are "رحّال AI", an expert Arabic-speaking AI travel assistant built into the Rahhal travel planning app.
 
-Answer the user's travel questions in a friendly, engaging, and professional manner in ARABIC. 
-Keep your responses relatively concise, focused, and tailored to their trip context. 
-If they ask for suggestions, make sure your coordinates or location suggestions align with their travel zone.`;
+The traveler is visiting: ${destination}.
+Their trip summary: ${tripSummary || 'Trip details not provided.'}
+
+YOUR CAPABILITIES — you can answer questions about:
+- Specific attractions, museums, parks, markets, restaurants in ${destination}
+- Opening hours, ticket prices, booking requirements
+- Transportation options (metro, bus, taxi, Uber/Careem)
+- Weather, best times to visit, local customs
+- Local food recommendations with specific dish names
+- Safety tips and cultural etiquette  
+- Currency exchange, tipping customs
+- Day trip suggestions near ${destination}
+- Hotel neighborhoods and accommodation advice
+- Shopping recommendations
+- ANY other travel-related question about ${destination}
+
+RULES:
+1. Always respond in ARABIC
+2. Keep responses focused and practical (2-5 sentences max unless a list is needed)
+3. Mention REAL place names that exist in ${destination}
+4. If you don't know something specific, acknowledge it and provide the best advice you can
+5. Be friendly, warm, and encouraging — like a knowledgeable local friend
+
+The traveler can ask you ANYTHING about their trip — answer helpfully and specifically.`;
 
   // Map client history format to Anthropic format
   const mappedMessages = [];
@@ -366,7 +787,7 @@ If they ask for suggestions, make sure your coordinates or location suggestions 
   });
 
   try {
-    const reply = await callClaude(systemPrompt, mappedMessages, 1500);
+    const reply = await callAI(systemPrompt, mappedMessages, 1500);
     return res.status(200).json({ reply });
   } catch (error) {
     console.error('[API ERROR] chat failed:', error.message);
@@ -380,6 +801,145 @@ If they ask for suggestions, make sure your coordinates or location suggestions 
       return res.status(429).json({ error: 'API rate limit exceeded. Please try again in a few moments.' });
     }
     return res.status(500).json({ error: 'Failed to get chat reply: ' + error.message });
+  }
+});
+
+// ─── Currency Converter ───────────────────────────────────────────────────────
+// Uses Frankfurter.app — completely free, no API key required
+const currencyCache = new Map(); // in-memory cache
+
+app.get('/api/currency', async (req, res) => {
+  const { base = 'USD', target } = req.query;
+  if (!target) return res.status(400).json({ error: 'target currency code is required' });
+
+  const cacheKey = `${base}-${target}`;
+  const now = Date.now();
+
+  // Cache for 6 hours
+  if (currencyCache.has(cacheKey)) {
+    const cached = currencyCache.get(cacheKey);
+    if (now - cached.timestamp < 6 * 60 * 60 * 1000) {
+      return res.status(200).json({ base, target, rate: cached.rate, cached: true });
+    }
+  }
+
+  try {
+    const response = await axios.get(
+      `https://api.frankfurter.app/latest?base=${base}&symbols=${target}`,
+      { timeout: 5000 }
+    );
+    const rate = response.data.rates[target];
+    if (!rate) return res.status(404).json({ error: `No rate found for ${target}` });
+
+    currencyCache.set(cacheKey, { rate, timestamp: now });
+    return res.status(200).json({ base, target, rate });
+  } catch (error) {
+    console.error('[CURRENCY ERROR]', error.message);
+    return res.status(500).json({ error: 'Failed to fetch exchange rate' });
+  }
+});
+
+// ─── GET /api/weather ───────────────────────────────────────────────────────
+app.get('/api/weather', async (req, res) => {
+  const { city, countryCode } = req.query;
+  if (!city) return res.status(400).json({ error: 'city param required' });
+
+  const owmKey = process.env.OPENWEATHER_API_KEY;
+
+  const mockWeather = {
+    temp: 24,
+    feelsLike: 22,
+    description: 'مشمس (بيانات محاكاة)',
+    icon: '01d',
+    humidity: 45,
+    windSpeed: 3.2,
+    cityName: city,
+    isMock: true,
+  };
+
+  if (!owmKey || owmKey === 'your_openweather_key_here') {
+    return res.status(200).json(mockWeather);
+  }
+
+  try {
+    const cleanCity = sanitizePhotoQuery(city);
+    const query = countryCode ? `${cleanCity},${countryCode}` : cleanCity;
+    const response = await axios.get(
+      'https://api.openweathermap.org/data/2.5/weather',
+      {
+        params: {
+          q: query,
+          appid: owmKey,
+          units: 'metric',
+          lang: 'ar',
+        },
+        timeout: 6000,
+      }
+    );
+    const d = response.data;
+    return res.status(200).json({
+      temp: Math.round(d.main.temp),
+      feelsLike: Math.round(d.main.feels_like),
+      description: d.weather[0].description,
+      icon: d.weather[0].icon,
+      humidity: d.main.humidity,
+      windSpeed: d.wind.speed,
+      cityName: d.name,
+      isMock: false,
+    });
+  } catch (err) {
+    console.error('[WEATHER ERROR]', err.message, '- returning fallback weather');
+    return res.status(200).json(mockWeather);
+  }
+});
+
+// ─── GET /api/nearby-places ──────────────────────────────────────────────────
+app.get('/api/nearby-places', async (req, res) => {
+  const { lat, lng, radius = 2000 } = req.query;
+
+  if (!lat || !lng) {
+    return res.status(400).json({ error: 'lat and lng are required' });
+  }
+
+  const overpassQuery = `
+    [out:json][timeout:15];
+    (
+      node["tourism"="attraction"](around:${radius},${lat},${lng});
+      node["tourism"="museum"](around:${radius},${lat},${lng});
+      node["amenity"="restaurant"]["cuisine"](around:${radius},${lat},${lng});
+      node["leisure"="park"](around:${radius},${lat},${lng});
+      node["tourism"="viewpoint"](around:${radius},${lat},${lng});
+    );
+    out body 20;
+  `;
+
+  try {
+    const response = await axios.post(
+      'https://overpass-api.de/api/interpreter',
+      overpassQuery,
+      {
+        headers: { 'Content-Type': 'text/plain' },
+        timeout: 20000,
+      }
+    );
+
+    const elements = response.data?.elements || [];
+    const places = elements
+      .filter(el => el.tags && (el.tags.name || el.tags['name:ar'] || el.tags['name:en']))
+      .map(el => ({
+        id: el.id,
+        name: el.tags['name:ar'] || el.tags.name || el.tags['name:en'] || 'مكان',
+        name_en: el.tags['name:en'] || el.tags.name || '',
+        lat: el.lat,
+        lng: el.lon,
+        type: el.tags.tourism || el.tags.amenity || el.tags.leisure || 'other',
+      }))
+      .slice(0, 15); // max 15 places
+
+    return res.status(200).json({ places });
+  } catch (error) {
+    console.error('[NEARBY] Overpass API error:', error.message);
+    return res.status(500).json({ error: 'Failed to fetch nearby places', places: [] });
   }
 });
 

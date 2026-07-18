@@ -7,6 +7,8 @@ import '../../../../core/constants/app_strings.dart';
 import '../../../../core/constants/app_text_styles.dart';
 import '../../../../shared/widgets/glass_card.dart';
 import '../../../../shared/widgets/gradient_button.dart';
+import '../../../../core/di/injection.dart';
+import '../../../../core/services/location_service.dart';
 
 class TripInputScreen extends StatefulWidget {
   const TripInputScreen({super.key});
@@ -17,12 +19,48 @@ class TripInputScreen extends StatefulWidget {
 
 class _TripInputScreenState extends State<TripInputScreen> {
   late final TextEditingController _destinationCtrl;
+  bool _isDetectingLocation = false;
   int _days = 7;
   String _budget = 'mid';
   final Set<String> _styles = {'culture', 'food'};
   int _adults = 2;
   int _children = 0;
   DateTime? _startDate;
+
+  Future<void> _detectCurrentLocation() async {
+    final strings = AppStrings.of(context);
+    setState(() => _isDetectingLocation = true);
+
+    try {
+      final locationData = await sl<LocationService>().getCurrentLocation();
+      if (locationData != null && mounted) {
+        setState(() {
+          _destinationCtrl.text = locationData.fullLocationDisplay;
+          _isDetectingLocation = false;
+        });
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('📍 تم تحديد موقعك: ${locationData.fullLocationDisplay}'),
+            backgroundColor: AppColors.accentAmber,
+            behavior: SnackBarBehavior.floating,
+          ),
+        );
+      } else if (mounted) {
+        setState(() => _isDetectingLocation = false);
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(strings.locationPermissionDenied),
+            backgroundColor: AppColors.error,
+            behavior: SnackBarBehavior.floating,
+          ),
+        );
+      }
+    } catch (e) {
+      if (mounted) {
+        setState(() => _isDetectingLocation = false);
+      }
+    }
+  }
 
   List<(String, String, String, String)> _budgets(BuildContext context) {
     final strings = AppStrings.of(context);
@@ -54,10 +92,10 @@ class _TripInputScreenState extends State<TripInputScreen> {
 
   Future<void> _initDestination() async {
     final prefs = await SharedPreferences.getInstance();
-    final lang = prefs.getString('language_code') ?? 'ar';
-    if (mounted) {
+    final lastDest = prefs.getString('last_destination');
+    if (mounted && lastDest != null && lastDest.isNotEmpty && _destinationCtrl.text.isEmpty) {
       setState(() {
-        _destinationCtrl.text = lang == 'en' ? 'Istanbul' : 'إسطنبول';
+        _destinationCtrl.text = lastDest;
       });
     }
   }
@@ -127,6 +165,38 @@ class _TripInputScreenState extends State<TripInputScreen> {
                           // Destination
                           _buildSectionCard(
                             title: strings.planDestination,
+                            trailing: GestureDetector(
+                              onTap: _isDetectingLocation ? null : _detectCurrentLocation,
+                              child: Container(
+                                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                                decoration: BoxDecoration(
+                                  color: AppColors.accentAmber.withValues(alpha: 0.15),
+                                  borderRadius: BorderRadius.circular(50),
+                                  border: Border.all(color: AppColors.accentAmber.withValues(alpha: 0.4)),
+                                ),
+                                child: Row(
+                                  mainAxisSize: MainAxisSize.min,
+                                  children: [
+                                    if (_isDetectingLocation)
+                                      const SizedBox(
+                                        width: 12,
+                                        height: 12,
+                                        child: CircularProgressIndicator(
+                                          strokeWidth: 2,
+                                          color: AppColors.accentAmber,
+                                        ),
+                                      )
+                                    else
+                                      const Icon(Icons.my_location_rounded, size: 14, color: AppColors.accentAmber),
+                                    const SizedBox(width: 4),
+                                    Text(
+                                      strings.discoverCurrentCityButton,
+                                      style: AppTextStyles.labelSmall.copyWith(color: AppColors.accentAmber),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                            ),
                             child: Column(
                               crossAxisAlignment: CrossAxisAlignment.start,
                               children: [
@@ -138,6 +208,10 @@ class _TripInputScreenState extends State<TripInputScreen> {
                                     prefixIcon: const Icon(Icons.search_rounded,
                                         color: AppColors.textSecondary,
                                         size: 20),
+                                    suffixIcon: IconButton(
+                                      icon: const Icon(Icons.gps_fixed_rounded, color: AppColors.accentAmber, size: 20),
+                                      onPressed: _isDetectingLocation ? null : _detectCurrentLocation,
+                                    ),
                                   ),
                                 ),
                                 const SizedBox(height: 12),
@@ -609,6 +683,11 @@ class _TripInputScreenState extends State<TripInputScreen> {
       );
       return;
     }
+
+    // Save last destination
+    SharedPreferences.getInstance().then((prefs) {
+      prefs.setString('last_destination', destination);
+    });
 
     // Navigate to generating screen (which runs the AI generation)
     context.push('/plan/generating', extra: {

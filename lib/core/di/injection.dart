@@ -2,6 +2,9 @@ import 'package:get_it/get_it.dart';
 import '../network/ai_service.dart';
 import '../network/cloud_sync_service.dart';
 import '../network/image_search_service.dart';
+import '../network/weather_service.dart';
+import '../services/notification_service.dart';
+import '../services/location_service.dart';
 import '../database/database_helper.dart';
 import '../../features/trip_planner/data/trip_repository_impl.dart';
 import '../../features/trip_planner/domain/repositories/trip_repository.dart';
@@ -18,7 +21,7 @@ import '../../features/restaurants/presentation/cubit/restaurants_cubit.dart';
 import '../../features/budget/data/budget_repository_impl.dart';
 import '../../features/budget/domain/repositories/budget_repository.dart';
 import '../../features/budget/presentation/cubit/budget_cubit.dart';
-import '../../features/saved_trips/presentation/cubit/saved_trips_cubit.dart';
+import '../../features/trip_planner/presentation/cubit/saved_trips_cubit.dart';
 import '../../features/ai_chat/data/chat_repository_impl.dart';
 import '../../features/ai_chat/domain/repositories/chat_repository.dart';
 import '../../features/ai_chat/presentation/cubit/chat_cubit.dart';
@@ -51,6 +54,15 @@ Future<void> setupDependencies() async {
 
   // Image Search Service
   sl.registerLazySingleton<ImageSearchService>(() => ImageSearchService());
+
+  // Weather Service
+  sl.registerLazySingleton<WeatherService>(() => WeatherService());
+
+  // Notification Service
+  sl.registerLazySingleton<NotificationService>(() => NotificationService());
+
+  // Location Service
+  sl.registerLazySingleton<LocationService>(() => LocationService());
 
   // ─── Repositories ─────────────────────────────────────────────────────────
 
