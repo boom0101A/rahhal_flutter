@@ -1,129 +1,28 @@
 # Rahhal AI Complete Codebase Export
-Generated on: 7/16/2026, 3:59:19 AM
+Generated on: 7/18/2026, 9:15:11 AM
 This file contains the complete source code for the Rahhal Flutter application backend and frontend.
 
 ---
 
-## File: `pubspec.yaml`
-```yaml
-name: rahhal_flutter
-description: "رحّال AI — مساعدك الذكي للسفر. AI-powered travel planner."
-publish_to: 'none'
-version: 1.0.0+1
-
-environment:
-  sdk: '>=3.5.0 <4.0.0'
-
-dependencies:
-  flutter:
-    sdk: flutter
-
-  # State Management
-  flutter_bloc: ^8.1.6
-  equatable: ^2.0.5
-
-  # Navigation
-  go_router: ^14.6.2
-
-  # Local Database
-  sqflite: ^2.4.1
-  path: ^1.9.0
-
-  # Firebase
-  firebase_core: ^3.13.0
-  firebase_auth: ^5.5.2
-  google_sign_in: ^6.2.2
-  cloud_firestore: ^5.6.6
-  firebase_app_check: ^0.3.1+4
-
-  # HTTP / AI
-  dio: ^5.8.0+1
-
-  # Maps
-  flutter_map: ^7.0.2
-  latlong2: ^0.9.1
-
-  # UI & Animations
-  flutter_animate: ^4.5.2
-  shimmer: ^3.0.0
-  cached_network_image: ^3.4.1
-  fl_chart: ^0.69.2
-
-  # Localization
-  flutter_localizations:
-    sdk: flutter
-  intl: ^0.20.2
-
-  # Fonts
-  google_fonts: ^6.2.1
-
-  # Dependency Injection
-  get_it: ^8.0.3
-
-  # Notifications & Utilities
-  flutter_local_notifications: ^17.2.4
-  timezone: ^0.9.4
-  geolocator: ^13.0.3
-  geocoding: ^3.0.0
-  connectivity_plus: ^6.1.4
-  shared_preferences: ^2.3.4
-  image_picker: ^1.1.2
-  share_plus: ^10.1.4
-  screenshot: ^3.0.0
-  path_provider: ^2.1.3
-  url_launcher: ^6.3.1
-  uuid: ^4.5.1
-  dartz: ^0.10.1
-  sqflite_common_ffi_web: ^1.1.2
-
-dev_dependencies:
-  flutter_test:
-    sdk: flutter
-  flutter_lints: ^5.0.0
-  mocktail: ^1.0.4
-  flutter_launcher_icons: ^0.14.3
-  flutter_native_splash: ^2.4.4
-
-flutter_launcher_icons:
-  android: "launcher_icon"
-  ios: true
-  image_path: "assets/images/app_icon.png"
-  min_sdk_android: 21
-  web:
-    generate: true
-    image_path: "assets/images/app_icon.png"
-    background_color: "#0D1B2A"
-    theme_color: "#0D1B2A"
-
-flutter_native_splash:
-  color: "#0D1B2A"
-  image: "assets/images/app_icon.png"
-  android_12:
-    color: "#0D1B2A"
-    image: "assets/images/app_icon.png"
-  web: false
-
-flutter:
-  uses-material-design: true
-
-  # Assets
-  assets:
-    - assets/images/
-    - assets/lottie/
-
-  # Fonts are loaded via Google Fonts package (no local fonts needed)
-
-```
-
----
-
 ## File: `server.js`
-```javascript
+```js
 const express = require('express');
 const cors = require('cors');
 const axios = require('axios');
 const rateLimit = require('express-rate-limit');
+const { GoogleGenerativeAI } = require('@google/generative-ai');
 require('dotenv').config();
+
+// Conditional Firebase Admin import (only used if FIREBASE_SERVICE_ACCOUNT is set)
+let admin = null;
+if (process.env.FIREBASE_SERVICE_ACCOUNT) {
+  try {
+    admin = require('firebase-admin');
+    console.log('[AUTH] Firebase Admin SDK loaded');
+  } catch (e) {
+    console.warn('[AUTH] firebase-admin not installed. Run: npm install firebase-admin');
+  }
+}
 
 // ─── In-Memory Caches ────────────────────────────────────────────────────────
 // Google Places verification cache: key = "name_en|city", value = { lat, lng, address, placeId, rating }
@@ -134,7 +33,22 @@ const PLACES_CACHE_TTL_MS = 24 * 60 * 60 * 1000; // 24 hours
 const app = express();
 const PORT = process.env.PORT || 3000;
 
-app.use(cors());
+const corsOptions = {
+  origin: (origin, callback) => {
+    if (!origin) return callback(null, true); // Mobile apps have no origin
+    const allowed = [
+      /^http:\/\/localhost:\d+$/,       // Any localhost port
+      /^http:\/\/127\.0\.0\.1:\d+$/,   // Loopback
+      /^https:\/\/.*\.web\.app$/,       // Firebase Hosting
+      /^https:\/\/.*\.firebaseapp\.com$/,
+    ];
+    const ok = allowed.some(r => r instanceof RegExp ? r.test(origin) : r === origin);
+    callback(ok ? null : new Error('CORS blocked'), ok);
+  },
+  credentials: true,
+};
+app.use(cors(corsOptions));
+app.options('*', cors(corsOptions)); // Handle preflight
 app.use(express.json());
 
 // Rate Limiter: Protect API from DDoS & quota drain (Max 100 requests per 15 min per IP)
@@ -168,17 +82,13 @@ const chatLimiter = rateLimit({
 // Validates Firebase Auth Bearer Token sent by Flutter app via _FirebaseTokenInterceptor
 async function authenticateFirebaseToken(req, res, next) {
   const authHeader = req.headers.authorization;
-  if (!authHeader || !authHeader.startsWith('Bearer ')) {
-    return res.status(401).json({ error: 'Unauthorized: Missing or invalid Authorization header' });
-  }
 
-  const token = authHeader.split('Bearer ')[1].trim();
-  if (!token || token.length < 10) {
-    return res.status(401).json({ error: 'Unauthorized: Invalid token format' });
-  }
-
-  // If Firebase Admin SDK is configured with service account, verify token cryptographically
-  if (process.env.FIREBASE_SERVICE_ACCOUNT) {
+  // Only enforce token verification if FIREBASE_SERVICE_ACCOUNT is configured
+  if (process.env.FIREBASE_SERVICE_ACCOUNT && admin) {
+    if (!authHeader || !authHeader.startsWith('Bearer ')) {
+      return res.status(401).json({ error: 'Missing Authorization header' });
+    }
+    const token = authHeader.split('Bearer ')[1].trim();
     try {
       if (!admin.apps.length) {
         const serviceAccount = JSON.parse(process.env.FIREBASE_SERVICE_ACCOUNT);
@@ -188,13 +98,11 @@ async function authenticateFirebaseToken(req, res, next) {
       req.user = decodedToken;
       return next();
     } catch (err) {
-      console.error('[AUTH ERROR] Firebase ID token verification failed:', err.message);
-      return res.status(403).json({ error: 'Unauthorized: Invalid or expired Firebase ID token' });
+      console.error('[AUTH] Token verification failed:', err.message);
+      return res.status(403).json({ error: 'Invalid Firebase ID token' });
     }
   }
-
-  // Basic token presence verification when service account JSON is not yet provided in .env
-  next();
+  next(); // Allow if no service account configured
 }
 
 app.use('/api/', limiter);
@@ -255,69 +163,66 @@ async function callClaude(systemPrompt, messages, maxTokens = 4000) {
   }
 }
 
-// Helper function to call Google Gemini API (Fallback when Claude key is missing)
+// Helper function to call Google Gemini API using the official SDK
+// Supports both old AIzaSy... and new AQ.... key formats automatically
 async function callGemini(systemPrompt, messages, maxTokens = 4000, apiKey) {
-  const contents = messages.map(m => ({
-    role: m.role === 'assistant' || m.role === 'model' ? 'model' : 'user',
-    parts: [{ text: m.content }]
-  }));
-
-  const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${apiKey}`;
-
-  const requestBody = {
-    contents: contents,
-    generationConfig: {
-      temperature: 0.7,
-      maxOutputTokens: maxTokens,
-    }
-  };
-
-  if (systemPrompt) {
-    requestBody.system_instruction = {
-      parts: [{ text: systemPrompt }]
-    };
-  }
+  console.log(`[GEMINI] Calling gemini-2.0-flash | Key prefix: ${apiKey.substring(0, 8)}...`);
 
   try {
-    const response = await axios.post(url, requestBody, {
-      headers: { 'Content-Type': 'application/json' },
-      timeout: 90000
+    const genAI = new GoogleGenerativeAI(apiKey);
+    const model = genAI.getGenerativeModel({
+      model: 'gemini-2.0-flash',
+      generationConfig: {
+        temperature: 0.7,
+        maxOutputTokens: maxTokens,
+      },
+      ...(systemPrompt ? { systemInstruction: systemPrompt } : {}),
     });
 
-    if (response.data && response.data.candidates && response.data.candidates[0]) {
-      const candidate = response.data.candidates[0];
-      if (candidate.content && candidate.content.parts && candidate.content.parts[0]) {
-        return candidate.content.parts[0].text;
-      }
-    }
-    throw new Error('Invalid response from Gemini API');
+    // Convert messages to Gemini chat history format
+    const history = messages.slice(0, -1).map(m => ({
+      role: m.role === 'assistant' || m.role === 'model' ? 'model' : 'user',
+      parts: [{ text: m.content }],
+    }));
+
+    const lastMessage = messages[messages.length - 1];
+
+    const chat = model.startChat({ history });
+    const result = await chat.sendMessage(lastMessage.content);
+    const text = result.response.text();
+
+    console.log('[GEMINI] ✅ Success! Response length:', text.length);
+    return text;
   } catch (error) {
-    if (error.response) {
-      const status = error.response.status;
-      console.error('[GEMINI ERROR]', status, error.response.data);
-      if (status === 401 || status === 403) throw new Error('invalid-api-key');
-      if (status === 429) throw new Error('rate-limit');
-      throw new Error(`api-error-${status}`);
+    const status = error.status || (error.message?.includes('API_KEY_INVALID') ? 401 : 0);
+    console.error(`[GEMINI ERROR] ${error.message}`);
+    if (error.message?.includes('API_KEY_INVALID') || status === 401 || status === 403) {
+      throw new Error('invalid-api-key');
     }
-    throw error;
+    if (error.message?.includes('RESOURCE_EXHAUSTED') || status === 429) {
+      throw new Error('rate-limit');
+    }
+    throw new Error(`gemini-error: ${error.message}`);
   }
 }
 
 // Unified AI Engine Call: Tries Claude first, automatically falls back to Gemini!
 async function callAI(systemPrompt, messages, maxTokens = 4000) {
+  // Try Claude
   const claudeKey = process.env.ANTHROPIC_API_KEY;
-  if (claudeKey && claudeKey !== 'your_anthropic_api_key_here') {
+  if (claudeKey && claudeKey !== 'your_anthropic_api_key_here' && claudeKey.length > 10) {
     try {
       return await callClaude(systemPrompt, messages, maxTokens);
     } catch (e) {
-      console.warn('[AI Engine] Claude call failed, falling back to Gemini:', e.message);
+      console.warn('[AI Engine] Claude failed:', e.message);
     }
   }
 
-  const googleKey = process.env.GEMINI_API_KEY || process.env.GOOGLE_PLACES_API_KEY;
-  if (googleKey && googleKey !== 'your_google_places_api_key_here' && googleKey !== 'your_anthropic_api_key_here') {
-    console.log('[AI Engine] Utilizing Google Gemini API for request...');
-    return await callGemini(systemPrompt, messages, maxTokens, googleKey);
+  // Use GEMINI_API_KEY or fallback to GOOGLE_PLACES_API_KEY
+  const geminiKey = process.env.GEMINI_API_KEY || process.env.GOOGLE_PLACES_API_KEY;
+  if (geminiKey && geminiKey !== 'your_gemini_api_key_here' && geminiKey.length > 10) {
+    console.log('[AI Engine] Using Google Gemini...');
+    return await callGemini(systemPrompt, messages, maxTokens, geminiKey);
   }
 
   throw new Error('missing-api-key');
@@ -331,13 +236,13 @@ async function callAI(systemPrompt, messages, maxTokens = 4000) {
 //   3. If found, call Place Details to get rating, place_id, and formatted address.
 //   4. Return verified data; caller merges it into the Claude response.
 //   5. If no GOOGLE_PLACES_API_KEY is set, skip gracefully (log a warning).
-async function verifyPlaceWithGoogle(nameEn, cityEn) {
+async function verifyPlaceWithGoogle(nameEn, cityEn, userLat, userLng) {
   const placesKey = process.env.GOOGLE_PLACES_API_KEY;
   if (!placesKey || placesKey === 'your_google_places_api_key_here') {
     return null; // Places API not configured — skip gracefully
   }
 
-  const cacheKey = `${nameEn.toLowerCase().trim()}|${cityEn.toLowerCase().trim()}`;
+  const cacheKey = `${nameEn.toLowerCase().trim()}|${cityEn.toLowerCase().trim()}${userLat && userLng ? `|${userLat.toFixed(2)},${userLng.toFixed(2)}` : ''}`;
   const now = Date.now();
 
   // Return cached result if still fresh
@@ -351,14 +256,21 @@ async function verifyPlaceWithGoogle(nameEn, cityEn) {
 
   try {
     // Step 1: Text Search
+    const params = {
+      query: `${nameEn} ${cityEn}`,
+      key: placesKey,
+      language: 'en',
+    };
+
+    if (userLat && userLng) {
+      params.location = `${userLat},${userLng}`;
+      params.radius = 50000; // 50km radius bias
+    }
+
     const searchRes = await axios.get(
       'https://maps.googleapis.com/maps/api/place/textsearch/json',
       {
-        params: {
-          query: `${nameEn} ${cityEn}`,
-          key: placesKey,
-          language: 'en',
-        },
+        params,
         timeout: 6000,
       }
     );
@@ -420,7 +332,7 @@ async function verifyPlaceWithGoogle(nameEn, cityEn) {
 //
 // Runs Google Places verification in parallel (with concurrency cap of 5)
 // to avoid hammering the API quota.
-async function verifyAllPlacesInTrip(tripData, destinationEn) {
+async function verifyAllPlacesInTrip(tripData, destinationEn, userLat, userLng) {
   const placesKey = process.env.GOOGLE_PLACES_API_KEY;
   if (!placesKey || placesKey === 'your_google_places_api_key_here') {
     console.warn('[PLACES] GOOGLE_PLACES_API_KEY not set — skipping place verification.');
@@ -458,7 +370,7 @@ async function verifyAllPlacesInTrip(tripData, destinationEn) {
     const batch = tasks.slice(i, i + CONCURRENCY);
     await Promise.all(
       batch.map(async ({ item, nameEn }) => {
-        const verified = await verifyPlaceWithGoogle(nameEn, destinationEn);
+        const verified = await verifyPlaceWithGoogle(nameEn, destinationEn, userLat, userLng);
         if (verified) {
           // Overwrite Claude's hallucinated coordinates with real Google data
           item.latitude  = verified.lat;
@@ -496,11 +408,44 @@ async function verifyAllPlacesInTrip(tripData, destinationEn) {
 
 // ─── POST /api/generate-trip ────────────────────────────────────────────────
 app.post('/api/generate-trip', async (req, res) => {
-  const { destination, durationDays, budgetTier, travelStyles, travelersCount, startDate } = req.body;
+  const {
+    destination,
+    durationDays,
+    budgetTier,
+    travelStyles,
+    travelersCount,
+    startDate,
+    userLat,        // ← GPS latitude from user device
+    userLng,        // ← GPS longitude from user device
+    countryCode,    // ← ISO country code e.g. "IQ", "SA"
+  } = req.body;
 
   if (!destination || !durationDays || !budgetTier) {
     return res.status(400).json({ error: 'Missing required parameters' });
   }
+
+  // ── Build GPS context string for the AI ─────────────────────────────────
+  // When GPS is available, this dramatically improves location accuracy
+  const hasGPS = userLat && userLng &&
+    Math.abs(parseFloat(userLat)) > 0.001 &&
+    Math.abs(parseFloat(userLng)) > 0.001;
+
+  const gpsContext = hasGPS
+    ? `
+CRITICAL LOCATION DATA — The user's EXACT GPS position is:
+  Latitude:  ${parseFloat(userLat).toFixed(6)}
+  Longitude: ${parseFloat(userLng).toFixed(6)}
+  Country Code: ${countryCode || 'unknown'}
+
+This means:
+1. The destination is confirmed to be at these exact coordinates.
+2. ALL stops and restaurants MUST have coordinates within 50km of 
+   lat=${parseFloat(userLat).toFixed(4)}, lng=${parseFloat(userLng).toFixed(4)}.
+3. Use these GPS coordinates as the CENTER of the trip map.
+4. The city center for this location is approximately at these coordinates.
+5. Generate places that are REALISTICALLY accessible from this GPS point.
+`
+    : '';
 
   const systemPrompt = `You are a professional travel planner expert in creating highly detailed, realistic, and personalized trip itineraries.
 
@@ -530,6 +475,9 @@ all_restaurants list must contain UNIQUE restaurants (not repeating recommended_
 
 RULE 5 — ACCURATE COORDINATES:
 Every latitude/longitude must be the actual GPS coordinates of that specific real place. Google Maps-verifiable coordinates only.
+${hasGPS ? `All coordinates MUST be within 50km of lat=${parseFloat(userLat).toFixed(4)}, lng=${parseFloat(userLng).toFixed(4)}.` : ''}
+
+${gpsContext}
 
 Your output MUST be a single, valid, and minified JSON object matching the schema below.
 You must NOT include any conversational filler, markdown formatting (do NOT wrap in \`\`\`json ... \`\`\`), or extra text explanation before or after the JSON.
@@ -726,6 +674,19 @@ ${countryCode ? `- Country: ${countryCode}` : ''}`;
     return res.status(500).json({ error: 'Failed to generate trip: ' + error.message });
   }
 });
+
+// ── Helper: Haversine distance between two GPS points (in km) ────────────────
+function haversineDistance(lat1, lng1, lat2, lng2) {
+  const R = 6371; // Earth radius in km
+  const dLat = (lat2 - lat1) * Math.PI / 180;
+  const dLng = (lng2 - lng1) * Math.PI / 180;
+  const a =
+    Math.sin(dLat / 2) * Math.sin(dLat / 2) +
+    Math.cos(lat1 * Math.PI / 180) *
+    Math.cos(lat2 * Math.PI / 180) *
+    Math.sin(dLng / 2) * Math.sin(dLng / 2);
+  return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+}
 
 // Helper to remove duplicate stops and restaurants across days
 function deduplicateTripPlan(plan) {
@@ -1112,38 +1073,182 @@ app.get('/api/nearby-places', async (req, res) => {
   }
 });
 
+// ─── Self Keep-Alive Ping (prevents Render free tier sleep) ─────────────────
+// Render free tier puts the server to sleep after 15 minutes of inactivity.
+// This self-ping sends a lightweight GET /health every 14 minutes to keep it awake.
+const SELF_PING_INTERVAL_MS = 14 * 60 * 1000; // 14 minutes
+
+function startSelfPing() {
+  // RENDER_EXTERNAL_URL is auto-set by Render with the public URL
+  const selfUrl = process.env.RENDER_EXTERNAL_URL || `http://localhost:${PORT}`;
+  console.log(`[KEEP-ALIVE] Self-ping enabled → ${selfUrl}/health every 14min`);
+
+  setInterval(async () => {
+    try {
+      await axios.get(`${selfUrl}/health`, { timeout: 10000 });
+      console.log('[KEEP-ALIVE] Self-ping successful ✅');
+    } catch (err) {
+      console.warn('[KEEP-ALIVE] Self-ping failed:', err.message);
+    }
+  }, SELF_PING_INTERVAL_MS);
+}
+
 app.listen(PORT, () => {
   console.log(`🚀 Rahhal AI Backend Proxy is running on http://localhost:${PORT}`);
   console.log(`Press Ctrl+C to terminate.`);
+  startSelfPing();
 });
 
 ```
 
-### 3. Flutter
-```bash
-flutter pub get
-flutter run --dart-define=PROXY_BASE_URL=http://YOUR_IP:3000
+---
+
+## File: `package.json`
+```json
+{
+  "name": "rahhal-ai-proxy",
+  "version": "1.0.0",
+  "description": "Backend proxy for Rahhal AI to Anthropic API",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js"
+  },
+  "dependencies": {
+    "@google/generative-ai": "^0.21.0",
+    "axios": "^1.6.8",
+    "cors": "^2.8.5",
+    "dotenv": "^16.4.5",
+    "express": "^4.19.2",
+    "express-rate-limit": "^7.1.5",
+    "firebase-admin": "^12.0.0"
+  }
+}
+
 ```
 
-## ملف .env المطلوب
+---
+
+## File: `pubspec.yaml`
+```yaml
+name: rahhal_flutter
+description: "رحّال AI — مساعدك الذكي للسفر. AI-powered travel planner."
+publish_to: 'none'
+version: 1.0.0+1
+
+environment:
+  sdk: '>=3.5.0 <4.0.0'
+
+dependencies:
+  flutter:
+    sdk: flutter
+
+  # State Management
+  flutter_bloc: ^8.1.6
+  equatable: ^2.0.5
+
+  # Navigation
+  go_router: ^14.6.2
+
+  # Local Database
+  sqflite: ^2.4.1
+  path: ^1.9.0
+
+  # Firebase
+  firebase_core: ^3.13.0
+  firebase_auth: ^5.5.2
+  google_sign_in: ^6.2.2
+  cloud_firestore: ^5.6.6
+  firebase_app_check: ^0.3.1+4
+
+  # HTTP / AI
+  dio: ^5.8.0+1
+
+  # Maps
+  flutter_map: ^7.0.2
+  latlong2: ^0.9.1
+
+  # UI & Animations
+  flutter_animate: ^4.5.2
+  shimmer: ^3.0.0
+  cached_network_image: ^3.4.1
+  fl_chart: ^0.69.2
+
+  # Localization
+  flutter_localizations:
+    sdk: flutter
+  intl: ^0.20.2
+
+  # Fonts
+  google_fonts: ^6.2.1
+
+  # Dependency Injection
+  get_it: ^8.0.3
+
+  # Notifications & Utilities
+  flutter_local_notifications: ^17.2.4
+  timezone: ^0.9.4
+  geolocator: ^13.0.3
+  geocoding: ^3.0.0
+  connectivity_plus: ^6.1.4
+  shared_preferences: ^2.3.4
+  image_picker: ^1.1.2
+  share_plus: ^10.1.4
+  screenshot: ^3.0.0
+  path_provider: ^2.1.3
+  url_launcher: ^6.3.1
+  uuid: ^4.5.1
+  dartz: ^0.10.1
+  sqflite_common_ffi_web: ^1.1.2
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  flutter_lints: ^5.0.0
+  mocktail: ^1.0.4
+  flutter_launcher_icons: ^0.14.3
+  flutter_native_splash: ^2.4.4
+
+flutter_launcher_icons:
+  android: "launcher_icon"
+  ios: true
+  image_path: "assets/images/app_icon.png"
+  min_sdk_android: 21
+  web:
+    generate: true
+    image_path: "assets/images/app_icon.png"
+    background_color: "#0D1B2A"
+    theme_color: "#0D1B2A"
+
+flutter_native_splash:
+  color: "#0D1B2A"
+  image: "assets/images/app_icon.png"
+  android_12:
+    color: "#0D1B2A"
+    image: "assets/images/app_icon.png"
+  web: false
+
+flutter:
+  uses-material-design: true
+
+  # Assets
+  assets:
+    - assets/images/
+    - assets/lottie/
+
+  # Fonts are loaded via Google Fonts package (no local fonts needed)
+
 ```
-ANTHROPIC_API_KEY=sk-ant-...
-UNSPLASH_ACCESS_KEY=...       # اختياري
-PEXELS_API_KEY=...            # اختياري
-OPENWEATHER_API_KEY=...       # للطقس (مستقبلاً)
+
+---
+
+## File: `.env.example`
+```example
 PORT=3000
-```
-
-## الميزات
-- 🤖 توليد خطط سفر بالذكاء الاصطناعي
-- 🗺️ خريطة تفاعلية للمحطات
-- 🍽️ توصيات مطاعم
-- 💰 تتبع الميزانية والمصاريف
-- 🎒 قائمة التعبئة الذكية
-- 📁 إدارة مستندات الرحلة
-- ❤️ المفضلة
-- 🌐 دعم العربية والإنجليزية
-- 🌙 وضع داكن وفاتح
+ANTHROPIC_API_KEY=your_anthropic_api_key_here
+GEMINI_API_KEY=your_google_gemini_api_key_here
+GOOGLE_PLACES_API_KEY=your_google_places_api_key_here
+UNSPLASH_ACCESS_KEY=your_unsplash_access_key_here   # من unsplash.com/developers (مجاني)
+PEXELS_API_KEY=your_pexels_api_key_here             # من pexels.com/api (مجاني)
 
 ```
 
@@ -1156,26 +1261,51 @@ import 'package:flutter/foundation.dart';
 class AppConfig {
   AppConfig._();
 
-  /// Read from --dart-define at build time, fallback to localhost for emulator / cloud URL
-  static const String proxyBaseUrl = String.fromEnvironment(
-    'PROXY_BASE_URL',
-    defaultValue: 'http://10.0.2.2:3000', // Android emulator → host machine
-  );
+  // Set via: flutter run --dart-define=PROXY_BASE_URL=https://your-server.com
+  static const String _envUrl = String.fromEnvironment('PROXY_BASE_URL');
 
-  /// Returns true if proxy URL is pointing to a live cloud host (e.g. Render / domain)
+  static String get proxyBaseUrl {
+    if (_envUrl.isNotEmpty) return _envUrl;
+
+    if (kIsWeb) {
+      // Flutter Web always uses the Railway server (always online, no cold start)
+      return 'https://rahhalflutter-production.up.railway.app';
+    }
+
+    if (kReleaseMode) {
+      return 'https://rahhalflutter-production.up.railway.app';
+    }
+
+    // Debug mobile — detect platform without dart:io on web
+    // Android emulator: 10.0.2.2 routes to host machine
+    // iOS simulator: 127.0.0.1 works
+    // Use conditional compilation via Platform (safe because kIsWeb is false here)
+    try {
+      // This only executes on non-web platforms
+      if (_isAndroid()) return 'http://10.0.2.2:3000';
+      if (_isIOS()) return 'http://127.0.0.1:3000';
+    } catch (_) {}
+
+    return 'http://localhost:3000';
+  }
+
+  static bool _isAndroid() {
+    // Use defaultTargetPlatform instead of dart:io to avoid issues on Web
+    return defaultTargetPlatform == TargetPlatform.android;
+  }
+
+  static bool _isIOS() {
+    return defaultTargetPlatform == TargetPlatform.iOS;
+  }
+
   static bool get isProductionMode =>
-      !proxyBaseUrl.contains('localhost') &&
-      !proxyBaseUrl.contains('10.0.2.2') &&
-      !proxyBaseUrl.contains('127.0.0.1') &&
-      !proxyBaseUrl.contains('192.168');
+      proxyBaseUrl.startsWith('https') &&
+      !proxyBaseUrl.contains('localhost');
 
-  /// ⚠️ NEVER set this to true in production.
-  /// When true (debug/QA only), API failures silently fall back to mock data.
-  /// In production this must always be false so real errors surface to the user.
-  static const bool kUseMockFallback = kDebugMode && false;
+  /// ⚠️ Always false — real AI trips only, no silent fake data.
+  static const bool kUseMockFallback = false;
 
-  /// Hint: Render free-tier server needs ~30-50s to wake up after inactivity.
-  /// The UI will show a "may take up to a minute on first use" message.
+  // Whether server may need warmup (Render free tier)
   static const bool kServerMayNeedWarmup = true;
 }
 
@@ -1699,10 +1829,23 @@ class AppStrings {
   // Duration Formatter Helper
   String durationFormat(int hours, int minutes) {
     if (hours == 0) return _t('$minutes دقيقة', '$minutes mins');
+    
+    final String arHours = hours == 1
+        ? 'ساعة'
+        : hours == 2
+            ? 'ساعتان'
+            : hours <= 10
+                ? '$hours ساعات'
+                : '$hours ساعة';
+                
+    final String enHours = hours == 1 ? '1 hour' : '$hours hours';
+    final hourText = _t(arHours, enHours);
+
     if (minutes == 0) {
-      return hours == 1 ? _t('ساعة', '1 hour') : _t('$hours ساعات', '$hours hours');
+      return hourText;
     }
-    return _t('$hours ساعة و$minutes دقيقة', '$hours hr $minutes mins');
+    
+    return _t('$hourText و$minutes دقيقة', '$hourText $minutes mins');
   }
 
   // Budget Tier Name Helper
@@ -2079,7 +2222,7 @@ class DatabaseHelper {
 
   // ─── Init ─────────────────────────────────────────────────────────────────
 
-  static const int _dbVersion = 3;
+  static const int _dbVersion = 4;
   static const String _dbName = 'rahhal_ai.db';
 
   static final Map<int, List<String>> _migrations = {
@@ -2096,6 +2239,10 @@ class DatabaseHelper {
       'ALTER TABLE trips ADD COLUMN destination_en TEXT;',
       'ALTER TABLE trips ADD COLUMN is_mock_data INTEGER NOT NULL DEFAULT 0;',
       'ALTER TABLE stops ADD COLUMN image_url TEXT;',
+    ],
+    4: [
+      'ALTER TABLE stops ADD COLUMN coords_verified INTEGER DEFAULT 0;',
+      'ALTER TABLE stops ADD COLUMN place_id TEXT;',
     ],
   };
 
@@ -2182,7 +2329,8 @@ class DatabaseHelper {
       timezone        TEXT DEFAULT 'UTC',
       created_at      TEXT NOT NULL,
       updated_at      TEXT NOT NULL,
-      synced_at       TEXT
+      synced_at       TEXT,
+      is_mock_data    INTEGER NOT NULL DEFAULT 0
     )
   ''';
 
@@ -2216,7 +2364,9 @@ class DatabaseHelper {
       ai_tip            TEXT,
       image_url         TEXT,
       booking_required  INTEGER DEFAULT 0,
-      booking_url       TEXT
+      booking_url       TEXT,
+      coords_verified   INTEGER DEFAULT 0,
+      place_id          TEXT
     )
   ''';
 
@@ -2401,10 +2551,10 @@ class DatabaseHelper {
     return results.isNotEmpty ? results.first : null;
   }
 
-  Future<void> executeInTransaction(
-      Future<void> Function(Transaction txn) action) async {
+  Future<T> executeInTransaction<T>(
+      Future<T> Function(Transaction txn) action) async {
     final db = await database;
-    await db.transaction(action);
+    return await db.transaction(action);
   }
 
   /// Closes and resets the database (for testing).
@@ -2413,6 +2563,37 @@ class DatabaseHelper {
     if (db != null) {
       await db.close();
       _db = null;
+    }
+  }
+}
+
+```
+
+---
+
+## File: `lib/core/di/app_bloc_observer.dart`
+```dart
+import 'package:flutter/foundation.dart';
+import 'package:flutter_bloc/flutter_bloc.dart';
+
+/// Central BlocObserver to log changes and capture unhandled exceptions
+/// from all BLoCs and Cubits in the application.
+class AppBlocObserver extends BlocObserver {
+  @override
+  void onError(BlocBase bloc, Object error, StackTrace stackTrace) {
+    super.onError(bloc, error, stackTrace);
+    debugPrint('[BLoC ERROR] ${bloc.runtimeType}: $error');
+    // In production: send to Firebase Crashlytics if initialized
+    // try {
+    //   FirebaseCrashlytics.instance.recordError(error, stackTrace);
+    // } catch (_) {}
+  }
+
+  @override
+  void onChange(BlocBase bloc, Change change) {
+    super.onChange(bloc, change);
+    if (kDebugMode) {
+      debugPrint('[BLoC] ${bloc.runtimeType}: ${change.nextState.runtimeType}');
     }
   }
 }
@@ -2958,6 +3139,29 @@ class AITravelService {
     return AIException(message: e.toString());
   }
 
+  // ─── Server Warmup ──────────────────────────────────────────────────────────
+
+  /// Sends a lightweight GET /health to wake up the server if it's sleeping.
+  /// Returns true if server is awake, false if it couldn't be reached.
+  /// This is called BEFORE the actual trip generation to avoid timeout on the
+  /// heavy AI endpoint.
+  Future<bool> warmupServer() async {
+    try {
+      final response = await _dio.get(
+        '/health',
+        options: Options(
+          // Give the server up to 90s to wake up from cold start
+          receiveTimeout: const Duration(seconds: 90),
+        ),
+      );
+      debugPrint('[AITravelService] Server warmup OK: ${response.statusCode}');
+      return true;
+    } catch (e) {
+      debugPrint('[AITravelService] Server warmup failed: $e');
+      return false;
+    }
+  }
+
   // ─── Public API ─────────────────────────────────────────────────────────────
 
   /// Generates a complete trip plan using Claude AI.
@@ -2968,6 +3172,9 @@ class AITravelService {
     required List<String> travelStyles,
     required int travelersCount,
     DateTime? startDate,
+    double? userLat,
+    double? userLng,
+    String? countryCode,
   }) async {
     try {
       final response = await _dio.post(
@@ -2979,6 +3186,9 @@ class AITravelService {
           'travelStyles': travelStyles,
           'travelersCount': travelersCount,
           'startDate': startDate?.toIso8601String().split('T').first,
+          'userLat': userLat,
+          'userLng': userLng,
+          'countryCode': countryCode,
         },
       );
 
@@ -2988,13 +3198,17 @@ class AITravelService {
       final classified = _classifyError(e);
       debugPrint('[AITravelService] generateTripPlan failed: $classified');
 
-      // ─── Seamless Fallback: Ensure 100% Uptime for User ─────────────────────
-      // If server is unreachable or asleep, generate a smart city-aware plan
-      try {
-        debugPrint('[AITravelService] Server unreachable → activating smart city fallback');
-        return _generateMockTripResponse(
-            destination, durationDays, budgetTier, travelersCount);
-      } catch (_) {
+      if (AppConfig.kUseMockFallback) {
+        // ─── Seamless Fallback: Ensure 100% Uptime for User ─────────────────────
+        try {
+          debugPrint('[AITravelService] Server unreachable → activating smart city fallback');
+          return _generateMockTripResponse(
+              destination, durationDays, budgetTier, travelersCount);
+        } catch (_) {
+          throw classified;
+        }
+      } else {
+        // We want to see the REAL error in development instead of a silent yellow banner!
         throw classified;
       }
     }
@@ -3646,6 +3860,8 @@ class CloudSyncService {
       final restaurantsRows = await _dbHelper.query('restaurants', where: 'trip_id = ?', whereArgs: [tripId]);
       final budgetItemsRows = await _dbHelper.query('budget_items', where: 'trip_id = ?', whereArgs: [tripId]);
       final chatMessagesRows = await _dbHelper.query('chat_messages', where: 'trip_id = ?', whereArgs: [tripId]);
+      final packingItemsRows = await _dbHelper.query('packing_items', where: 'trip_id = ?', whereArgs: [tripId]);
+      final actualExpensesRows = await _dbHelper.query('actual_expenses', where: 'trip_id = ?', whereArgs: [tripId]);
 
       // 4. Construct payload (ensuring the user_id matches the active user uid)
       final Map<String, dynamic> tripData = Map<String, dynamic>.from(tripRow);
@@ -3658,6 +3874,8 @@ class CloudSyncService {
         'restaurants': restaurantsRows,
         'budget_items': budgetItemsRows,
         'chat_messages': chatMessagesRows,
+        'packing_items': packingItemsRows,
+        'actual_expenses': actualExpensesRows,
         'synced_at': DateTime.now().toIso8601String(),
       };
 
@@ -3753,6 +3971,8 @@ class CloudSyncService {
           final List<dynamic> restaurants = tripData['restaurants'] as List<dynamic>? ?? [];
           final List<dynamic> budgetItems = tripData['budget_items'] as List<dynamic>? ?? [];
           final List<dynamic> chatMessages = tripData['chat_messages'] as List<dynamic>? ?? [];
+          final List<dynamic> packingItems = tripData['packing_items'] as List<dynamic>? ?? [];
+          final List<dynamic> actualExpenses = tripData['actual_expenses'] as List<dynamic>? ?? [];
 
           // Remove nested fields to insert the base trip row
           final Map<String, dynamic> tripRow = Map<String, dynamic>.from(tripData)
@@ -3760,7 +3980,9 @@ class CloudSyncService {
             ..remove('stops')
             ..remove('restaurants')
             ..remove('budget_items')
-            ..remove('chat_messages');
+            ..remove('chat_messages')
+            ..remove('packing_items')
+            ..remove('actual_expenses');
 
           // Insert trip
           await txn.insert('trips', tripRow, conflictAlgorithm: ConflictAlgorithm.replace);
@@ -3797,6 +4019,20 @@ class CloudSyncService {
           for (final c in chatMessages) {
             if (c is Map<String, dynamic>) {
               await txn.insert('chat_messages', c, conflictAlgorithm: ConflictAlgorithm.replace);
+            }
+          }
+
+          // Insert packing items
+          for (final p in packingItems) {
+            if (p is Map<String, dynamic>) {
+              await txn.insert('packing_items', p, conflictAlgorithm: ConflictAlgorithm.replace);
+            }
+          }
+
+          // Insert actual expenses
+          for (final e in actualExpenses) {
+            if (e is Map<String, dynamic>) {
+              await txn.insert('actual_expenses', e, conflictAlgorithm: ConflictAlgorithm.replace);
             }
           }
         });
@@ -3842,7 +4078,7 @@ class DioClient {
     final dio = Dio(
       BaseOptions(
         baseUrl: AppConfig.proxyBaseUrl,
-        connectTimeout: const Duration(seconds: 45), // 45s to allow Render free-tier warmup
+        connectTimeout: const Duration(seconds: 90), // 90s to allow Render free-tier cold start (50-120s)
         receiveTimeout: const Duration(seconds: 120),
         headers: {
           'Content-Type': 'application/json',
@@ -3859,7 +4095,7 @@ class DioClient {
     }
 
     dio.interceptors.add(_FirebaseTokenInterceptor());
-    dio.interceptors.add(_RetryInterceptor(dio, maxRetries: 2));
+    dio.interceptors.add(_RetryInterceptor(dio, maxRetries: 3));
     dio.interceptors.add(_ErrorInterceptor());
 
     return dio;
@@ -3936,7 +4172,8 @@ class _RetryInterceptor extends Interceptor {
             err.type == DioExceptionType.connectionError);
 
     if (shouldRetry) {
-      await Future.delayed(Duration(seconds: retryCount + 1));
+      // Exponential backoff: 2s, 4s, 8s — gives server more time to boot
+      await Future.delayed(Duration(seconds: 2 << retryCount));
       try {
         final options = err.requestOptions;
         options.extra['retryCount'] = retryCount + 1;
@@ -4014,30 +4251,27 @@ class _ErrorInterceptor extends Interceptor {
 ```dart
 import 'package:dio/dio.dart';
 import 'package:flutter/foundation.dart';
-import '../config/app_config.dart';
 import 'dio_client.dart';
 
 class ImageSearchService {
-  // استخدم general بدلاً من anthropic — لا يحتاج token header ولا AI error handling
-  final Dio _dio = DioClient.general;
+  final Dio _dio;
+  ImageSearchService() : _dio = DioClient.anthropic; // Use the proxy Dio
 
   /// Searches for a high-quality landscape image matching [query].
-  /// Calls our Next.js backend proxy endpoint to keep the Unsplash access key secure.
+  /// Route THROUGH the proxy server — server holds the keys
   Future<String?> searchPhoto(String query) async {
     if (query.trim().isEmpty) return null;
     try {
       final response = await _dio.get(
-        '${AppConfig.proxyBaseUrl}/api/photos',
+        '/api/photos',
         queryParameters: {'query': query},
       );
-      
-      if (response.data != null && response.data['url'] != null) {
-        return response.data['url'] as String;
-      }
-      return null;
+      return response.data['url'] as String?;
     } catch (e) {
-      debugPrint('ImageSearchService: $e');
-      return null; // فشل الصورة لا يجب أن يوقف الرحلة
+      debugPrint('[ImageSearch] Failed: $e');
+      // Deterministic Picsum fallback (no key needed)
+      final seed = query.hashCode.abs() % 1000;
+      return 'https://picsum.photos/seed/$seed/800/600';
     }
   }
 }
@@ -4139,6 +4373,7 @@ class WeatherService {
 ```dart
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
+import '../../main.dart';
 import '../../features/auth/presentation/screens/splash_screen.dart';
 import '../../features/auth/presentation/screens/onboarding_screen.dart';
 import '../../features/auth/presentation/screens/auth_screen.dart';
@@ -4173,7 +4408,7 @@ class AppRouter {
     navigatorKey: _rootNavigatorKey,
     initialLocation: '/',
     debugLogDiagnostics: true,
-    refreshListenable: _authNotifier,
+    refreshListenable: Listenable.merge([_authNotifier, appLocale]),
     redirect: (context, state) {
       final isAuthenticated = sl<AuthRepository>().isAuthenticated;
       final publicRoutes = ['/', '/onboarding', '/auth'];
@@ -4487,30 +4722,32 @@ class LocationService {
       String countryName = '';
       String? countryCode;
 
-      // 1. Try native geocoding plugin first
-      try {
-        List<Placemark> placemarks = await placemarkFromCoordinates(
-          position.latitude,
-          position.longitude,
-        );
+      // 1. Try native geocoding plugin first (Mobile only — geocoding is unsupported on Web)
+      if (!kIsWeb) {
+        try {
+          List<Placemark> placemarks = await placemarkFromCoordinates(
+            position.latitude,
+            position.longitude,
+          );
 
-        if (placemarks.isNotEmpty) {
-          final place = placemarks.first;
-          cityName = _firstNonEmpty([
-            place.locality,
-            place.subAdministrativeArea,
-            place.administrativeArea,
-            place.subLocality,
-            place.name,
-          ]);
-          countryName = (place.country ?? '').trim();
-          countryCode = place.isoCountryCode;
+          if (placemarks.isNotEmpty) {
+            final place = placemarks.first;
+            cityName = _firstNonEmpty([
+              place.locality,
+              place.subAdministrativeArea,
+              place.administrativeArea,
+              place.subLocality,
+              place.name,
+            ]);
+            countryName = (place.country ?? '').trim();
+            countryCode = place.isoCountryCode;
+          }
+        } catch (e) {
+          debugPrint('Native reverse geocoding error: $e');
         }
-      } catch (e) {
-        debugPrint('Native reverse geocoding error: $e');
       }
 
-      // 2. If city or country is empty, fallback to free BigDataCloud Reverse Geocoding API
+      // 2. For Web OR if geocoding gave no result, fallback to free BigDataCloud Reverse Geocoding API
       if (cityName.isEmpty || countryName.isEmpty) {
         final fallbackResult = await _fallbackApiGeocode(position.latitude, position.longitude);
         if (fallbackResult != null) {
@@ -6018,16 +6255,20 @@ class AuthRepositoryImpl implements AuthRepository {
 
   @override
   Stream<UserEntity?> get authStateChanges {
-    return firebase_auth.FirebaseAuth.instance.authStateChanges().map((firebaseUser) {
-      if (firebaseUser == null) return null;
-      return UserEntity(
-        uid: firebaseUser.uid,
-        email: firebaseUser.email,
-        displayName: firebaseUser.displayName,
-        photoUrl: firebaseUser.photoURL,
-        isAnonymous: firebaseUser.isAnonymous,
-      );
-    });
+    try {
+      return firebase_auth.FirebaseAuth.instance.authStateChanges().map((firebaseUser) {
+        if (firebaseUser == null) return null;
+        return UserEntity(
+          uid: firebaseUser.uid,
+          email: firebaseUser.email,
+          displayName: firebaseUser.displayName,
+          photoUrl: firebaseUser.photoURL,
+          isAnonymous: firebaseUser.isAnonymous,
+        );
+      });
+    } catch (_) {
+      return Stream.value(null);
+    }
   }
 
   @override
@@ -7916,6 +8157,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_animate/flutter_animate.dart';
 import 'package:go_router/go_router.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'package:firebase_core/firebase_core.dart';
 import '../../../../core/constants/app_colors.dart';
 import '../../../../core/constants/app_text_styles.dart';
 import '../../../../core/di/injection.dart';
@@ -7941,11 +8183,35 @@ class _SplashScreenState extends State<SplashScreen> {
 
     final prefs = await SharedPreferences.getInstance();
     if (!mounted) return;
+    
+    // Check if Firebase was initialized successfully
+    bool isFirebaseAvailable = true;
+    try {
+      isFirebaseAvailable = Firebase.apps.isNotEmpty;
+    } catch (_) {
+      isFirebaseAvailable = false;
+    }
+
+    if (!isFirebaseAvailable && mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text(
+            'تعذّر الاتصال بالخدمات السحابية. التطبيق يعمل في وضع محلي.',
+            style: TextStyle(color: Colors.white),
+          ),
+          backgroundColor: Colors.orange,
+          duration: Duration(seconds: 4),
+        ),
+      );
+    }
+
     final hasSeenOnboarding = prefs.getBool('has_seen_onboarding') ?? false;
     final authRepo = sl<AuthRepository>();
 
     if (!hasSeenOnboarding) {
       context.go('/onboarding');
+    } else if (!isFirebaseAvailable) {
+      context.go('/home');
     } else if (authRepo.isAuthenticated) {
       context.go('/home');
     } else {
@@ -11848,6 +12114,7 @@ class MapFullScreen extends StatelessWidget {
 ```dart
 import 'dart:async';
 import 'package:flutter/material.dart';
+import 'package:flutter/foundation.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:flutter_map/flutter_map.dart';
 import 'package:latlong2/latlong.dart' hide Path;
@@ -11905,14 +12172,12 @@ class _MapView extends StatefulWidget {
 
 class _MapViewState extends State<_MapView> with WidgetsBindingObserver {
   late final MapController _mapController;
-  final LocationService _locationService = sl<LocationService>();
 
-  double? _userLat;
-  double? _userLng;
   LatLng? _userLocation;
-  bool _isLocatingUser = false;
   bool _fetchingLocation = false;
-  StreamSubscription<ServiceStatus>? _serviceStatusSub;
+  bool _isLocatingUser = false;
+  bool _mapReady = false;
+
   StreamSubscription<Position>? _positionSub;
 
   @override
@@ -11921,46 +12186,46 @@ class _MapViewState extends State<_MapView> with WidgetsBindingObserver {
     _mapController = MapController();
     WidgetsBinding.instance.addObserver(this);
 
-    // Initial check from Cubit state if available
+    // Use location from Cubit state immediately if available
     if (widget.state.userLocation != null) {
       _userLocation = widget.state.userLocation;
-      _userLat = widget.state.userLocation!.latitude;
-      _userLng = widget.state.userLocation!.longitude;
     }
 
-    _fetchUserLocation();
-    _listenToLocationUpdates();
+    // Start location fetch after first frame
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _fetchUserLocation();
+      _startLocationStream();
+    });
   }
 
   @override
-  void didChangeAppLifecycleState(AppLifecycleState lifecycleState) {
-    if (lifecycleState == AppLifecycleState.resumed) {
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.resumed) {
       _fetchUserLocation();
     }
   }
 
-  void _listenToLocationUpdates() {
-    _serviceStatusSub = Geolocator.getServiceStatusStream().listen((status) {
-      if (status == ServiceStatus.enabled) {
-        _fetchUserLocation();
-      }
-    });
+  void _startLocationStream() {
+    if (kIsWeb) return;
 
     Geolocator.checkPermission().then((permission) {
-      if (permission == LocationPermission.always || permission == LocationPermission.whileInUse) {
+      if (permission == LocationPermission.always ||
+          permission == LocationPermission.whileInUse) {
         _positionSub = Geolocator.getPositionStream(
           locationSettings: const LocationSettings(
-            accuracy: LocationAccuracy.high,
-            distanceFilter: 10,
+            accuracy: LocationAccuracy.medium,
+            distanceFilter: 20,
           ),
         ).listen((pos) {
           if (mounted) {
-            setState(() {
-              _userLat = pos.latitude;
-              _userLng = pos.longitude;
-              _userLocation = LatLng(pos.latitude, pos.longitude);
-            });
+            final newLocation = LatLng(pos.latitude, pos.longitude);
+            setState(() => _userLocation = newLocation);
+            if (_mapReady && _userLocation == null) {
+              _mapController.move(newLocation, 14.0);
+            }
           }
+        }, onError: (e) {
+          debugPrint('[MapTab] Position stream error: $e');
         });
       }
     });
@@ -11969,14 +12234,61 @@ class _MapViewState extends State<_MapView> with WidgetsBindingObserver {
   Future<void> _fetchUserLocation() async {
     if (_fetchingLocation) return;
     _fetchingLocation = true;
+
     try {
-      final loc = await _locationService.getCurrentLocation();
-      if (loc != null && mounted) {
-        setState(() {
-          _userLat = loc.latitude;
-          _userLng = loc.longitude;
-          _userLocation = LatLng(loc.latitude, loc.longitude);
-        });
+      LatLng? position;
+
+      if (kIsWeb) {
+        final permission = await Geolocator.checkPermission();
+        if (permission == LocationPermission.denied) {
+          final granted = await Geolocator.requestPermission();
+          if (granted == LocationPermission.denied ||
+              granted == LocationPermission.deniedForever) {
+            _fetchingLocation = false;
+            return;
+          }
+        }
+        if (permission == LocationPermission.deniedForever) {
+          _fetchingLocation = false;
+          return;
+        }
+        try {
+          final pos = await Geolocator.getCurrentPosition(
+            locationSettings: const LocationSettings(
+              accuracy: LocationAccuracy.medium,
+              timeLimit: Duration(seconds: 10),
+            ),
+          );
+          position = LatLng(pos.latitude, pos.longitude);
+        } catch (e) {
+          debugPrint('[MapTab] Web GPS error: $e');
+        }
+      } else {
+        try {
+          final loc = await sl<LocationService>().getCurrentLocation();
+          if (loc != null) {
+            position = LatLng(loc.latitude, loc.longitude);
+          }
+        } catch (e) {
+          debugPrint('[MapTab] Mobile LocationService error: $e');
+          try {
+            final pos = await Geolocator.getCurrentPosition(
+              locationSettings: const LocationSettings(
+                accuracy: LocationAccuracy.medium,
+                timeLimit: Duration(seconds: 8),
+              ),
+            );
+            position = LatLng(pos.latitude, pos.longitude);
+          } catch (_) {}
+        }
+      }
+
+      if (position != null && mounted) {
+        setState(() => _userLocation = position);
+
+        if (_mapReady && widget.state.stops.isEmpty) {
+          _mapController.move(position!, 14.0);
+        }
       }
     } finally {
       _fetchingLocation = false;
@@ -12014,30 +12326,17 @@ class _MapViewState extends State<_MapView> with WidgetsBindingObserver {
       );
 
       if (mounted) {
-        _mapController.move(
-          LatLng(position.latitude, position.longitude),
-          15.0,
-        );
+        final newLoc = LatLng(position.latitude, position.longitude);
         setState(() {
-          _userLat = position.latitude;
-          _userLng = position.longitude;
-          _userLocation = LatLng(position.latitude, position.longitude);
+          _userLocation = newLoc;
           _isLocatingUser = false;
         });
+        _mapController.move(newLoc, 15.0);
       }
     } catch (e) {
-      debugPrint('Map location error: $e');
+      debugPrint('[MapTab] _goToMyLocation error: $e');
       if (mounted) setState(() => _isLocatingUser = false);
     }
-  }
-
-  @override
-  void dispose() {
-    WidgetsBinding.instance.removeObserver(this);
-    _serviceStatusSub?.cancel();
-    _positionSub?.cancel();
-    _mapController.dispose();
-    super.dispose();
   }
 
   LatLng _center() {
@@ -12046,13 +12345,7 @@ class _MapViewState extends State<_MapView> with WidgetsBindingObserver {
         : widget.state.stops;
 
     if (stops.isEmpty) {
-      if (_userLocation != null) {
-        return _userLocation!;
-      }
-      if (_userLat != null && _userLng != null) {
-        return LatLng(_userLat!, _userLng!);
-      }
-      return const LatLng(25.0, 45.0);
+      return _userLocation ?? const LatLng(25.0, 45.0);
     }
 
     final avgLat =
@@ -12069,38 +12362,36 @@ class _MapViewState extends State<_MapView> with WidgetsBindingObserver {
 
     return Stack(
       children: [
-        // Map
         FlutterMap(
           mapController: _mapController,
           options: MapOptions(
             initialCenter: _center(),
             initialZoom: 13,
+            onMapReady: () {
+              setState(() => _mapReady = true);
+              if (_userLocation != null && widget.state.stops.isEmpty) {
+                _mapController.move(_userLocation!, 14.0);
+              }
+            },
             onTap: (_, __) => context.read<MapCubit>().clearSelection(),
           ),
           children: [
-            // OSM tiles
-            TileLayer(
-              urlTemplate: 'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
-              userAgentPackageName: 'com.rahhalai.rahhal_flutter',
-              maxZoom: 19,
-            ),
+            _buildTileLayer(),
 
-            // User Location Pulse Circle Layer
-            if (_userLocation != null || (_userLat != null && _userLng != null))
+            if (_userLocation != null)
               CircleLayer(
                 circles: [
                   CircleMarker(
-                    point: _userLocation ?? LatLng(_userLat!, _userLng!),
+                    point: _userLocation!,
                     radius: 35,
                     useRadiusInMeter: false,
                     color: const Color(0x222196F3),
-                    borderColor: const Color(0x662196F3),
-                    borderStrokeWidth: 1.5,
+                    borderColor: const Color(0x882196F3),
+                    borderStrokeWidth: 2,
                   ),
                 ],
               ),
 
-            // Route polyline
             if (stops.length > 1)
               PolylineLayer(
                 polylines: [
@@ -12114,19 +12405,15 @@ class _MapViewState extends State<_MapView> with WidgetsBindingObserver {
                 ],
               ),
 
-            // Stop Markers & User Location Marker
             MarkerLayer(
               markers: [
-                // User Location Blue Dot Marker
-                if (_userLocation != null || (_userLat != null && _userLng != null))
+                if (_userLocation != null)
                   Marker(
-                    point: _userLocation ?? LatLng(_userLat!, _userLng!),
-                    width: 36,
-                    height: 36,
+                    point: _userLocation!,
+                    width: 40,
+                    height: 40,
                     child: _buildUserLocationMarker(),
                   ),
-
-                // Trip Stop Markers
                 ...stops.asMap().entries.map((entry) {
                   final i = entry.key;
                   final stop = entry.value;
@@ -12136,7 +12423,8 @@ class _MapViewState extends State<_MapView> with WidgetsBindingObserver {
                     width: isSelected ? 48 : 36,
                     height: isSelected ? 64 : 52,
                     child: GestureDetector(
-                      onTap: () => context.read<MapCubit>().selectStop(stop.id),
+                      onTap: () =>
+                          context.read<MapCubit>().selectStop(stop.id),
                       child: _buildMarker(i + 1, stop, isSelected),
                     ),
                   );
@@ -12146,7 +12434,6 @@ class _MapViewState extends State<_MapView> with WidgetsBindingObserver {
           ],
         ),
 
-        // Selected stop bottom sheet
         if (selectedStop != null)
           Positioned(
             bottom: 16,
@@ -12158,7 +12445,6 @@ class _MapViewState extends State<_MapView> with WidgetsBindingObserver {
             ).animate().slideY(begin: 1, end: 0, duration: 300.ms),
           ),
 
-        // Floating Action Button: My Location Button
         Positioned(
           bottom: selectedStop != null ? 140 : 20,
           left: 16,
@@ -12189,7 +12475,6 @@ class _MapViewState extends State<_MapView> with WidgetsBindingObserver {
           ),
         ),
 
-        // Stops count badge
         Positioned(
           top: 16,
           right: 16,
@@ -12203,6 +12488,31 @@ class _MapViewState extends State<_MapView> with WidgetsBindingObserver {
         ),
       ],
     );
+  }
+
+  Widget _buildTileLayer() {
+    if (kIsWeb) {
+      return TileLayer(
+        urlTemplate:
+            'https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png',
+        subdomains: const ['a', 'b', 'c', 'd'],
+        userAgentPackageName: 'com.rahhalai.rahhal_flutter',
+        maxZoom: 19,
+      );
+    }
+    return TileLayer(
+      urlTemplate: 'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
+      userAgentPackageName: 'com.rahhalai.rahhal_flutter',
+      maxZoom: 19,
+    );
+  }
+
+  @override
+  void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
+    _positionSub?.cancel();
+    _mapController.dispose();
+    super.dispose();
   }
 
   Widget _buildUserLocationMarker() {
@@ -14776,6 +15086,7 @@ class TripMapper {
         syncedAt: m['synced_at'] != null
             ? DateTime.tryParse(m['synced_at'] as String)
             : null,
+        isMockData: (m['is_mock_data'] as int? ?? 0) == 1,
       );
 
   static Map<String, dynamic> toMap(TripEntity t) => {
@@ -14801,6 +15112,7 @@ class TripMapper {
         'created_at': t.createdAt.toIso8601String(),
         'updated_at': t.updatedAt.toIso8601String(),
         'synced_at': t.syncedAt?.toIso8601String(),
+        'is_mock_data': t.isMockData ? 1 : 0,
       };
 
   static List<String> _decodeList(String? json) {
@@ -14828,6 +15140,7 @@ import '../../../../core/database/database_helper.dart';
 import '../../../../core/errors/failures.dart';
 import '../../../../core/errors/exceptions.dart' hide DatabaseException;
 import '../../../../core/network/ai_service.dart';
+import '../../../../core/config/app_config.dart';
 import '../domain/entities/trip_entity.dart';
 import '../domain/entities/stop_entity.dart';
 import '../domain/repositories/trip_repository.dart';
@@ -14860,8 +15173,16 @@ class TripRepositoryImpl implements TripRepository {
     required List<String> travelStyles,
     required int travelersCount,
     DateTime? startDate,
+    double? userLat,
+    double? userLng,
+    String? countryCode,
   }) async {
     try {
+      // Wake up server first if it may be sleeping (Render free tier)
+      if (AppConfig.kServerMayNeedWarmup) {
+        await _aiService.warmupServer();
+      }
+
       // Call AI service
       final response = await _aiService.generateTripPlan(
         destination: destination,
@@ -14870,6 +15191,9 @@ class TripRepositoryImpl implements TripRepository {
         travelStyles: travelStyles,
         travelersCount: travelersCount,
         startDate: startDate,
+        userLat: userLat,
+        userLng: userLng,
+        countryCode: countryCode,
       );
 
       // Fetch hero image URL from search service
@@ -14933,7 +15257,7 @@ class TripRepositoryImpl implements TripRepository {
       // 1. Pre-fetch images for all stops and restaurants in parallel OUTSIDE the DB transaction
       final Map<String, String?> stopImageMap = {};
       final Map<String, String?> restaurantImageMap = {};
-      final List<Future<void>> imageFetchTasks = [];
+      final List<Future<void> Function()> imageTasks = [];
 
       // Tasks for stops
       for (final dayPlan in planResponse.days) {
@@ -14942,13 +15266,14 @@ class TripRepositoryImpl implements TripRepository {
               ? stop.imageSearchQuery!
               : '${stop.nameEn.isNotEmpty ? stop.nameEn : stop.name} ${trip.destination}';
           final key = '${dayPlan.dayNumber}_${stop.orderIndex}_${stop.name}';
-          imageFetchTasks.add(
-            sl<ImageSearchService>().searchPhoto(query).then((url) {
+          imageTasks.add(() async {
+            try {
+              final url = await sl<ImageSearchService>().searchPhoto(query);
               stopImageMap[key] = url;
-            }).catchError((_) {
+            } catch (_) {
               stopImageMap[key] = null;
-            }),
-          );
+            }
+          });
         }
 
         final rec = dayPlan.recommendedRestaurant;
@@ -14957,13 +15282,14 @@ class TripRepositoryImpl implements TripRepository {
               ? rec.imageSearchQuery!
               : '${rec.name} restaurant ${trip.destination}';
           final key = rec.name.trim().toLowerCase();
-          imageFetchTasks.add(
-            sl<ImageSearchService>().searchPhoto(query).then((url) {
+          imageTasks.add(() async {
+            try {
+              final url = await sl<ImageSearchService>().searchPhoto(query);
               restaurantImageMap[key] = url;
-            }).catchError((_) {
+            } catch (_) {
               restaurantImageMap[key] = null;
-            }),
-          );
+            }
+          });
         }
       }
 
@@ -14974,21 +15300,35 @@ class TripRepositoryImpl implements TripRepository {
           final query = (r.imageSearchQuery != null && r.imageSearchQuery!.isNotEmpty)
               ? r.imageSearchQuery!
               : '${r.name} restaurant ${trip.destination}';
-          imageFetchTasks.add(
-            sl<ImageSearchService>().searchPhoto(query).then((url) {
+          imageTasks.add(() async {
+            try {
+              final url = await sl<ImageSearchService>().searchPhoto(query);
               restaurantImageMap[key] = url;
-            }).catchError((_) {
+            } catch (_) {
               restaurantImageMap[key] = null;
-            }),
-          );
+            }
+          });
         }
       }
 
-      // Wait for all image searches to complete (timeout 5s max)
-      try {
-        await Future.wait(imageFetchTasks).timeout(const Duration(seconds: 5));
-      } catch (e) {
-        debugPrint('⚠️ TripRepository: Photo pre-fetching timed out or partially failed: $e');
+      // Execute in batches of 5 concurrent requests to prevent network & API quota overflow
+      const batchSize = 5;
+      for (int i = 0; i < imageTasks.length; i += batchSize) {
+        final batch = imageTasks.skip(i).take(batchSize).map((task) => task()).toList();
+        try {
+          await Future.wait(
+            batch,
+            eagerError: false,
+          ).timeout(
+            const Duration(seconds: 4),
+            onTimeout: () {
+              debugPrint('⚠️ TripRepository: Batch image prefetch timeout after 4s — proceeding');
+              return [];
+            },
+          );
+        } catch (e) {
+          debugPrint('⚠️ TripRepository: Batch image prefetch error (non-critical): $e');
+        }
       }
 
       // 2. Perform fast DB operations inside transaction
@@ -15044,6 +15384,8 @@ class TripRepositoryImpl implements TripRepository {
               'booking_required': stop.bookingRequired ? 1 : 0,
               'booking_url': stop.bookingUrl,
               'image_url': stopImageUrl,
+              'coords_verified': stop.coordsVerified ? 1 : 0,
+              'place_id': stop.placeId,
             });
           }
 
@@ -15134,7 +15476,9 @@ class TripRepositoryImpl implements TripRepository {
         }
       });
 
-      unawaited(_syncService.syncTripToCloud(trip.id));
+      _syncService.syncTripToCloud(trip.id).catchError((e) {
+        debugPrint('[TripRepo] Cloud sync failed (non-critical): $e');
+      });
 
       return const Right(null);
     } on DatabaseException catch (e) {
@@ -15216,7 +15560,9 @@ class TripRepositoryImpl implements TripRepository {
         whereArgs: [tripId],
       );
       // Trigger cloud sync in the background
-      unawaited(_syncService.syncTripToCloud(tripId));
+      _syncService.syncTripToCloud(tripId).catchError((e) {
+        debugPrint('[TripRepo] Cloud sync failed (non-critical): $e');
+      });
       return const Right(null);
     } catch (e) {
       return Left(DatabaseFailure(e.toString()));
@@ -15228,7 +15574,9 @@ class TripRepositoryImpl implements TripRepository {
     try {
       await _dbHelper.delete('trips', where: 'id = ?', whereArgs: [tripId]);
       // Trigger cloud deletion in the background
-      unawaited(_syncService.deleteTripFromCloud(tripId));
+      _syncService.deleteTripFromCloud(tripId).catchError((e) {
+        debugPrint('[TripRepo] Cloud delete failed (non-critical): $e');
+      });
       return const Right(null);
     } catch (e) {
       return Left(DatabaseFailure(e.toString()));
@@ -15511,6 +15859,9 @@ abstract class TripRepository {
     required List<String> travelStyles,
     required int travelersCount,
     DateTime? startDate,
+    double? userLat,
+    double? userLng,
+    String? countryCode,
   });
 
   /// Get all trips for the current user.
@@ -15641,6 +15992,9 @@ class TripPlannerCubit extends Cubit<TripPlannerState> {
     required List<String> travelStyles,
     required int travelersCount,
     DateTime? startDate,
+    double? userLat,
+    double? userLng,
+    String? countryCode,
   }) async {
     emit(const TripPlannerGenerating());
 
@@ -15651,6 +16005,9 @@ class TripPlannerCubit extends Cubit<TripPlannerState> {
       travelStyles: travelStyles,
       travelersCount: travelersCount,
       startDate: startDate,
+      userLat: userLat,
+      userLng: userLng,
+      countryCode: countryCode,
     );
 
     result.fold(
@@ -15813,6 +16170,9 @@ class _GeneratingScreenBodyState extends State<_GeneratingScreenBody>
       travelStyles: (widget.params['travelStyles'] as List).cast<String>(),
       travelersCount: widget.params['travelersCount'] as int,
       startDate: widget.params['startDate'] as DateTime?,
+      userLat: widget.params['userLat'] as double?,
+      userLng: widget.params['userLng'] as double?,
+      countryCode: widget.params['countryCode'] as String?,
     );
   }
 
@@ -15905,6 +16265,8 @@ class _GeneratingScreenBodyState extends State<_GeneratingScreenBody>
       listener: (context, state) => _handleState(state),
       child: Scaffold(
         backgroundColor: AppColors.adaptiveBgPrimary(context),
+        // ✅ Use resizeToAvoidBottomInset to handle keyboard edge cases
+        resizeToAvoidBottomInset: false,
         body: Stack(
           children: [
             // Radial background animation
@@ -15927,150 +16289,171 @@ class _GeneratingScreenBodyState extends State<_GeneratingScreenBody>
             // Floating particles
             ..._buildParticles(),
 
+            // ✅ KEY FIX: Use SafeArea + CustomScrollView instead of Center + SingleChildScrollView
             SafeArea(
-              child: Center(
-                child: SingleChildScrollView(
-                  padding: const EdgeInsets.fromLTRB(20, 20, 20, 80),
-                  child: Column(
-                    mainAxisAlignment: MainAxisAlignment.center,
-                    children: [
-                      // Spinning logo
-                      _buildSpinningLogo(),
-                      const SizedBox(height: 24),
+              child: CustomScrollView(
+                // ✅ This ensures content is always scrollable if it exceeds screen
+                physics: const BouncingScrollPhysics(),
+                slivers: [
+                  SliverFillRemaining(
+                    // ✅ hasScrollBody: false makes it fill screen but also scroll if needed
+                    hasScrollBody: false,
+                    child: Padding(
+                      padding: const EdgeInsets.fromLTRB(20, 20, 20, 80),
+                      child: Column(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: [
+                          // Spinning logo
+                          _buildSpinningLogo(),
+                          const SizedBox(height: 20),
 
-                      // Title
-                      Text(
-                        AppStrings.of(context).generatingTitle,
-                        style: AppTextStyles.headlineLarge,
-                        textAlign: TextAlign.center,
-                      )
-                          .animate(onPlay: (c) => c.repeat(reverse: true))
-                          .fadeIn(duration: 600.ms),
+                          // Title
+                          Text(
+                            AppStrings.of(context).generatingTitle,
+                            style: AppTextStyles.headlineLarge,
+                            textAlign: TextAlign.center,
+                          ).animate(onPlay: (c) => c.repeat(reverse: true))
+                              .fadeIn(duration: 600.ms),
 
-                      const SizedBox(height: 6),
-                      Text(
-                        AppStrings.of(context).generatingSubtitle,
-                        style: AppTextStyles.bodyMedium,
-                        textAlign: TextAlign.center,
-                      ),
-
-                      // Warmup hint — shown when Render free-tier server may be asleep
-                      if (AppConfig.kServerMayNeedWarmup) ...[
-                        const SizedBox(height: 8),
-                        Container(
-                          margin: const EdgeInsets.symmetric(horizontal: 24),
-                          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
-                          decoration: BoxDecoration(
-                            color: AppColors.accentAmber.withValues(alpha: 0.10),
-                            borderRadius: BorderRadius.circular(10),
-                            border: Border.all(
-                              color: AppColors.accentAmber.withValues(alpha: 0.25),
-                            ),
+                          const SizedBox(height: 6),
+                          Text(
+                            AppStrings.of(context).generatingSubtitle,
+                            style: AppTextStyles.bodyMedium,
+                            textAlign: TextAlign.center,
                           ),
-                          child: Row(
-                            mainAxisSize: MainAxisSize.min,
-                            mainAxisAlignment: MainAxisAlignment.center,
-                            children: [
-                              const Text('⏳', style: TextStyle(fontSize: 14)),
-                              const SizedBox(width: 6),
-                              Flexible(
-                                child: Text(
-                                  'قد يستغرق الأمر حتى دقيقة عند أول استخدام',
-                                  style: AppTextStyles.bodySmall.copyWith(
-                                    color: AppColors.accentAmber,
-                                  ),
-                                  textAlign: TextAlign.center,
+
+                          // Warmup hint
+                          if (AppConfig.kServerMayNeedWarmup) ...[
+                            const SizedBox(height: 8),
+                            Container(
+                              margin: const EdgeInsets.symmetric(horizontal: 24),
+                              padding: const EdgeInsets.symmetric(
+                                  horizontal: 14, vertical: 8),
+                              decoration: BoxDecoration(
+                                color: AppColors.accentAmber.withValues(alpha: 0.10),
+                                borderRadius: BorderRadius.circular(10),
+                                border: Border.all(
+                                  color: AppColors.accentAmber.withValues(alpha: 0.25),
                                 ),
                               ),
-                            ],
-                          ),
-                        ),
-                      ],
-
-                      // 20s Timeout slow warning with Retry button
-                      if (_showSlowWarning) ...[
-                        const SizedBox(height: 12),
-                        Container(
-                          margin: const EdgeInsets.symmetric(horizontal: 20),
-                          padding: const EdgeInsets.all(12),
-                          decoration: BoxDecoration(
-                            color: Colors.amber.withValues(alpha: 0.15),
-                            borderRadius: BorderRadius.circular(14),
-                            border: Border.all(color: Colors.amber.withValues(alpha: 0.4)),
-                          ),
-                          child: Column(
-                            mainAxisSize: MainAxisSize.min,
-                            children: [
-                              Row(
+                              child: Row(
+                                mainAxisSize: MainAxisSize.min,
                                 mainAxisAlignment: MainAxisAlignment.center,
                                 children: [
-                                  const Icon(Icons.speed_rounded, color: Colors.amber, size: 18),
-                                  const SizedBox(width: 8),
+                                  const Text('⏳', style: TextStyle(fontSize: 14)),
+                                  const SizedBox(width: 6),
                                   Flexible(
                                     child: Text(
-                                      'الخادم يستغرق وقتاً أطول من المعتاد...',
-                                      style: AppTextStyles.bodyMedium.copyWith(
-                                        color: Colors.amber,
-                                        fontWeight: FontWeight.w600,
+                                      'قد يستغرق الأمر حتى دقيقة عند أول استخدام',
+                                      style: AppTextStyles.bodySmall.copyWith(
+                                        color: AppColors.accentAmber,
                                       ),
                                       textAlign: TextAlign.center,
                                     ),
                                   ),
                                 ],
                               ),
-                              const SizedBox(height: 8),
-                              ElevatedButton.icon(
-                                onPressed: _startGeneration,
-                                icon: const Icon(Icons.refresh_rounded, size: 16),
-                                label: const Text('إعادة المحاولة الأن'),
-                                style: ElevatedButton.styleFrom(
-                                  backgroundColor: AppColors.accentAmber,
-                                  foregroundColor: AppColors.bgPrimary,
-                                  padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-                                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-                                  textStyle: AppTextStyles.labelMedium,
-                                ),
-                              ),
-                            ],
+                            ),
+                          ],
+
+                          // ✅ Slow warning — wrapped in AnimatedSize to smoothly expand
+                          AnimatedSize(
+                            duration: const Duration(milliseconds: 350),
+                            curve: Curves.easeOut,
+                            child: _showSlowWarning
+                                ? Padding(
+                                    padding: const EdgeInsets.only(top: 12),
+                                    child: Container(
+                                      margin: const EdgeInsets.symmetric(horizontal: 20),
+                                      padding: const EdgeInsets.all(12),
+                                      decoration: BoxDecoration(
+                                        color: Colors.amber.withValues(alpha: 0.15),
+                                        borderRadius: BorderRadius.circular(14),
+                                        border: Border.all(
+                                            color: Colors.amber.withValues(alpha: 0.4)),
+                                      ),
+                                      child: Column(
+                                        mainAxisSize: MainAxisSize.min,
+                                        children: [
+                                          Row(
+                                            mainAxisAlignment:
+                                                MainAxisAlignment.center,
+                                            children: [
+                                              const Icon(Icons.speed_rounded,
+                                                  color: Colors.amber, size: 18),
+                                              const SizedBox(width: 8),
+                                              Flexible(
+                                                child: Text(
+                                                  'الخادم يستغرق وقتاً أطول من المعتاد...',
+                                                  style: AppTextStyles.bodyMedium
+                                                      .copyWith(
+                                                    color: Colors.amber,
+                                                    fontWeight: FontWeight.w600,
+                                                  ),
+                                                  textAlign: TextAlign.center,
+                                                ),
+                                              ),
+                                            ],
+                                          ),
+                                          const SizedBox(height: 8),
+                                          ElevatedButton.icon(
+                                            onPressed: _startGeneration,
+                                            icon: const Icon(
+                                                Icons.refresh_rounded,
+                                                size: 16),
+                                            label: const Text('إعادة المحاولة الآن'),
+                                            style: ElevatedButton.styleFrom(
+                                              backgroundColor:
+                                                  AppColors.accentAmber,
+                                              foregroundColor:
+                                                  AppColors.bgPrimary,
+                                              padding: const EdgeInsets.symmetric(
+                                                  horizontal: 16, vertical: 8),
+                                              shape: RoundedRectangleBorder(
+                                                borderRadius:
+                                                    BorderRadius.circular(20),
+                                              ),
+                                            ),
+                                          ),
+                                        ],
+                                      ),
+                                    ).animate().fadeIn(duration: 400.ms),
+                                  )
+                                : const SizedBox.shrink(),
                           ),
-                        ).animate().fadeIn(duration: 400.ms).shake(hz: 2, curve: Curves.easeInOut),
-                      ],
 
-                      const SizedBox(height: 24),
+                          const SizedBox(height: 20),
 
-                      // Steps
-                      _buildSteps(context),
+                          // Steps
+                          _buildSteps(context),
 
-                      const SizedBox(height: 20),
+                          const SizedBox(height: 16),
 
-                      // Progress dots
-                      _buildProgressDots(),
-                    ],
-                  ),
-                ),
-              ),
-            ),
+                          // Progress dots
+                          _buildProgressDots(),
 
-            // Cancel Button
-            Positioned(
-              bottom: 20,
-              left: 0,
-              right: 0,
-              child: Center(
-                child: TextButton.icon(
-                  onPressed: () => context.go('/plan'),
-                  icon: Icon(
-                    Icons.close_rounded,
-                    color: AppColors.adaptiveTextSecondary(context),
-                    size: 18,
-                  ),
-                  label: Text(
-                    'إلغاء والعودة',
-                    style: AppTextStyles.bodyMedium.copyWith(
-                      color: AppColors.adaptiveTextSecondary(context),
+                          const SizedBox(height: 12),
+
+                          // ✅ Cancel button INSIDE scroll — not Positioned
+                          TextButton.icon(
+                            onPressed: () => context.go('/plan'),
+                            icon: Icon(
+                              Icons.close_rounded,
+                              color: AppColors.adaptiveTextSecondary(context),
+                              size: 18,
+                            ),
+                            label: Text(
+                              'إلغاء والعودة',
+                              style: AppTextStyles.bodyMedium.copyWith(
+                                color: AppColors.adaptiveTextSecondary(context),
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
                     ),
                   ),
-                ),
+                ],
               ),
             ),
           ],
@@ -16849,19 +17232,19 @@ class _TripDashboardScreenState extends State<TripDashboardScreen>
                   margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
                   padding: const EdgeInsets.all(12),
                   decoration: BoxDecoration(
-                    color: AppColors.accentAmber.withValues(alpha: 0.12),
+                    color: Colors.orange.withValues(alpha: 0.15),
                     borderRadius: BorderRadius.circular(12),
-                    border: Border.all(color: AppColors.accentAmber.withValues(alpha: 0.3)),
+                    border: Border.all(color: Colors.orange.withValues(alpha: 0.3)),
                   ),
                   child: Row(
                     children: [
-                      const Icon(Icons.info_outline_rounded, color: AppColors.accentAmber, size: 18),
-                      const SizedBox(width: 8),
+                      const Icon(Icons.warning_amber_rounded, color: Colors.orange, size: 18),
+                      const SizedBox(width: 10),
                       Expanded(
                         child: Text(
-                          'هذه الرحلة أُنشئت سحابةً في وضع عدم الاتصال. أنشئ رحلة جديدة الآن لتوليد خطة حية بالذكاء الاصطناعي ✨',
+                          '⚠️ هذه خطة تجريبية (بيانات وهمية) بسبب عدم الاتصال بالسيرفر. يرجى التحقق من تشغيل خادم backend (node server.js) للحصول على رحلة حقيقية بالذكاء الاصطناعي.',
                           style: AppTextStyles.bodySmall.copyWith(
-                            color: AppColors.accentAmber,
+                            color: Colors.orange,
                             fontSize: 12,
                           ),
                         ),
@@ -17159,7 +17542,7 @@ class _TripDashboardScreenState extends State<TripDashboardScreen>
   Widget _buildChatFAB(BuildContext context) {
     return FloatingActionButton(
       onPressed: () =>
-          context.push('/trip/${widget.tripId}/chat'),
+          context.push('/trip/${widget.tripId}/chat', extra: _trip),
       backgroundColor: AppColors.accentAmber,
       elevation: 8,
       shape: const CircleBorder(),
@@ -17259,6 +17642,11 @@ class _TripInputScreenState extends State<TripInputScreen> {
   int _children = 0;
   DateTime? _startDate;
 
+  double? _detectedLat;
+  double? _detectedLng;
+  String? _detectedCountryCode;
+  String? _lastAutoFilledText;
+
   Future<void> _detectCurrentLocation() async {
     final strings = AppStrings.of(context);
     setState(() => _isDetectingLocation = true);
@@ -17268,6 +17656,10 @@ class _TripInputScreenState extends State<TripInputScreen> {
       if (locationData != null && mounted) {
         setState(() {
           _destinationCtrl.text = locationData.fullLocationDisplay;
+          _detectedLat = locationData.latitude;
+          _detectedLng = locationData.longitude;
+          _detectedCountryCode = locationData.countryCode;
+          _lastAutoFilledText = locationData.fullLocationDisplay;
           _isDetectingLocation = false;
         });
         ScaffoldMessenger.of(context).showSnackBar(
@@ -17320,6 +17712,19 @@ class _TripInputScreenState extends State<TripInputScreen> {
     super.initState();
     _destinationCtrl = TextEditingController();
     _initDestination();
+
+    _destinationCtrl.addListener(() {
+      if (_detectedLat != null) {
+        final currentText = _destinationCtrl.text.trim();
+        if (currentText != (_lastAutoFilledText ?? '')) {
+          setState(() {
+            _detectedLat = null;
+            _detectedLng = null;
+            _detectedCountryCode = null;
+          });
+        }
+      }
+    });
   }
 
   Future<void> _initDestination() async {
@@ -17929,6 +18334,9 @@ class _TripInputScreenState extends State<TripInputScreen> {
       'travelStyles': _styles.toList(),
       'travelersCount': _adults + _children,
       'startDate': _startDate,
+      'userLat': _detectedLat,
+      'userLng': _detectedLng,
+      'countryCode': _detectedCountryCode,
     });
   }
 }
@@ -18632,6 +19040,7 @@ import 'package:firebase_app_check/firebase_app_check.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'firebase_options.dart';
 import 'core/di/injection.dart';
+import 'core/di/app_bloc_observer.dart';
 import 'core/services/notification_service.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'core/theme/app_theme.dart';
@@ -18640,9 +19049,11 @@ import 'features/favorites/presentation/cubit/favorites_cubit.dart';
 import 'features/auth/presentation/cubit/auth_cubit.dart';
 import 'package:sqflite/sqflite.dart';
 import 'package:sqflite_common_ffi_web/sqflite_ffi_web.dart';
+import 'shared/widgets/offline_banner.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
+  Bloc.observer = AppBlocObserver();
 
   // Catch unhandled Flutter errors
   FlutterError.onError = (FlutterErrorDetails details) {
@@ -18684,8 +19095,16 @@ void main() async {
   // Initialize Local Notification Service
   await NotificationService.initialize();
 
+  // Pre-load locale settings
+  final prefs = await SharedPreferences.getInstance();
+  final langCode = prefs.getString('language_code') ?? 'ar';
+  final countryCode = langCode == 'ar' ? 'AE' : 'US';
+  appLocale.value = Locale(langCode, countryCode);
+
   runApp(const RahhalApp());
 }
+
+final ValueNotifier<Locale> appLocale = ValueNotifier(const Locale('ar', 'AE'));
 
 class RahhalApp extends StatefulWidget {
   const RahhalApp({super.key});
@@ -18698,7 +19117,6 @@ class RahhalApp extends StatefulWidget {
 }
 
 class RahhalAppState extends State<RahhalApp> {
-  Locale _locale = const Locale('ar', 'AE');
   ThemeMode _themeMode = ThemeMode.dark;
 
   @override
@@ -18710,10 +19128,6 @@ class RahhalAppState extends State<RahhalApp> {
   Future<void> _loadSettings() async {
     final prefs = await SharedPreferences.getInstance();
     
-    // Load locale
-    final langCode = prefs.getString('language_code') ?? 'ar';
-    final countryCode = langCode == 'ar' ? 'AE' : 'US';
-    
     // Load theme
     final themeStr = prefs.getString('theme_mode') ?? 'dark';
     ThemeMode mode = ThemeMode.dark;
@@ -18724,15 +19138,12 @@ class RahhalAppState extends State<RahhalApp> {
     }
 
     setState(() {
-      _locale = Locale(langCode, countryCode);
       _themeMode = mode;
     });
   }
 
   void setLocale(Locale locale) {
-    setState(() {
-      _locale = locale;
-    });
+    appLocale.value = locale;
   }
 
   void setThemeMode(ThemeMode mode) {
@@ -18752,29 +19163,37 @@ class RahhalAppState extends State<RahhalApp> {
           create: (_) => sl<AuthCubit>()..checkCurrentUser(),
         ),
       ],
-      child: MaterialApp.router(
-        title: 'رحّال AI',
-        debugShowCheckedModeBanner: false,
+      child: ValueListenableBuilder<Locale>(
+        valueListenable: appLocale,
+        builder: (context, currentLocale, _) {
+          return MaterialApp.router(
+            title: 'رحّال AI',
+            debugShowCheckedModeBanner: false,
 
-        // Theme
-        theme: AppTheme.lightTheme,
-        darkTheme: AppTheme.darkTheme,
-        themeMode: _themeMode,
+            // Theme
+            theme: AppTheme.lightTheme,
+            darkTheme: AppTheme.darkTheme,
+            themeMode: _themeMode,
 
-        // Routing configuration
-        routerConfig: AppRouter.router,
+            // Routing configuration
+            routerConfig: AppRouter.router,
 
-        // Localization & RTL support
-        locale: _locale,
-        supportedLocales: const [
-          Locale('ar', 'AE'),
-          Locale('en', 'US'),
-        ],
-        localizationsDelegates: const [
-          GlobalMaterialLocalizations.delegate,
-          GlobalWidgetsLocalizations.delegate,
-          GlobalCupertinoLocalizations.delegate,
-        ],
+            // Wrap screens in OfflineBanner
+            builder: (context, child) => OfflineBanner(child: child!),
+
+            // Localization & RTL support
+            locale: currentLocale,
+            supportedLocales: const [
+              Locale('ar', 'AE'),
+              Locale('en', 'US'),
+            ],
+            localizationsDelegates: const [
+              GlobalMaterialLocalizations.delegate,
+              GlobalWidgetsLocalizations.delegate,
+              GlobalCupertinoLocalizations.delegate,
+            ],
+          );
+        },
       ),
     );
   }
@@ -19549,6 +19968,65 @@ class MainNavigationLayout extends StatelessWidget {
           ),
         ],
       ),
+    );
+  }
+}
+
+```
+
+---
+
+## File: `lib/shared/widgets/offline_banner.dart`
+```dart
+import 'package:connectivity_plus/connectivity_plus.dart';
+import 'package:flutter/material.dart';
+
+/// A banner that appears at the top of the screen when there is no internet connection.
+class OfflineBanner extends StatelessWidget {
+  final Widget child;
+  const OfflineBanner({super.key, required this.child});
+
+  @override
+  Widget build(BuildContext context) {
+    return StreamBuilder<List<ConnectivityResult>>(
+      stream: Connectivity().onConnectivityChanged,
+      builder: (context, snapshot) {
+        final results = snapshot.data ?? [];
+        final isOffline = results.isNotEmpty &&
+            results.every((r) => r == ConnectivityResult.none);
+
+        return Column(
+          children: [
+            AnimatedContainer(
+              duration: const Duration(milliseconds: 300),
+              height: isOffline ? 36 : 0,
+              width: double.infinity,
+              color: Colors.red.shade700,
+              child: isOffline
+                  ? const Center(
+                      child: Row(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: [
+                          Icon(Icons.wifi_off_rounded,
+                              color: Colors.white, size: 16),
+                          SizedBox(width: 8),
+                          Text(
+                            'لا يوجد اتصال بالإنترنت. يرجى التحقق من الشبكة.',
+                            style: TextStyle(
+                              color: Colors.white,
+                              fontSize: 13,
+                              fontFamily: 'Inter',
+                            ),
+                          ),
+                        ],
+                      ),
+                    )
+                  : null,
+            ),
+            Expanded(child: child),
+          ],
+        );
+      },
     );
   }
 }
