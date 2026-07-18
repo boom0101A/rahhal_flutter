@@ -180,9 +180,10 @@ class _GeneratingScreenBodyState extends State<_GeneratingScreenBody>
       return '⏳ السيرفر كان في وضع السكون.\n'  
              'يرجى الانتظار 30-60 ثانية ثم إعادة المحاولة.';
     }
-    if (code.contains('invalid-api-key')) {
-      return '🔑 مفتاح API غير صالح أو منتهي.\n'
-             'تحقق من إعدادات الخادم.';
+    if (code.contains('invalid-api-key') || code.contains('missing-api-key')) {
+      return '🔑 مفتاح API غير صالح أو غير موجود.\n'
+             'تحقق من ملف .env في السيرفر:\n'
+             'GEMINI_API_KEY أو ANTHROPIC_API_KEY';
     }
     if (code.contains('rate-limit')) {
       return '⏱ تجاوزت الحد المسموح من الطلبات.\n'

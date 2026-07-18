@@ -5,6 +5,31 @@ const rateLimit = require('express-rate-limit');
 const { GoogleGenerativeAI } = require('@google/generative-ai');
 require('dotenv').config();
 
+// ─── Startup Environment Validation ─────────────────────────────────────────
+const GEMINI_KEY = process.env.GEMINI_API_KEY;
+
+console.log('═══════════════════════════════════════════');
+console.log('🚀 Rahhal AI Backend — Environment Check');
+console.log('═══════════════════════════════════════════');
+
+if (!GEMINI_KEY || GEMINI_KEY === 'your_gemini_api_key_here') {
+  console.error('❌ GEMINI_API_KEY: NOT SET');
+  console.error('⚠️  WARNING: No Gemini AI API key found!');
+  console.error('   All trip generation will fail with "missing-api-key" error.');
+  console.error('   Add GEMINI_API_KEY to your .env file.');
+} else {
+  console.log('✅ GEMINI_API_KEY: Set (Google Gemini AI active)');
+}
+
+if (process.env.GOOGLE_PLACES_API_KEY &&
+    process.env.GOOGLE_PLACES_API_KEY !== 'your_google_places_api_key_here') {
+  console.log('✅ GOOGLE_PLACES_API_KEY: Set (place verification active)');
+} else {
+  console.log('⚠️  GOOGLE_PLACES_API_KEY: Not set (coordinates unverified)');
+}
+
+console.log('═══════════════════════════════════════════');
+
 // Conditional Firebase Admin import (only used if FIREBASE_SERVICE_ACCOUNT is set)
 let admin = null;
 if (process.env.FIREBASE_SERVICE_ACCOUNT) {
@@ -110,114 +135,135 @@ app.get('/health', (req, res) => {
   res.status(200).json({ status: 'ok', service: 'Rahhal AI Proxy', timestamp: new Date() });
 });
 
-// Helper function to call Anthropic API
-async function callClaude(systemPrompt, messages, maxTokens = 4000) {
-  const apiKey = process.env.ANTHROPIC_API_KEY;
-  if (!apiKey || apiKey === 'your_anthropic_api_key_here') {
-    throw new Error('missing-api-key');
+// Detailed status endpoint — Flutter uses this to check AI readiness before generating
+app.get('/api/status', (req, res) => {
+  const hasGeminiKey = !!(process.env.GEMINI_API_KEY &&
+    process.env.GEMINI_API_KEY !== 'your_gemini_api_key_here');
+  const hasPlacesKey = !!(process.env.GOOGLE_PLACES_API_KEY &&
+    process.env.GOOGLE_PLACES_API_KEY !== 'your_google_places_api_key_here');
+
+  res.json({
+    status: 'ok',
+    ai_engine: hasGeminiKey ? 'gemini' : 'none',
+    ai_ready: hasGeminiKey,
+    places_verification: hasPlacesKey,
+    timestamp: new Date().toISOString(),
+  });
+});
+
+// Helper function to call Google Gemini API using official SDK & REST API fallback
+// Supports both legacy AIzaSy... and new AQ.... key formats
+async function callGemini(systemPrompt, messages, maxTokens = 4000, apiKey) {
+  const modelsToTry = ['gemini-1.5-flash', 'gemini-2.0-flash', 'gemini-1.5-pro'];
+  let lastError = null;
+
+  // ─── Attempt 1: Official Google Generative AI SDK ─────────────────────────
+  for (const modelName of modelsToTry) {
+    try {
+      console.log(`[GEMINI SDK] Trying model: ${modelName} | Key prefix: ${apiKey.substring(0, 6)}...`);
+      const genAI = new GoogleGenerativeAI(apiKey);
+      const model = genAI.getGenerativeModel({
+        model: modelName,
+        generationConfig: {
+          temperature: 0.7,
+          maxOutputTokens: maxTokens,
+        },
+        ...(systemPrompt ? { systemInstruction: systemPrompt } : {}),
+      });
+
+      const history = messages.slice(0, -1).map(m => ({
+        role: m.role === 'assistant' || m.role === 'model' ? 'model' : 'user',
+        parts: [{ text: m.content }],
+      }));
+
+      const lastMessage = messages[messages.length - 1];
+      const chat = model.startChat({ history });
+      const result = await chat.sendMessage(lastMessage.content);
+      const text = result.response.text();
+
+      console.log(`[GEMINI SDK] ✅ Success with ${modelName}! Response length: ${text.length}`);
+      return text;
+    } catch (error) {
+      lastError = error;
+      console.warn(`[GEMINI SDK] ${modelName} error: ${error.message}`);
+    }
   }
 
+  // ─── Attempt 2: Direct REST API Fallback (Supports AQ. and AIzaSy keys 100%) ──
   try {
+    console.log('[GEMINI REST] Trying direct HTTP REST API fallback (v1beta)...');
+    const userMessage = messages[messages.length - 1]?.content || '';
+    const fullPrompt = systemPrompt ? `${systemPrompt}\n\n${userMessage}` : userMessage;
+
+    const restUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${apiKey}`;
     const response = await axios.post(
-      'https://api.anthropic.com/v1/messages',
+      restUrl,
       {
-        model: 'claude-3-5-sonnet-20241022',
-        max_tokens: maxTokens,
-        system: systemPrompt,
-        messages: messages,
+        contents: [
+          {
+            role: 'user',
+            parts: [{ text: fullPrompt }],
+          },
+        ],
+        generationConfig: {
+          temperature: 0.7,
+          maxOutputTokens: maxTokens,
+        },
       },
       {
-        headers: {
-          'x-api-key': apiKey,
-          'anthropic-version': '2023-06-01',
-          'content-type': 'application/json',
-        },
-        timeout: 90000,
+        headers: { 'Content-Type': 'application/json' },
+        timeout: 60000,
       }
     );
 
-    if (response.data && response.data.content && response.data.content[0]) {
-      return response.data.content[0].text;
+    const text = response.data?.candidates?.[0]?.content?.parts?.[0]?.text;
+    if (text && text.length > 0) {
+      console.log(`[GEMINI REST] ✅ REST API Success! Response length: ${text.length}`);
+      return text;
     }
-    throw new Error('Invalid response from Claude API');
-  } catch (error) {
-    if (error.response) {
-      const status = error.response.status;
-      if (status === 401 || status === 403) {
-        throw new Error('invalid-api-key');
-      }
-      if (status === 429) {
-        throw new Error('rate-limit');
-      }
-      throw new Error(`api-error-${status}`);
-    }
-    throw error;
+  } catch (restErr) {
+    console.error(`[GEMINI REST ERROR] ${restErr.response?.data?.error?.message || restErr.message}`);
+    lastError = restErr;
   }
+
+  const errMsg = lastError?.response?.data?.error?.message || lastError?.message || '';
+  const status = lastError?.response?.status || lastError?.status || 0;
+
+  if (errMsg.includes('API_KEY_INVALID') || errMsg.includes('API key not valid') || status === 401 || status === 403) {
+    throw new Error('invalid-api-key');
+  }
+  if (errMsg.includes('RESOURCE_EXHAUSTED') || status === 429) {
+    throw new Error('rate-limit');
+  }
+  throw new Error(`gemini-error: ${errMsg}`);
 }
 
-// Helper function to call Google Gemini API using the official SDK
-// Supports both old AIzaSy... and new AQ.... key formats automatically
-async function callGemini(systemPrompt, messages, maxTokens = 4000, apiKey) {
-  console.log(`[GEMINI] Calling gemini-2.0-flash | Key prefix: ${apiKey.substring(0, 8)}...`);
-
-  try {
-    const genAI = new GoogleGenerativeAI(apiKey);
-    const model = genAI.getGenerativeModel({
-      model: 'gemini-2.0-flash',
-      generationConfig: {
-        temperature: 0.7,
-        maxOutputTokens: maxTokens,
-      },
-      ...(systemPrompt ? { systemInstruction: systemPrompt } : {}),
-    });
-
-    // Convert messages to Gemini chat history format
-    const history = messages.slice(0, -1).map(m => ({
-      role: m.role === 'assistant' || m.role === 'model' ? 'model' : 'user',
-      parts: [{ text: m.content }],
-    }));
-
-    const lastMessage = messages[messages.length - 1];
-
-    const chat = model.startChat({ history });
-    const result = await chat.sendMessage(lastMessage.content);
-    const text = result.response.text();
-
-    console.log('[GEMINI] ✅ Success! Response length:', text.length);
-    return text;
-  } catch (error) {
-    const status = error.status || (error.message?.includes('API_KEY_INVALID') ? 401 : 0);
-    console.error(`[GEMINI ERROR] ${error.message}`);
-    if (error.message?.includes('API_KEY_INVALID') || status === 401 || status === 403) {
-      throw new Error('invalid-api-key');
-    }
-    if (error.message?.includes('RESOURCE_EXHAUSTED') || status === 429) {
-      throw new Error('rate-limit');
-    }
-    throw new Error(`gemini-error: ${error.message}`);
-  }
-}
-
-// Unified AI Engine Call: Tries Claude first, automatically falls back to Gemini!
+// Unified AI Engine Call: Uses Google Gemini as the sole AI engine
 async function callAI(systemPrompt, messages, maxTokens = 4000) {
-  // Try Claude
-  const claudeKey = process.env.ANTHROPIC_API_KEY;
-  if (claudeKey && claudeKey !== 'your_anthropic_api_key_here' && claudeKey.length > 10) {
+  // 1. Try primary Gemini key
+  const geminiKey = process.env.GEMINI_API_KEY;
+  if (geminiKey && geminiKey !== 'your_gemini_api_key_here' && geminiKey.length > 10) {
     try {
-      return await callClaude(systemPrompt, messages, maxTokens);
+      console.log('[AI Engine] Using Google Gemini...');
+      return await callGemini(systemPrompt, messages, maxTokens, geminiKey);
     } catch (e) {
-      console.warn('[AI Engine] Claude failed:', e.message);
+      console.warn('[AI Engine] GEMINI_API_KEY failed:', e.message);
+      throw e;
     }
   }
 
-  // Use GEMINI_API_KEY or fallback to GOOGLE_PLACES_API_KEY
-  const geminiKey = process.env.GEMINI_API_KEY || process.env.GOOGLE_PLACES_API_KEY;
-  if (geminiKey && geminiKey !== 'your_gemini_api_key_here' && geminiKey.length > 10) {
-    console.log('[AI Engine] Using Google Gemini...');
-    return await callGemini(systemPrompt, messages, maxTokens, geminiKey);
+  // 2. Fallback to GOOGLE_PLACES_API_KEY if it starts with AIzaSy
+  const placesKey = process.env.GOOGLE_PLACES_API_KEY;
+  if (placesKey && placesKey.startsWith('AIzaSy') && placesKey !== geminiKey) {
+    try {
+      console.log('[AI Engine] Trying GOOGLE_PLACES_API_KEY fallback for Gemini...');
+      return await callGemini(systemPrompt, messages, maxTokens, placesKey);
+    } catch (e) {
+      console.warn('[AI Engine] Fallback GOOGLE_PLACES_API_KEY failed:', e.message);
+    }
   }
 
-  throw new Error('missing-api-key');
+  throw new Error('invalid-api-key');
 }
 
 // ─── Google Places API: verify a place and return real coordinates ────────────

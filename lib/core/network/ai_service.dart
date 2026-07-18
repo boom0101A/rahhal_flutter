@@ -289,6 +289,28 @@ class AITravelService {
     }
   }
 
+  /// Checks /api/status to confirm the server is up AND has a valid AI key configured.
+  /// Returns true only when ai_ready=true — meaning Claude or Gemini key is present.
+  Future<bool> checkServerReady() async {
+    try {
+      final response = await _dio.get(
+        '/api/status',
+        options: Options(receiveTimeout: const Duration(seconds: 5)),
+      );
+      final data = response.data as Map<String, dynamic>;
+      final aiReady = data['ai_ready'] as bool? ?? false;
+      final engine = data['ai_engine'] as String? ?? 'none';
+      debugPrint('[AITravelService] Server status: ai_ready=$aiReady, engine=$engine');
+      if (!aiReady) {
+        debugPrint('[AITravelService] Server up but no AI key configured!');
+      }
+      return aiReady;
+    } catch (e) {
+      debugPrint('[AITravelService] Server status check failed: $e');
+      return false;
+    }
+  }
+
   // ─── Public API ─────────────────────────────────────────────────────────────
 
   /// Generates a complete trip plan using Claude AI.
@@ -323,21 +345,23 @@ class AITravelService {
       return TripPlanResponse.fromJson(jsonMap);
     } catch (e) {
       final classified = _classifyError(e);
-      debugPrint('[AITravelService] generateTripPlan failed: $classified');
+      debugPrint('[AITravelService] generateTripPlan failed: ${classified.message}');
 
+      // When mock fallback is enabled, use smart city data for ANY error.
+      // This guarantees the app always works — even without a valid API key.
+      // When a real Gemini key is configured later, real AI kicks in automatically.
       if (AppConfig.kUseMockFallback) {
-        // ─── Seamless Fallback: Ensure 100% Uptime for User ─────────────────────
+        debugPrint('[AITravelService] Activating smart city fallback for: ${classified.message}');
         try {
-          debugPrint('[AITravelService] Server unreachable → activating smart city fallback');
           return _generateMockTripResponse(
               destination, durationDays, budgetTier, travelersCount);
-        } catch (_) {
+        } catch (mockErr) {
+          debugPrint('[AITravelService] Mock also failed: $mockErr');
           throw classified;
         }
-      } else {
-        // We want to see the REAL error in development instead of a silent yellow banner!
-        throw classified;
       }
+
+      throw classified;
     }
   }
 
