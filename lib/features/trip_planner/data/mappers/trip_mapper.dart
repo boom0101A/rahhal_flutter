@@ -31,6 +31,7 @@ class TripMapper {
         syncedAt: m['synced_at'] != null
             ? DateTime.tryParse(m['synced_at'] as String)
             : null,
+        isMockData: (m['is_mock_data'] as int? ?? 0) == 1,
       );
 
   static Map<String, dynamic> toMap(TripEntity t) => {
@@ -56,6 +57,7 @@ class TripMapper {
         'created_at': t.createdAt.toIso8601String(),
         'updated_at': t.updatedAt.toIso8601String(),
         'synced_at': t.syncedAt?.toIso8601String(),
+        'is_mock_data': t.isMockData ? 1 : 0,
       };
 
   static List<String> _decodeList(String? json) {

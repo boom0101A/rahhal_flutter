@@ -36,16 +36,20 @@ class AuthRepositoryImpl implements AuthRepository {
 
   @override
   Stream<UserEntity?> get authStateChanges {
-    return firebase_auth.FirebaseAuth.instance.authStateChanges().map((firebaseUser) {
-      if (firebaseUser == null) return null;
-      return UserEntity(
-        uid: firebaseUser.uid,
-        email: firebaseUser.email,
-        displayName: firebaseUser.displayName,
-        photoUrl: firebaseUser.photoURL,
-        isAnonymous: firebaseUser.isAnonymous,
-      );
-    });
+    try {
+      return firebase_auth.FirebaseAuth.instance.authStateChanges().map((firebaseUser) {
+        if (firebaseUser == null) return null;
+        return UserEntity(
+          uid: firebaseUser.uid,
+          email: firebaseUser.email,
+          displayName: firebaseUser.displayName,
+          photoUrl: firebaseUser.photoURL,
+          isAnonymous: firebaseUser.isAnonymous,
+        );
+      });
+    } catch (_) {
+      return Stream.value(null);
+    }
   }
 
   @override

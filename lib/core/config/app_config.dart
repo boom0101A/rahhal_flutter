@@ -3,25 +3,50 @@ import 'package:flutter/foundation.dart';
 class AppConfig {
   AppConfig._();
 
-  /// Read from --dart-define at build time, fallback to localhost for emulator / cloud URL
-  static const String proxyBaseUrl = String.fromEnvironment(
-    'PROXY_BASE_URL',
-    defaultValue: 'http://10.0.2.2:3000', // Android emulator → host machine
-  );
+  // Set via: flutter run --dart-define=PROXY_BASE_URL=https://your-server.com
+  static const String _envUrl = String.fromEnvironment('PROXY_BASE_URL');
 
-  /// Returns true if proxy URL is pointing to a live cloud host (e.g. Render / domain)
+  static String get proxyBaseUrl {
+    if (_envUrl.isNotEmpty) return _envUrl;
+
+    if (kIsWeb) {
+      // Flutter Web always uses the Railway server (always online, no cold start)
+      return 'https://rahhalflutter-production.up.railway.app';
+    }
+
+    if (kReleaseMode) {
+      return 'https://rahhalflutter-production.up.railway.app';
+    }
+
+    // Debug mobile — detect platform without dart:io on web
+    // Android emulator: 10.0.2.2 routes to host machine
+    // iOS simulator: 127.0.0.1 works
+    // Use conditional compilation via Platform (safe because kIsWeb is false here)
+    try {
+      // This only executes on non-web platforms
+      if (_isAndroid()) return 'http://10.0.2.2:3000';
+      if (_isIOS()) return 'http://127.0.0.1:3000';
+    } catch (_) {}
+
+    return 'http://localhost:3000';
+  }
+
+  static bool _isAndroid() {
+    // Use defaultTargetPlatform instead of dart:io to avoid issues on Web
+    return defaultTargetPlatform == TargetPlatform.android;
+  }
+
+  static bool _isIOS() {
+    return defaultTargetPlatform == TargetPlatform.iOS;
+  }
+
   static bool get isProductionMode =>
-      !proxyBaseUrl.contains('localhost') &&
-      !proxyBaseUrl.contains('10.0.2.2') &&
-      !proxyBaseUrl.contains('127.0.0.1') &&
-      !proxyBaseUrl.contains('192.168');
+      proxyBaseUrl.startsWith('https') &&
+      !proxyBaseUrl.contains('localhost');
 
-  /// ⚠️ NEVER set this to true in production.
-  /// When true (debug/QA only), API failures silently fall back to mock data.
-  /// In production this must always be false so real errors surface to the user.
-  static const bool kUseMockFallback = kDebugMode && false;
+  /// ⚠️ Always false — real AI trips only, no silent fake data.
+  static const bool kUseMockFallback = false;
 
-  /// Hint: Render free-tier server needs ~30-50s to wake up after inactivity.
-  /// The UI will show a "may take up to a minute on first use" message.
+  // Whether server may need warmup (Render free tier)
   static const bool kServerMayNeedWarmup = true;
 }

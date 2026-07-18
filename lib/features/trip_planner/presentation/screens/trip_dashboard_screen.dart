@@ -142,19 +142,19 @@ class _TripDashboardScreenState extends State<TripDashboardScreen>
                   margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
                   padding: const EdgeInsets.all(12),
                   decoration: BoxDecoration(
-                    color: AppColors.accentAmber.withValues(alpha: 0.12),
+                    color: Colors.orange.withValues(alpha: 0.15),
                     borderRadius: BorderRadius.circular(12),
-                    border: Border.all(color: AppColors.accentAmber.withValues(alpha: 0.3)),
+                    border: Border.all(color: Colors.orange.withValues(alpha: 0.3)),
                   ),
                   child: Row(
                     children: [
-                      const Icon(Icons.info_outline_rounded, color: AppColors.accentAmber, size: 18),
-                      const SizedBox(width: 8),
+                      const Icon(Icons.warning_amber_rounded, color: Colors.orange, size: 18),
+                      const SizedBox(width: 10),
                       Expanded(
                         child: Text(
-                          'هذه الرحلة أُنشئت سحابةً في وضع عدم الاتصال. أنشئ رحلة جديدة الآن لتوليد خطة حية بالذكاء الاصطناعي ✨',
+                          '⚠️ هذه خطة تجريبية (بيانات وهمية) بسبب عدم الاتصال بالسيرفر. يرجى التحقق من تشغيل خادم backend (node server.js) للحصول على رحلة حقيقية بالذكاء الاصطناعي.',
                           style: AppTextStyles.bodySmall.copyWith(
-                            color: AppColors.accentAmber,
+                            color: Colors.orange,
                             fontSize: 12,
                           ),
                         ),
@@ -452,7 +452,7 @@ class _TripDashboardScreenState extends State<TripDashboardScreen>
   Widget _buildChatFAB(BuildContext context) {
     return FloatingActionButton(
       onPressed: () =>
-          context.push('/trip/${widget.tripId}/chat'),
+          context.push('/trip/${widget.tripId}/chat', extra: _trip),
       backgroundColor: AppColors.accentAmber,
       elevation: 8,
       shape: const CircleBorder(),

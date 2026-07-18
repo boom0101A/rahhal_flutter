@@ -107,6 +107,9 @@ class _GeneratingScreenBodyState extends State<_GeneratingScreenBody>
       travelStyles: (widget.params['travelStyles'] as List).cast<String>(),
       travelersCount: widget.params['travelersCount'] as int,
       startDate: widget.params['startDate'] as DateTime?,
+      userLat: widget.params['userLat'] as double?,
+      userLng: widget.params['userLng'] as double?,
+      countryCode: widget.params['countryCode'] as String?,
     );
   }
 
@@ -199,6 +202,8 @@ class _GeneratingScreenBodyState extends State<_GeneratingScreenBody>
       listener: (context, state) => _handleState(state),
       child: Scaffold(
         backgroundColor: AppColors.adaptiveBgPrimary(context),
+        // ✅ Use resizeToAvoidBottomInset to handle keyboard edge cases
+        resizeToAvoidBottomInset: false,
         body: Stack(
           children: [
             // Radial background animation
@@ -221,150 +226,171 @@ class _GeneratingScreenBodyState extends State<_GeneratingScreenBody>
             // Floating particles
             ..._buildParticles(),
 
+            // ✅ KEY FIX: Use SafeArea + CustomScrollView instead of Center + SingleChildScrollView
             SafeArea(
-              child: Center(
-                child: SingleChildScrollView(
-                  padding: const EdgeInsets.fromLTRB(20, 20, 20, 80),
-                  child: Column(
-                    mainAxisAlignment: MainAxisAlignment.center,
-                    children: [
-                      // Spinning logo
-                      _buildSpinningLogo(),
-                      const SizedBox(height: 24),
+              child: CustomScrollView(
+                // ✅ This ensures content is always scrollable if it exceeds screen
+                physics: const BouncingScrollPhysics(),
+                slivers: [
+                  SliverFillRemaining(
+                    // ✅ hasScrollBody: false makes it fill screen but also scroll if needed
+                    hasScrollBody: false,
+                    child: Padding(
+                      padding: const EdgeInsets.fromLTRB(20, 20, 20, 80),
+                      child: Column(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: [
+                          // Spinning logo
+                          _buildSpinningLogo(),
+                          const SizedBox(height: 20),
 
-                      // Title
-                      Text(
-                        AppStrings.of(context).generatingTitle,
-                        style: AppTextStyles.headlineLarge,
-                        textAlign: TextAlign.center,
-                      )
-                          .animate(onPlay: (c) => c.repeat(reverse: true))
-                          .fadeIn(duration: 600.ms),
+                          // Title
+                          Text(
+                            AppStrings.of(context).generatingTitle,
+                            style: AppTextStyles.headlineLarge,
+                            textAlign: TextAlign.center,
+                          ).animate(onPlay: (c) => c.repeat(reverse: true))
+                              .fadeIn(duration: 600.ms),
 
-                      const SizedBox(height: 6),
-                      Text(
-                        AppStrings.of(context).generatingSubtitle,
-                        style: AppTextStyles.bodyMedium,
-                        textAlign: TextAlign.center,
-                      ),
-
-                      // Warmup hint — shown when Render free-tier server may be asleep
-                      if (AppConfig.kServerMayNeedWarmup) ...[
-                        const SizedBox(height: 8),
-                        Container(
-                          margin: const EdgeInsets.symmetric(horizontal: 24),
-                          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
-                          decoration: BoxDecoration(
-                            color: AppColors.accentAmber.withValues(alpha: 0.10),
-                            borderRadius: BorderRadius.circular(10),
-                            border: Border.all(
-                              color: AppColors.accentAmber.withValues(alpha: 0.25),
-                            ),
+                          const SizedBox(height: 6),
+                          Text(
+                            AppStrings.of(context).generatingSubtitle,
+                            style: AppTextStyles.bodyMedium,
+                            textAlign: TextAlign.center,
                           ),
-                          child: Row(
-                            mainAxisSize: MainAxisSize.min,
-                            mainAxisAlignment: MainAxisAlignment.center,
-                            children: [
-                              const Text('⏳', style: TextStyle(fontSize: 14)),
-                              const SizedBox(width: 6),
-                              Flexible(
-                                child: Text(
-                                  'قد يستغرق الأمر حتى دقيقة عند أول استخدام',
-                                  style: AppTextStyles.bodySmall.copyWith(
-                                    color: AppColors.accentAmber,
-                                  ),
-                                  textAlign: TextAlign.center,
+
+                          // Warmup hint
+                          if (AppConfig.kServerMayNeedWarmup) ...[
+                            const SizedBox(height: 8),
+                            Container(
+                              margin: const EdgeInsets.symmetric(horizontal: 24),
+                              padding: const EdgeInsets.symmetric(
+                                  horizontal: 14, vertical: 8),
+                              decoration: BoxDecoration(
+                                color: AppColors.accentAmber.withValues(alpha: 0.10),
+                                borderRadius: BorderRadius.circular(10),
+                                border: Border.all(
+                                  color: AppColors.accentAmber.withValues(alpha: 0.25),
                                 ),
                               ),
-                            ],
-                          ),
-                        ),
-                      ],
-
-                      // 20s Timeout slow warning with Retry button
-                      if (_showSlowWarning) ...[
-                        const SizedBox(height: 12),
-                        Container(
-                          margin: const EdgeInsets.symmetric(horizontal: 20),
-                          padding: const EdgeInsets.all(12),
-                          decoration: BoxDecoration(
-                            color: Colors.amber.withValues(alpha: 0.15),
-                            borderRadius: BorderRadius.circular(14),
-                            border: Border.all(color: Colors.amber.withValues(alpha: 0.4)),
-                          ),
-                          child: Column(
-                            mainAxisSize: MainAxisSize.min,
-                            children: [
-                              Row(
+                              child: Row(
+                                mainAxisSize: MainAxisSize.min,
                                 mainAxisAlignment: MainAxisAlignment.center,
                                 children: [
-                                  const Icon(Icons.speed_rounded, color: Colors.amber, size: 18),
-                                  const SizedBox(width: 8),
+                                  const Text('⏳', style: TextStyle(fontSize: 14)),
+                                  const SizedBox(width: 6),
                                   Flexible(
                                     child: Text(
-                                      'الخادم يستغرق وقتاً أطول من المعتاد...',
-                                      style: AppTextStyles.bodyMedium.copyWith(
-                                        color: Colors.amber,
-                                        fontWeight: FontWeight.w600,
+                                      'قد يستغرق الأمر حتى دقيقة عند أول استخدام',
+                                      style: AppTextStyles.bodySmall.copyWith(
+                                        color: AppColors.accentAmber,
                                       ),
                                       textAlign: TextAlign.center,
                                     ),
                                   ),
                                 ],
                               ),
-                              const SizedBox(height: 8),
-                              ElevatedButton.icon(
-                                onPressed: _startGeneration,
-                                icon: const Icon(Icons.refresh_rounded, size: 16),
-                                label: const Text('إعادة المحاولة الأن'),
-                                style: ElevatedButton.styleFrom(
-                                  backgroundColor: AppColors.accentAmber,
-                                  foregroundColor: AppColors.bgPrimary,
-                                  padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-                                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-                                  textStyle: AppTextStyles.labelMedium,
-                                ),
-                              ),
-                            ],
+                            ),
+                          ],
+
+                          // ✅ Slow warning — wrapped in AnimatedSize to smoothly expand
+                          AnimatedSize(
+                            duration: const Duration(milliseconds: 350),
+                            curve: Curves.easeOut,
+                            child: _showSlowWarning
+                                ? Padding(
+                                    padding: const EdgeInsets.only(top: 12),
+                                    child: Container(
+                                      margin: const EdgeInsets.symmetric(horizontal: 20),
+                                      padding: const EdgeInsets.all(12),
+                                      decoration: BoxDecoration(
+                                        color: Colors.amber.withValues(alpha: 0.15),
+                                        borderRadius: BorderRadius.circular(14),
+                                        border: Border.all(
+                                            color: Colors.amber.withValues(alpha: 0.4)),
+                                      ),
+                                      child: Column(
+                                        mainAxisSize: MainAxisSize.min,
+                                        children: [
+                                          Row(
+                                            mainAxisAlignment:
+                                                MainAxisAlignment.center,
+                                            children: [
+                                              const Icon(Icons.speed_rounded,
+                                                  color: Colors.amber, size: 18),
+                                              const SizedBox(width: 8),
+                                              Flexible(
+                                                child: Text(
+                                                  'الخادم يستغرق وقتاً أطول من المعتاد...',
+                                                  style: AppTextStyles.bodyMedium
+                                                      .copyWith(
+                                                    color: Colors.amber,
+                                                    fontWeight: FontWeight.w600,
+                                                  ),
+                                                  textAlign: TextAlign.center,
+                                                ),
+                                              ),
+                                            ],
+                                          ),
+                                          const SizedBox(height: 8),
+                                          ElevatedButton.icon(
+                                            onPressed: _startGeneration,
+                                            icon: const Icon(
+                                                Icons.refresh_rounded,
+                                                size: 16),
+                                            label: const Text('إعادة المحاولة الآن'),
+                                            style: ElevatedButton.styleFrom(
+                                              backgroundColor:
+                                                  AppColors.accentAmber,
+                                              foregroundColor:
+                                                  AppColors.bgPrimary,
+                                              padding: const EdgeInsets.symmetric(
+                                                  horizontal: 16, vertical: 8),
+                                              shape: RoundedRectangleBorder(
+                                                borderRadius:
+                                                    BorderRadius.circular(20),
+                                              ),
+                                            ),
+                                          ),
+                                        ],
+                                      ),
+                                    ).animate().fadeIn(duration: 400.ms),
+                                  )
+                                : const SizedBox.shrink(),
                           ),
-                        ).animate().fadeIn(duration: 400.ms).shake(hz: 2, curve: Curves.easeInOut),
-                      ],
 
-                      const SizedBox(height: 24),
+                          const SizedBox(height: 20),
 
-                      // Steps
-                      _buildSteps(context),
+                          // Steps
+                          _buildSteps(context),
 
-                      const SizedBox(height: 20),
+                          const SizedBox(height: 16),
 
-                      // Progress dots
-                      _buildProgressDots(),
-                    ],
-                  ),
-                ),
-              ),
-            ),
+                          // Progress dots
+                          _buildProgressDots(),
 
-            // Cancel Button
-            Positioned(
-              bottom: 20,
-              left: 0,
-              right: 0,
-              child: Center(
-                child: TextButton.icon(
-                  onPressed: () => context.go('/plan'),
-                  icon: Icon(
-                    Icons.close_rounded,
-                    color: AppColors.adaptiveTextSecondary(context),
-                    size: 18,
-                  ),
-                  label: Text(
-                    'إلغاء والعودة',
-                    style: AppTextStyles.bodyMedium.copyWith(
-                      color: AppColors.adaptiveTextSecondary(context),
+                          const SizedBox(height: 12),
+
+                          // ✅ Cancel button INSIDE scroll — not Positioned
+                          TextButton.icon(
+                            onPressed: () => context.go('/plan'),
+                            icon: Icon(
+                              Icons.close_rounded,
+                              color: AppColors.adaptiveTextSecondary(context),
+                              size: 18,
+                            ),
+                            label: Text(
+                              'إلغاء والعودة',
+                              style: AppTextStyles.bodyMedium.copyWith(
+                                color: AppColors.adaptiveTextSecondary(context),
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
                     ),
                   ),
-                ),
+                ],
               ),
             ),
           ],

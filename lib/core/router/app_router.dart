@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
+import '../../main.dart';
 import '../../features/auth/presentation/screens/splash_screen.dart';
 import '../../features/auth/presentation/screens/onboarding_screen.dart';
 import '../../features/auth/presentation/screens/auth_screen.dart';
@@ -34,7 +35,7 @@ class AppRouter {
     navigatorKey: _rootNavigatorKey,
     initialLocation: '/',
     debugLogDiagnostics: true,
-    refreshListenable: _authNotifier,
+    refreshListenable: Listenable.merge([_authNotifier, appLocale]),
     redirect: (context, state) {
       final isAuthenticated = sl<AuthRepository>().isAuthenticated;
       final publicRoutes = ['/', '/onboarding', '/auth'];

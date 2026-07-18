@@ -27,6 +27,11 @@ class _TripInputScreenState extends State<TripInputScreen> {
   int _children = 0;
   DateTime? _startDate;
 
+  double? _detectedLat;
+  double? _detectedLng;
+  String? _detectedCountryCode;
+  String? _lastAutoFilledText;
+
   Future<void> _detectCurrentLocation() async {
     final strings = AppStrings.of(context);
     setState(() => _isDetectingLocation = true);
@@ -36,6 +41,10 @@ class _TripInputScreenState extends State<TripInputScreen> {
       if (locationData != null && mounted) {
         setState(() {
           _destinationCtrl.text = locationData.fullLocationDisplay;
+          _detectedLat = locationData.latitude;
+          _detectedLng = locationData.longitude;
+          _detectedCountryCode = locationData.countryCode;
+          _lastAutoFilledText = locationData.fullLocationDisplay;
           _isDetectingLocation = false;
         });
         ScaffoldMessenger.of(context).showSnackBar(
@@ -88,6 +97,19 @@ class _TripInputScreenState extends State<TripInputScreen> {
     super.initState();
     _destinationCtrl = TextEditingController();
     _initDestination();
+
+    _destinationCtrl.addListener(() {
+      if (_detectedLat != null) {
+        final currentText = _destinationCtrl.text.trim();
+        if (currentText != (_lastAutoFilledText ?? '')) {
+          setState(() {
+            _detectedLat = null;
+            _detectedLng = null;
+            _detectedCountryCode = null;
+          });
+        }
+      }
+    });
   }
 
   Future<void> _initDestination() async {
@@ -697,6 +719,9 @@ class _TripInputScreenState extends State<TripInputScreen> {
       'travelStyles': _styles.toList(),
       'travelersCount': _adults + _children,
       'startDate': _startDate,
+      'userLat': _detectedLat,
+      'userLng': _detectedLng,
+      'countryCode': _detectedCountryCode,
     });
   }
 }

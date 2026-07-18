@@ -2,7 +2,19 @@ const express = require('express');
 const cors = require('cors');
 const axios = require('axios');
 const rateLimit = require('express-rate-limit');
+const { GoogleGenerativeAI } = require('@google/generative-ai');
 require('dotenv').config();
+
+// Conditional Firebase Admin import (only used if FIREBASE_SERVICE_ACCOUNT is set)
+let admin = null;
+if (process.env.FIREBASE_SERVICE_ACCOUNT) {
+  try {
+    admin = require('firebase-admin');
+    console.log('[AUTH] Firebase Admin SDK loaded');
+  } catch (e) {
+    console.warn('[AUTH] firebase-admin not installed. Run: npm install firebase-admin');
+  }
+}
 
 // ─── In-Memory Caches ────────────────────────────────────────────────────────
 // Google Places verification cache: key = "name_en|city", value = { lat, lng, address, placeId, rating }
@@ -13,7 +25,22 @@ const PLACES_CACHE_TTL_MS = 24 * 60 * 60 * 1000; // 24 hours
 const app = express();
 const PORT = process.env.PORT || 3000;
 
-app.use(cors());
+const corsOptions = {
+  origin: (origin, callback) => {
+    if (!origin) return callback(null, true); // Mobile apps have no origin
+    const allowed = [
+      /^http:\/\/localhost:\d+$/,       // Any localhost port
+      /^http:\/\/127\.0\.0\.1:\d+$/,   // Loopback
+      /^https:\/\/.*\.web\.app$/,       // Firebase Hosting
+      /^https:\/\/.*\.firebaseapp\.com$/,
+    ];
+    const ok = allowed.some(r => r instanceof RegExp ? r.test(origin) : r === origin);
+    callback(ok ? null : new Error('CORS blocked'), ok);
+  },
+  credentials: true,
+};
+app.use(cors(corsOptions));
+app.options('*', cors(corsOptions)); // Handle preflight
 app.use(express.json());
 
 // Rate Limiter: Protect API from DDoS & quota drain (Max 100 requests per 15 min per IP)
@@ -47,17 +74,13 @@ const chatLimiter = rateLimit({
 // Validates Firebase Auth Bearer Token sent by Flutter app via _FirebaseTokenInterceptor
 async function authenticateFirebaseToken(req, res, next) {
   const authHeader = req.headers.authorization;
-  if (!authHeader || !authHeader.startsWith('Bearer ')) {
-    return res.status(401).json({ error: 'Unauthorized: Missing or invalid Authorization header' });
-  }
 
-  const token = authHeader.split('Bearer ')[1].trim();
-  if (!token || token.length < 10) {
-    return res.status(401).json({ error: 'Unauthorized: Invalid token format' });
-  }
-
-  // If Firebase Admin SDK is configured with service account, verify token cryptographically
-  if (process.env.FIREBASE_SERVICE_ACCOUNT) {
+  // Only enforce token verification if FIREBASE_SERVICE_ACCOUNT is configured
+  if (process.env.FIREBASE_SERVICE_ACCOUNT && admin) {
+    if (!authHeader || !authHeader.startsWith('Bearer ')) {
+      return res.status(401).json({ error: 'Missing Authorization header' });
+    }
+    const token = authHeader.split('Bearer ')[1].trim();
     try {
       if (!admin.apps.length) {
         const serviceAccount = JSON.parse(process.env.FIREBASE_SERVICE_ACCOUNT);
@@ -67,13 +90,11 @@ async function authenticateFirebaseToken(req, res, next) {
       req.user = decodedToken;
       return next();
     } catch (err) {
-      console.error('[AUTH ERROR] Firebase ID token verification failed:', err.message);
-      return res.status(403).json({ error: 'Unauthorized: Invalid or expired Firebase ID token' });
+      console.error('[AUTH] Token verification failed:', err.message);
+      return res.status(403).json({ error: 'Invalid Firebase ID token' });
     }
   }
-
-  // Basic token presence verification when service account JSON is not yet provided in .env
-  next();
+  next(); // Allow if no service account configured
 }
 
 app.use('/api/', limiter);
@@ -134,69 +155,66 @@ async function callClaude(systemPrompt, messages, maxTokens = 4000) {
   }
 }
 
-// Helper function to call Google Gemini API (Fallback when Claude key is missing)
+// Helper function to call Google Gemini API using the official SDK
+// Supports both old AIzaSy... and new AQ.... key formats automatically
 async function callGemini(systemPrompt, messages, maxTokens = 4000, apiKey) {
-  const contents = messages.map(m => ({
-    role: m.role === 'assistant' || m.role === 'model' ? 'model' : 'user',
-    parts: [{ text: m.content }]
-  }));
-
-  const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${apiKey}`;
-
-  const requestBody = {
-    contents: contents,
-    generationConfig: {
-      temperature: 0.7,
-      maxOutputTokens: maxTokens,
-    }
-  };
-
-  if (systemPrompt) {
-    requestBody.system_instruction = {
-      parts: [{ text: systemPrompt }]
-    };
-  }
+  console.log(`[GEMINI] Calling gemini-2.0-flash | Key prefix: ${apiKey.substring(0, 8)}...`);
 
   try {
-    const response = await axios.post(url, requestBody, {
-      headers: { 'Content-Type': 'application/json' },
-      timeout: 90000
+    const genAI = new GoogleGenerativeAI(apiKey);
+    const model = genAI.getGenerativeModel({
+      model: 'gemini-2.0-flash',
+      generationConfig: {
+        temperature: 0.7,
+        maxOutputTokens: maxTokens,
+      },
+      ...(systemPrompt ? { systemInstruction: systemPrompt } : {}),
     });
 
-    if (response.data && response.data.candidates && response.data.candidates[0]) {
-      const candidate = response.data.candidates[0];
-      if (candidate.content && candidate.content.parts && candidate.content.parts[0]) {
-        return candidate.content.parts[0].text;
-      }
-    }
-    throw new Error('Invalid response from Gemini API');
+    // Convert messages to Gemini chat history format
+    const history = messages.slice(0, -1).map(m => ({
+      role: m.role === 'assistant' || m.role === 'model' ? 'model' : 'user',
+      parts: [{ text: m.content }],
+    }));
+
+    const lastMessage = messages[messages.length - 1];
+
+    const chat = model.startChat({ history });
+    const result = await chat.sendMessage(lastMessage.content);
+    const text = result.response.text();
+
+    console.log('[GEMINI] ✅ Success! Response length:', text.length);
+    return text;
   } catch (error) {
-    if (error.response) {
-      const status = error.response.status;
-      console.error('[GEMINI ERROR]', status, error.response.data);
-      if (status === 401 || status === 403) throw new Error('invalid-api-key');
-      if (status === 429) throw new Error('rate-limit');
-      throw new Error(`api-error-${status}`);
+    const status = error.status || (error.message?.includes('API_KEY_INVALID') ? 401 : 0);
+    console.error(`[GEMINI ERROR] ${error.message}`);
+    if (error.message?.includes('API_KEY_INVALID') || status === 401 || status === 403) {
+      throw new Error('invalid-api-key');
     }
-    throw error;
+    if (error.message?.includes('RESOURCE_EXHAUSTED') || status === 429) {
+      throw new Error('rate-limit');
+    }
+    throw new Error(`gemini-error: ${error.message}`);
   }
 }
 
 // Unified AI Engine Call: Tries Claude first, automatically falls back to Gemini!
 async function callAI(systemPrompt, messages, maxTokens = 4000) {
+  // Try Claude
   const claudeKey = process.env.ANTHROPIC_API_KEY;
-  if (claudeKey && claudeKey !== 'your_anthropic_api_key_here') {
+  if (claudeKey && claudeKey !== 'your_anthropic_api_key_here' && claudeKey.length > 10) {
     try {
       return await callClaude(systemPrompt, messages, maxTokens);
     } catch (e) {
-      console.warn('[AI Engine] Claude call failed, falling back to Gemini:', e.message);
+      console.warn('[AI Engine] Claude failed:', e.message);
     }
   }
 
-  const googleKey = process.env.GEMINI_API_KEY || process.env.GOOGLE_PLACES_API_KEY;
-  if (googleKey && googleKey !== 'your_google_places_api_key_here' && googleKey !== 'your_anthropic_api_key_here') {
-    console.log('[AI Engine] Utilizing Google Gemini API for request...');
-    return await callGemini(systemPrompt, messages, maxTokens, googleKey);
+  // Use GEMINI_API_KEY or fallback to GOOGLE_PLACES_API_KEY
+  const geminiKey = process.env.GEMINI_API_KEY || process.env.GOOGLE_PLACES_API_KEY;
+  if (geminiKey && geminiKey !== 'your_gemini_api_key_here' && geminiKey.length > 10) {
+    console.log('[AI Engine] Using Google Gemini...');
+    return await callGemini(systemPrompt, messages, maxTokens, geminiKey);
   }
 
   throw new Error('missing-api-key');
@@ -210,13 +228,13 @@ async function callAI(systemPrompt, messages, maxTokens = 4000) {
 //   3. If found, call Place Details to get rating, place_id, and formatted address.
 //   4. Return verified data; caller merges it into the Claude response.
 //   5. If no GOOGLE_PLACES_API_KEY is set, skip gracefully (log a warning).
-async function verifyPlaceWithGoogle(nameEn, cityEn) {
+async function verifyPlaceWithGoogle(nameEn, cityEn, userLat, userLng) {
   const placesKey = process.env.GOOGLE_PLACES_API_KEY;
   if (!placesKey || placesKey === 'your_google_places_api_key_here') {
     return null; // Places API not configured — skip gracefully
   }
 
-  const cacheKey = `${nameEn.toLowerCase().trim()}|${cityEn.toLowerCase().trim()}`;
+  const cacheKey = `${nameEn.toLowerCase().trim()}|${cityEn.toLowerCase().trim()}${userLat && userLng ? `|${userLat.toFixed(2)},${userLng.toFixed(2)}` : ''}`;
   const now = Date.now();
 
   // Return cached result if still fresh
@@ -230,14 +248,21 @@ async function verifyPlaceWithGoogle(nameEn, cityEn) {
 
   try {
     // Step 1: Text Search
+    const params = {
+      query: `${nameEn} ${cityEn}`,
+      key: placesKey,
+      language: 'en',
+    };
+
+    if (userLat && userLng) {
+      params.location = `${userLat},${userLng}`;
+      params.radius = 50000; // 50km radius bias
+    }
+
     const searchRes = await axios.get(
       'https://maps.googleapis.com/maps/api/place/textsearch/json',
       {
-        params: {
-          query: `${nameEn} ${cityEn}`,
-          key: placesKey,
-          language: 'en',
-        },
+        params,
         timeout: 6000,
       }
     );
@@ -299,7 +324,7 @@ async function verifyPlaceWithGoogle(nameEn, cityEn) {
 //
 // Runs Google Places verification in parallel (with concurrency cap of 5)
 // to avoid hammering the API quota.
-async function verifyAllPlacesInTrip(tripData, destinationEn) {
+async function verifyAllPlacesInTrip(tripData, destinationEn, userLat, userLng) {
   const placesKey = process.env.GOOGLE_PLACES_API_KEY;
   if (!placesKey || placesKey === 'your_google_places_api_key_here') {
     console.warn('[PLACES] GOOGLE_PLACES_API_KEY not set — skipping place verification.');
@@ -337,7 +362,7 @@ async function verifyAllPlacesInTrip(tripData, destinationEn) {
     const batch = tasks.slice(i, i + CONCURRENCY);
     await Promise.all(
       batch.map(async ({ item, nameEn }) => {
-        const verified = await verifyPlaceWithGoogle(nameEn, destinationEn);
+        const verified = await verifyPlaceWithGoogle(nameEn, destinationEn, userLat, userLng);
         if (verified) {
           // Overwrite Claude's hallucinated coordinates with real Google data
           item.latitude  = verified.lat;
@@ -375,11 +400,44 @@ async function verifyAllPlacesInTrip(tripData, destinationEn) {
 
 // ─── POST /api/generate-trip ────────────────────────────────────────────────
 app.post('/api/generate-trip', async (req, res) => {
-  const { destination, durationDays, budgetTier, travelStyles, travelersCount, startDate } = req.body;
+  const {
+    destination,
+    durationDays,
+    budgetTier,
+    travelStyles,
+    travelersCount,
+    startDate,
+    userLat,        // ← GPS latitude from user device
+    userLng,        // ← GPS longitude from user device
+    countryCode,    // ← ISO country code e.g. "IQ", "SA"
+  } = req.body;
 
   if (!destination || !durationDays || !budgetTier) {
     return res.status(400).json({ error: 'Missing required parameters' });
   }
+
+  // ── Build GPS context string for the AI ─────────────────────────────────
+  // When GPS is available, this dramatically improves location accuracy
+  const hasGPS = userLat && userLng &&
+    Math.abs(parseFloat(userLat)) > 0.001 &&
+    Math.abs(parseFloat(userLng)) > 0.001;
+
+  const gpsContext = hasGPS
+    ? `
+CRITICAL LOCATION DATA — The user's EXACT GPS position is:
+  Latitude:  ${parseFloat(userLat).toFixed(6)}
+  Longitude: ${parseFloat(userLng).toFixed(6)}
+  Country Code: ${countryCode || 'unknown'}
+
+This means:
+1. The destination is confirmed to be at these exact coordinates.
+2. ALL stops and restaurants MUST have coordinates within 50km of 
+   lat=${parseFloat(userLat).toFixed(4)}, lng=${parseFloat(userLng).toFixed(4)}.
+3. Use these GPS coordinates as the CENTER of the trip map.
+4. The city center for this location is approximately at these coordinates.
+5. Generate places that are REALISTICALLY accessible from this GPS point.
+`
+    : '';
 
   const systemPrompt = `You are a professional travel planner expert in creating highly detailed, realistic, and personalized trip itineraries.
 
@@ -409,6 +467,9 @@ all_restaurants list must contain UNIQUE restaurants (not repeating recommended_
 
 RULE 5 — ACCURATE COORDINATES:
 Every latitude/longitude must be the actual GPS coordinates of that specific real place. Google Maps-verifiable coordinates only.
+${hasGPS ? `All coordinates MUST be within 50km of lat=${parseFloat(userLat).toFixed(4)}, lng=${parseFloat(userLng).toFixed(4)}.` : ''}
+
+${gpsContext}
 
 Your output MUST be a single, valid, and minified JSON object matching the schema below.
 You must NOT include any conversational filler, markdown formatting (do NOT wrap in \`\`\`json ... \`\`\`), or extra text explanation before or after the JSON.
@@ -499,64 +560,125 @@ Required JSON Schema:
 - Budget Tier: ${budgetTier} (economy / mid / luxury)
 - Travel Styles: ${travelStyles ? travelStyles.join(', ') : 'any'}
 - Travelers Count: ${travelersCount || 1}
-${startDate ? `- Start Date: ${startDate}` : ''}`;
+${startDate ? `- Start Date: ${startDate}` : ''}
+${hasGPS ? `- User GPS Location: lat=${parseFloat(userLat).toFixed(6)}, lng=${parseFloat(userLng).toFixed(6)}` : ''}
+${countryCode ? `- Country: ${countryCode}` : ''}`;
 
-  const messages = [
-    { role: 'user', content: userPrompt }
-  ];
+  const messages = [{ role: 'user', content: userPrompt }];
 
   try {
-    const estimatedTokens = Math.max(4000, durationDays * 1200); // ~1200 tokens per day
-    const MAX_TOKENS = Math.min(estimatedTokens, 8000); // Cap at 8000
-    const rawReply = await callAI(systemPrompt, messages, MAX_TOKENS);
-    
-    // Clean up response if Claude accidentally wrapped it in markdown code blocks
-    let cleanJson = rawReply.trim();
-    if (cleanJson.startsWith('```')) {
-      const firstLineBreak = cleanJson.indexOf('\n');
-      const lastBackticks = cleanJson.lastIndexOf('```');
-      if (firstLineBreak !== -1 && lastBackticks !== -1) {
-        cleanJson = cleanJson.substring(firstLineBreak + 1, lastBackticks).trim();
+    const estimatedTokens = Math.max(6000, durationDays * 1400);
+    const MAX_TOKENS = Math.min(estimatedTokens, 12000);
+
+    async function requestAndParse(extraInstruction) {
+      const msgs = extraInstruction
+        ? [{ role: 'user', content: userPrompt + '\n\n' + extraInstruction }]
+        : messages;
+      const rawReply = await callAI(systemPrompt, msgs, MAX_TOKENS);
+
+      let cleanJson = rawReply.trim();
+      if (cleanJson.includes('```')) {
+        const jsonMatch = cleanJson.match(/```(?:json)?\s*([\s\S]*?)```/);
+        if (jsonMatch) cleanJson = jsonMatch[1].trim();
+      }
+
+      const jsonStart = cleanJson.indexOf('{');
+      const jsonEnd = cleanJson.lastIndexOf('}');
+      if (jsonStart === -1 || jsonEnd === -1) {
+        throw new Error('malformed-response');
+      }
+      cleanJson = cleanJson.substring(jsonStart, jsonEnd + 1);
+
+      let parsed;
+      try {
+        parsed = JSON.parse(cleanJson);
+      } catch (parseErr) {
+        const repaired = cleanJson.replace(/,\s*}/g, '}').replace(/,\s*]/g, ']');
+        parsed = JSON.parse(repaired);
+        console.log('[TRIP] JSON repaired successfully');
+      }
+
+      if (!Array.isArray(parsed.days) || parsed.days.length !== Number(durationDays)) {
+        throw new Error('incomplete-itinerary');
+      }
+      return parsed;
+    }
+
+    let parsedData;
+    try {
+      parsedData = await requestAndParse();
+    } catch (firstError) {
+      console.warn('[TRIP] first attempt failed, retrying once:', firstError.message);
+      parsedData = await requestAndParse(
+        `IMPORTANT REMINDER: your previous reply was truncated or incomplete. Return ALL ${durationDays} days as a single complete, valid, non-truncated JSON object. Keep descriptions concise if needed to fit within the token limit, but NEVER omit a day.`
+      );
+    }
+
+    // Deduplicate
+    parsedData = deduplicateTripPlan(parsedData);
+
+    // ── If GPS available: Check distance of AI coordinates ─────
+    if (hasGPS && parsedData.days) {
+      const centerLat = parseFloat(userLat);
+      const centerLng = parseFloat(userLng);
+      
+      for (const day of parsedData.days) {
+        if (day.stops) {
+          for (const stop of day.stops) {
+            // If stop coordinates are suspiciously far (>200km) from user — flag it
+            const distKm = haversineDistance(
+              centerLat, centerLng, 
+              parseFloat(stop.latitude || 0), 
+              parseFloat(stop.longitude || 0)
+            );
+            if (distKm > 200) {
+              console.warn(
+                `[GPS] Stop "${stop.name_en}" is ${distKm.toFixed(0)}km from user — coords may be wrong`
+              );
+              stop.coords_verified = false;
+            }
+          }
+        }
       }
     }
 
-    // Validate JSON before parsing
-    if (!cleanJson.startsWith('{')) {
-      console.error('[TRIP] Response does not start with { — possible truncation');
-      console.error('[TRIP] Response length:', cleanJson.length, 'chars');
-      console.error('[TRIP] Response preview:', cleanJson.substring(0, 200));
-      return res.status(500).json({
-        error: 'AI response was incomplete or malformed. Try reducing trip duration.'
-      });
-    }
-
-    let parsedData = JSON.parse(cleanJson);
-
-    // ── Deduplicate Trip Plan ────────────────────────────────────────────────
-    parsedData = deduplicateTripPlan(parsedData);
-
-    // ── Google Places Verification ────────────────────────────────────────────
-    // Extract the English city name from Claude's response for Places Search queries.
-    // This is used as the search context for all stops/restaurants.
+    // Google Places verification (uses English city name)
     const destinationEn = parsedData.destination_en || destination;
-    parsedData = await verifyAllPlacesInTrip(parsedData, destinationEn);
-    // ─────────────────────────────────────────────────────────────────────────
+    parsedData = await verifyAllPlacesInTrip(parsedData, destinationEn, userLat, userLng);
 
     return res.status(200).json(parsedData);
   } catch (error) {
-    console.error('[API ERROR] generate-trip failed:', error.message);
+    console.error('[API ERROR] generate-trip:', error.message);
     if (error.message === 'missing-api-key') {
-      return res.status(401).json({ error: 'Anthropic API key is not configured in backend .env file.' });
+      return res.status(401).json({ error: 'Anthropic API key not configured.' });
     }
     if (error.message === 'invalid-api-key') {
-      return res.status(403).json({ error: 'The provided Anthropic API key is invalid or unauthorized.' });
+      return res.status(403).json({ error: 'Invalid Anthropic API key.' });
     }
     if (error.message === 'rate-limit') {
-      return res.status(429).json({ error: 'API rate limit exceeded. Please try again in a few moments.' });
+      return res.status(429).json({ error: 'Rate limit exceeded. Try again in a moment.' });
     }
-    return res.status(500).json({ error: 'Failed to generate trip plan: ' + error.message });
+    if (error.message === 'malformed-response' || error.message === 'incomplete-itinerary') {
+      return res.status(500).json({
+        error: 'AI response was incomplete or malformed even after retry. Try reducing trip duration.'
+      });
+    }
+    return res.status(500).json({ error: 'Failed to generate trip: ' + error.message });
   }
 });
+
+// ── Helper: Haversine distance between two GPS points (in km) ────────────────
+function haversineDistance(lat1, lng1, lat2, lng2) {
+  const R = 6371; // Earth radius in km
+  const dLat = (lat2 - lat1) * Math.PI / 180;
+  const dLng = (lng2 - lng1) * Math.PI / 180;
+  const a =
+    Math.sin(dLat / 2) * Math.sin(dLat / 2) +
+    Math.cos(lat1 * Math.PI / 180) *
+    Math.cos(lat2 * Math.PI / 180) *
+    Math.sin(dLng / 2) * Math.sin(dLng / 2);
+  return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+}
 
 // Helper to remove duplicate stops and restaurants across days
 function deduplicateTripPlan(plan) {
@@ -943,7 +1065,28 @@ app.get('/api/nearby-places', async (req, res) => {
   }
 });
 
+// ─── Self Keep-Alive Ping (prevents Render free tier sleep) ─────────────────
+// Render free tier puts the server to sleep after 15 minutes of inactivity.
+// This self-ping sends a lightweight GET /health every 14 minutes to keep it awake.
+const SELF_PING_INTERVAL_MS = 14 * 60 * 1000; // 14 minutes
+
+function startSelfPing() {
+  // RENDER_EXTERNAL_URL is auto-set by Render with the public URL
+  const selfUrl = process.env.RENDER_EXTERNAL_URL || `http://localhost:${PORT}`;
+  console.log(`[KEEP-ALIVE] Self-ping enabled → ${selfUrl}/health every 14min`);
+
+  setInterval(async () => {
+    try {
+      await axios.get(`${selfUrl}/health`, { timeout: 10000 });
+      console.log('[KEEP-ALIVE] Self-ping successful ✅');
+    } catch (err) {
+      console.warn('[KEEP-ALIVE] Self-ping failed:', err.message);
+    }
+  }, SELF_PING_INTERVAL_MS);
+}
+
 app.listen(PORT, () => {
   console.log(`🚀 Rahhal AI Backend Proxy is running on http://localhost:${PORT}`);
   console.log(`Press Ctrl+C to terminate.`);
+  startSelfPing();
 });

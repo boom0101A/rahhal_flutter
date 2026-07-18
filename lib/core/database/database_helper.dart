@@ -17,7 +17,7 @@ class DatabaseHelper {
 
   // ─── Init ─────────────────────────────────────────────────────────────────
 
-  static const int _dbVersion = 3;
+  static const int _dbVersion = 4;
   static const String _dbName = 'rahhal_ai.db';
 
   static final Map<int, List<String>> _migrations = {
@@ -34,6 +34,10 @@ class DatabaseHelper {
       'ALTER TABLE trips ADD COLUMN destination_en TEXT;',
       'ALTER TABLE trips ADD COLUMN is_mock_data INTEGER NOT NULL DEFAULT 0;',
       'ALTER TABLE stops ADD COLUMN image_url TEXT;',
+    ],
+    4: [
+      'ALTER TABLE stops ADD COLUMN coords_verified INTEGER DEFAULT 0;',
+      'ALTER TABLE stops ADD COLUMN place_id TEXT;',
     ],
   };
 
@@ -120,7 +124,8 @@ class DatabaseHelper {
       timezone        TEXT DEFAULT 'UTC',
       created_at      TEXT NOT NULL,
       updated_at      TEXT NOT NULL,
-      synced_at       TEXT
+      synced_at       TEXT,
+      is_mock_data    INTEGER NOT NULL DEFAULT 0
     )
   ''';
 
@@ -154,7 +159,9 @@ class DatabaseHelper {
       ai_tip            TEXT,
       image_url         TEXT,
       booking_required  INTEGER DEFAULT 0,
-      booking_url       TEXT
+      booking_url       TEXT,
+      coords_verified   INTEGER DEFAULT 0,
+      place_id          TEXT
     )
   ''';
 
@@ -339,10 +346,10 @@ class DatabaseHelper {
     return results.isNotEmpty ? results.first : null;
   }
 
-  Future<void> executeInTransaction(
-      Future<void> Function(Transaction txn) action) async {
+  Future<T> executeInTransaction<T>(
+      Future<T> Function(Transaction txn) action) async {
     final db = await database;
-    await db.transaction(action);
+    return await db.transaction(action);
   }
 
   /// Closes and resets the database (for testing).

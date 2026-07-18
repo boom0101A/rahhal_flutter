@@ -27,7 +27,7 @@ class DioClient {
     final dio = Dio(
       BaseOptions(
         baseUrl: AppConfig.proxyBaseUrl,
-        connectTimeout: const Duration(seconds: 45), // 45s to allow Render free-tier warmup
+        connectTimeout: const Duration(seconds: 90), // 90s to allow Render free-tier cold start (50-120s)
         receiveTimeout: const Duration(seconds: 120),
         headers: {
           'Content-Type': 'application/json',
@@ -44,7 +44,7 @@ class DioClient {
     }
 
     dio.interceptors.add(_FirebaseTokenInterceptor());
-    dio.interceptors.add(_RetryInterceptor(dio, maxRetries: 2));
+    dio.interceptors.add(_RetryInterceptor(dio, maxRetries: 3));
     dio.interceptors.add(_ErrorInterceptor());
 
     return dio;
@@ -121,7 +121,8 @@ class _RetryInterceptor extends Interceptor {
             err.type == DioExceptionType.connectionError);
 
     if (shouldRetry) {
-      await Future.delayed(Duration(seconds: retryCount + 1));
+      // Exponential backoff: 2s, 4s, 8s — gives server more time to boot
+      await Future.delayed(Duration(seconds: 2 << retryCount));
       try {
         final options = err.requestOptions;
         options.extra['retryCount'] = retryCount + 1;

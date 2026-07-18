@@ -19,6 +19,9 @@ class TripPlannerCubit extends Cubit<TripPlannerState> {
     required List<String> travelStyles,
     required int travelersCount,
     DateTime? startDate,
+    double? userLat,
+    double? userLng,
+    String? countryCode,
   }) async {
     emit(const TripPlannerGenerating());
 
@@ -29,6 +32,9 @@ class TripPlannerCubit extends Cubit<TripPlannerState> {
       travelStyles: travelStyles,
       travelersCount: travelersCount,
       startDate: startDate,
+      userLat: userLat,
+      userLng: userLng,
+      countryCode: countryCode,
     );
 
     result.fold(

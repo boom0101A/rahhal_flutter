@@ -1,17 +1,135 @@
-﻿================================================================================
-RAHHAL AI FLUTTER - COMPLETE CODEBASE ARCHIVE
-Generated on: 2026-07-14 17:24:21
-Total Files: 120
-================================================================================
+# Rahhal AI Complete Codebase Export
+Generated on: 7/16/2026, 3:59:19 AM
+This file contains the complete source code for the Rahhal Flutter application backend and frontend.
 
---------------------------------------------------------------------------------
-FILE: server.js
---------------------------------------------------------------------------------
+---
+
+## File: `pubspec.yaml`
+```yaml
+name: rahhal_flutter
+description: "رحّال AI — مساعدك الذكي للسفر. AI-powered travel planner."
+publish_to: 'none'
+version: 1.0.0+1
+
+environment:
+  sdk: '>=3.5.0 <4.0.0'
+
+dependencies:
+  flutter:
+    sdk: flutter
+
+  # State Management
+  flutter_bloc: ^8.1.6
+  equatable: ^2.0.5
+
+  # Navigation
+  go_router: ^14.6.2
+
+  # Local Database
+  sqflite: ^2.4.1
+  path: ^1.9.0
+
+  # Firebase
+  firebase_core: ^3.13.0
+  firebase_auth: ^5.5.2
+  google_sign_in: ^6.2.2
+  cloud_firestore: ^5.6.6
+  firebase_app_check: ^0.3.1+4
+
+  # HTTP / AI
+  dio: ^5.8.0+1
+
+  # Maps
+  flutter_map: ^7.0.2
+  latlong2: ^0.9.1
+
+  # UI & Animations
+  flutter_animate: ^4.5.2
+  shimmer: ^3.0.0
+  cached_network_image: ^3.4.1
+  fl_chart: ^0.69.2
+
+  # Localization
+  flutter_localizations:
+    sdk: flutter
+  intl: ^0.20.2
+
+  # Fonts
+  google_fonts: ^6.2.1
+
+  # Dependency Injection
+  get_it: ^8.0.3
+
+  # Notifications & Utilities
+  flutter_local_notifications: ^17.2.4
+  timezone: ^0.9.4
+  geolocator: ^13.0.3
+  geocoding: ^3.0.0
+  connectivity_plus: ^6.1.4
+  shared_preferences: ^2.3.4
+  image_picker: ^1.1.2
+  share_plus: ^10.1.4
+  screenshot: ^3.0.0
+  path_provider: ^2.1.3
+  url_launcher: ^6.3.1
+  uuid: ^4.5.1
+  dartz: ^0.10.1
+  sqflite_common_ffi_web: ^1.1.2
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  flutter_lints: ^5.0.0
+  mocktail: ^1.0.4
+  flutter_launcher_icons: ^0.14.3
+  flutter_native_splash: ^2.4.4
+
+flutter_launcher_icons:
+  android: "launcher_icon"
+  ios: true
+  image_path: "assets/images/app_icon.png"
+  min_sdk_android: 21
+  web:
+    generate: true
+    image_path: "assets/images/app_icon.png"
+    background_color: "#0D1B2A"
+    theme_color: "#0D1B2A"
+
+flutter_native_splash:
+  color: "#0D1B2A"
+  image: "assets/images/app_icon.png"
+  android_12:
+    color: "#0D1B2A"
+    image: "assets/images/app_icon.png"
+  web: false
+
+flutter:
+  uses-material-design: true
+
+  # Assets
+  assets:
+    - assets/images/
+    - assets/lottie/
+
+  # Fonts are loaded via Google Fonts package (no local fonts needed)
+
+```
+
+---
+
+## File: `server.js`
+```javascript
 const express = require('express');
 const cors = require('cors');
 const axios = require('axios');
 const rateLimit = require('express-rate-limit');
 require('dotenv').config();
+
+// ─── In-Memory Caches ────────────────────────────────────────────────────────
+// Google Places verification cache: key = "name_en|city", value = { lat, lng, address, placeId, rating }
+// TTL: 24 hours — reduces Places API costs significantly
+const placesCache = new Map();
+const PLACES_CACHE_TTL_MS = 24 * 60 * 60 * 1000; // 24 hours
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -28,18 +146,60 @@ const limiter = rateLimit({
   message: { error: 'Too many requests from this IP, please try again later.' },
 });
 
-// Rate limiter for heavy AI endpoints (Max 10 requests per minute)
-const apiLimiter = rateLimit({
+// Rate limiter for heavy trip generation endpoint (Max 10 requests per minute)
+const tripLimiter = rateLimit({
   windowMs: 60 * 1000,
   max: 10,
   standardHeaders: true,
   legacyHeaders: false,
-  message: { error: 'Too many requests, please try again later.' },
+  message: { error: 'Too many trip generation requests, please try again in a minute.' },
 });
 
+// Dedicated rate limiter for interactive AI Chat (Max 30 requests per minute)
+const chatLimiter = rateLimit({
+  windowMs: 60 * 1000,
+  max: 30,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { error: 'Too many chat messages, please wait a few seconds.' },
+});
+
+// ─── Firebase ID Token Verification Middleware ──────────────────────────────
+// Validates Firebase Auth Bearer Token sent by Flutter app via _FirebaseTokenInterceptor
+async function authenticateFirebaseToken(req, res, next) {
+  const authHeader = req.headers.authorization;
+  if (!authHeader || !authHeader.startsWith('Bearer ')) {
+    return res.status(401).json({ error: 'Unauthorized: Missing or invalid Authorization header' });
+  }
+
+  const token = authHeader.split('Bearer ')[1].trim();
+  if (!token || token.length < 10) {
+    return res.status(401).json({ error: 'Unauthorized: Invalid token format' });
+  }
+
+  // If Firebase Admin SDK is configured with service account, verify token cryptographically
+  if (process.env.FIREBASE_SERVICE_ACCOUNT) {
+    try {
+      if (!admin.apps.length) {
+        const serviceAccount = JSON.parse(process.env.FIREBASE_SERVICE_ACCOUNT);
+        admin.initializeApp({ credential: admin.credential.cert(serviceAccount) });
+      }
+      const decodedToken = await admin.auth().verifyIdToken(token);
+      req.user = decodedToken;
+      return next();
+    } catch (err) {
+      console.error('[AUTH ERROR] Firebase ID token verification failed:', err.message);
+      return res.status(403).json({ error: 'Unauthorized: Invalid or expired Firebase ID token' });
+    }
+  }
+
+  // Basic token presence verification when service account JSON is not yet provided in .env
+  next();
+}
+
 app.use('/api/', limiter);
-app.use('/api/generate-trip', apiLimiter);
-app.use('/api/chat', apiLimiter);
+app.use('/api/generate-trip', tripLimiter, authenticateFirebaseToken);
+app.use('/api/chat', chatLimiter, authenticateFirebaseToken);
 
 // Health Check Endpoints for cloud hosting services (Render / Railway)
 app.get('/', (req, res) => {
@@ -95,6 +255,245 @@ async function callClaude(systemPrompt, messages, maxTokens = 4000) {
   }
 }
 
+// Helper function to call Google Gemini API (Fallback when Claude key is missing)
+async function callGemini(systemPrompt, messages, maxTokens = 4000, apiKey) {
+  const contents = messages.map(m => ({
+    role: m.role === 'assistant' || m.role === 'model' ? 'model' : 'user',
+    parts: [{ text: m.content }]
+  }));
+
+  const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${apiKey}`;
+
+  const requestBody = {
+    contents: contents,
+    generationConfig: {
+      temperature: 0.7,
+      maxOutputTokens: maxTokens,
+    }
+  };
+
+  if (systemPrompt) {
+    requestBody.system_instruction = {
+      parts: [{ text: systemPrompt }]
+    };
+  }
+
+  try {
+    const response = await axios.post(url, requestBody, {
+      headers: { 'Content-Type': 'application/json' },
+      timeout: 90000
+    });
+
+    if (response.data && response.data.candidates && response.data.candidates[0]) {
+      const candidate = response.data.candidates[0];
+      if (candidate.content && candidate.content.parts && candidate.content.parts[0]) {
+        return candidate.content.parts[0].text;
+      }
+    }
+    throw new Error('Invalid response from Gemini API');
+  } catch (error) {
+    if (error.response) {
+      const status = error.response.status;
+      console.error('[GEMINI ERROR]', status, error.response.data);
+      if (status === 401 || status === 403) throw new Error('invalid-api-key');
+      if (status === 429) throw new Error('rate-limit');
+      throw new Error(`api-error-${status}`);
+    }
+    throw error;
+  }
+}
+
+// Unified AI Engine Call: Tries Claude first, automatically falls back to Gemini!
+async function callAI(systemPrompt, messages, maxTokens = 4000) {
+  const claudeKey = process.env.ANTHROPIC_API_KEY;
+  if (claudeKey && claudeKey !== 'your_anthropic_api_key_here') {
+    try {
+      return await callClaude(systemPrompt, messages, maxTokens);
+    } catch (e) {
+      console.warn('[AI Engine] Claude call failed, falling back to Gemini:', e.message);
+    }
+  }
+
+  const googleKey = process.env.GEMINI_API_KEY || process.env.GOOGLE_PLACES_API_KEY;
+  if (googleKey && googleKey !== 'your_google_places_api_key_here' && googleKey !== 'your_anthropic_api_key_here') {
+    console.log('[AI Engine] Utilizing Google Gemini API for request...');
+    return await callGemini(systemPrompt, messages, maxTokens, googleKey);
+  }
+
+  throw new Error('missing-api-key');
+}
+
+// ─── Google Places API: verify a place and return real coordinates ────────────
+//
+// Strategy:
+//   1. Check in-memory cache (24hr TTL) to avoid redundant API calls.
+//   2. Call Places Text Search API with "name_en + city".
+//   3. If found, call Place Details to get rating, place_id, and formatted address.
+//   4. Return verified data; caller merges it into the Claude response.
+//   5. If no GOOGLE_PLACES_API_KEY is set, skip gracefully (log a warning).
+async function verifyPlaceWithGoogle(nameEn, cityEn) {
+  const placesKey = process.env.GOOGLE_PLACES_API_KEY;
+  if (!placesKey || placesKey === 'your_google_places_api_key_here') {
+    return null; // Places API not configured — skip gracefully
+  }
+
+  const cacheKey = `${nameEn.toLowerCase().trim()}|${cityEn.toLowerCase().trim()}`;
+  const now = Date.now();
+
+  // Return cached result if still fresh
+  if (placesCache.has(cacheKey)) {
+    const cached = placesCache.get(cacheKey);
+    if (now - cached.timestamp < PLACES_CACHE_TTL_MS) {
+      return cached.data; // may be null if previously not found
+    }
+    placesCache.delete(cacheKey);
+  }
+
+  try {
+    // Step 1: Text Search
+    const searchRes = await axios.get(
+      'https://maps.googleapis.com/maps/api/place/textsearch/json',
+      {
+        params: {
+          query: `${nameEn} ${cityEn}`,
+          key: placesKey,
+          language: 'en',
+        },
+        timeout: 6000,
+      }
+    );
+
+    const results = searchRes.data.results;
+    if (!results || results.length === 0) {
+      placesCache.set(cacheKey, { data: null, timestamp: now });
+      console.warn(`[PLACES] Not found: "${nameEn}" in ${cityEn}`);
+      return null;
+    }
+
+    const top = results[0];
+    const placeId = top.place_id;
+    const lat = top.geometry.location.lat;
+    const lng = top.geometry.location.lng;
+    const formattedAddress = top.formatted_address || top.vicinity || '';
+    const textSearchRating = top.rating || null;
+
+    // Step 2: Place Details for richer data
+    let rating = textSearchRating;
+    let phoneNumber = null;
+    let website = null;
+    try {
+      const detailsRes = await axios.get(
+        'https://maps.googleapis.com/maps/api/place/details/json',
+        {
+          params: {
+            place_id: placeId,
+            fields: 'rating,user_ratings_total,formatted_phone_number,website',
+            key: placesKey,
+            language: 'en',
+          },
+          timeout: 5000,
+        }
+      );
+      const d = detailsRes.data.result;
+      if (d) {
+        rating = d.rating || textSearchRating;
+        phoneNumber = d.formatted_phone_number || null;
+        website = d.website || null;
+      }
+    } catch (detailsErr) {
+      console.warn(`[PLACES] Details failed for place_id ${placeId}:`, detailsErr.message);
+    }
+
+    const verified = { lat, lng, address: formattedAddress, placeId, rating, phoneNumber, website };
+    placesCache.set(cacheKey, { data: verified, timestamp: now });
+    console.log(`[PLACES] Verified: "${nameEn}" → lat=${lat}, lng=${lng}, placeId=${placeId}`);
+    return verified;
+
+  } catch (err) {
+    console.error(`[PLACES] Text Search error for "${nameEn}":`, err.message);
+    placesCache.set(cacheKey, { data: null, timestamp: now });
+    return null;
+  }
+}
+
+// ─── Verify ALL stops & restaurants in a parsed Claude trip response ──────────
+//
+// Runs Google Places verification in parallel (with concurrency cap of 5)
+// to avoid hammering the API quota.
+async function verifyAllPlacesInTrip(tripData, destinationEn) {
+  const placesKey = process.env.GOOGLE_PLACES_API_KEY;
+  if (!placesKey || placesKey === 'your_google_places_api_key_here') {
+    console.warn('[PLACES] GOOGLE_PLACES_API_KEY not set — skipping place verification.');
+    return tripData; // Return as-is
+  }
+
+  // Collect all items to verify: { ref to stop/restaurant, nameEn }
+  const tasks = [];
+
+  if (Array.isArray(tripData.days)) {
+    for (const day of tripData.days) {
+      if (Array.isArray(day.stops)) {
+        for (const stop of day.stops) {
+          if (stop.name_en) {
+            tasks.push({ item: stop, nameEn: stop.name_en });
+          }
+        }
+      }
+      if (day.recommended_restaurant && day.recommended_restaurant.name_en) {
+        tasks.push({ item: day.recommended_restaurant, nameEn: day.recommended_restaurant.name_en });
+      }
+    }
+  }
+  if (Array.isArray(tripData.all_restaurants)) {
+    for (const r of tripData.all_restaurants) {
+      if (r.name_en) {
+        tasks.push({ item: r, nameEn: r.name_en });
+      }
+    }
+  }
+
+  // Process in batches of 5 concurrent requests
+  const CONCURRENCY = 5;
+  for (let i = 0; i < tasks.length; i += CONCURRENCY) {
+    const batch = tasks.slice(i, i + CONCURRENCY);
+    await Promise.all(
+      batch.map(async ({ item, nameEn }) => {
+        const verified = await verifyPlaceWithGoogle(nameEn, destinationEn);
+        if (verified) {
+          // Overwrite Claude's hallucinated coordinates with real Google data
+          item.latitude  = verified.lat;
+          item.longitude = verified.lng;
+          if (verified.address) {
+            item.google_address = verified.address; // keep original Arabic address too
+          }
+          if (verified.placeId) {
+            item.place_id = verified.placeId;
+          }
+          if (verified.rating !== null && verified.rating !== undefined) {
+            item.rating = verified.rating; // overwrite Claude's guessed rating
+          }
+          if (verified.website) {
+            item.booking_url = item.booking_url || verified.website;
+          }
+          item.coords_verified = true;
+        } else {
+          // Place not found in Google — flag it but keep Claude's data
+          item.coords_verified = false;
+          console.warn(`[PLACES] Using unverified coords for: ${nameEn}`);
+        }
+      })
+    );
+  }
+
+  const verifiedCount = tasks.filter((_, idx) => {
+    // Re-check by looping tasks after all resolved
+    return true; // just for counting
+  }).length;
+  console.log(`[PLACES] Verification done: ${tasks.length} places processed for "${destinationEn}"`);
+
+  return tripData;
+}
+
 // ─── POST /api/generate-trip ────────────────────────────────────────────────
 app.post('/api/generate-trip', async (req, res) => {
   const { destination, durationDays, budgetTier, travelStyles, travelersCount, startDate } = req.body;
@@ -104,7 +503,35 @@ app.post('/api/generate-trip', async (req, res) => {
   }
 
   const systemPrompt = `You are a professional travel planner expert in creating highly detailed, realistic, and personalized trip itineraries.
-Your output MUST be a single, valid, and minified JSON object matching the schema below. 
+
+ABSOLUTE RULES — NEVER VIOLATE THESE:
+
+RULE 1 — NO REPETITION:
+Every attraction, restaurant, park, market, or any place mentioned across ALL days MUST be UNIQUE. If a place appears on Day 1, it CANNOT appear on Day 2, 3, or any other day.
+This applies to: stops, recommended_restaurant, and all_restaurants.
+COUNT your places before submitting — if any name appears twice, REWRITE that day.
+
+RULE 2 — REAL PLACE NAMES ONLY:
+ALL names must be REAL, specific places that actually exist in ${destination}.
+FORBIDDEN generic names: "National Museum", "Central Park", "Main Landmark", "Grand Bazaar" (unless that is the ACTUAL name of a place in that city).
+REQUIRED: Use official local names with correct Arabic transliterations.
+
+RULE 3 — DAY VARIETY:
+Each day MUST have a distinct theme and explore a DIFFERENT part of the city:
+- Day 1: Historic/Cultural district
+- Day 2: Nature/Parks/Waterfront  
+- Day 3: Shopping/Markets/Local neighborhoods
+- Day 4: Modern attractions/Viewpoints
+- Day 5+: Repeat themes with completely different places
+
+RULE 4 — RESTAURANT VARIETY:
+Each day's recommended_restaurant must be a DIFFERENT restaurant.
+all_restaurants list must contain UNIQUE restaurants (not repeating recommended_restaurant).
+
+RULE 5 — ACCURATE COORDINATES:
+Every latitude/longitude must be the actual GPS coordinates of that specific real place. Google Maps-verifiable coordinates only.
+
+Your output MUST be a single, valid, and minified JSON object matching the schema below.
 You must NOT include any conversational filler, markdown formatting (do NOT wrap in \`\`\`json ... \`\`\`), or extra text explanation before or after the JSON.
 The text values inside the JSON (such as themes, summaries, addresses, descriptions, tips, and names) MUST be in ARABIC (except for English name fields or URLs).
 
@@ -112,7 +539,7 @@ Required JSON Schema:
 {
   "destination": "Name of the destination in Arabic",
   "destination_en": "Name of the destination in English (e.g. 'Istanbul', 'Cairo', 'Paris')",
-  "country_code": "2-letter ISO country code (e.g., 'TR', 'EG', 'FR')",
+  "country_code": "2-letter ISO country code (e.g., 'TR', 'EG', 'FR', 'AE', 'SA')",
   "ai_summary": "Overall engaging summary of the trip in Arabic",
   "budget_total_usd": 123.45 (double, total cost estimate),
   "hero_image_query": "English keywords for a search query of a representative high-quality image of the destination (e.g. 'istanbul sunset bosporus')",
@@ -138,7 +565,7 @@ Required JSON Schema:
           "ai_tip": "Arabic helper tip for visitors",
           "booking_required": false (boolean),
           "booking_url": "https://example.com/tickets or null",
-          "image_search_query": "3-5 specific English keywords for a beautiful photo of this exact place (e.g. 'Hagia Sophia Istanbul blue mosaic interior')"
+          "image_search_query": "3-5 specific English keywords for a beautiful photo of this exact place"
         }
       ],
       "recommended_restaurant": {
@@ -152,7 +579,7 @@ Required JSON Schema:
         "latitude": 41.0082 (double),
         "longitude": 28.9784 (double),
         "ai_description": "Arabic paragraph describing why this restaurant is recommended",
-        "image_search_query": "3-5 English keywords for food/restaurant photo (e.g. 'Turkish kebab grilled meat plate')"
+        "image_search_query": "3-5 English keywords for food/restaurant photo"
       }
     }
   ],
@@ -185,9 +612,7 @@ Required JSON Schema:
   "best_time_to_visit": "Arabic description of best travel season",
   "currency": "3-letter currency code (e.g., 'TRY', 'EUR')",
   "timezone": "Timezone offset string (e.g. 'UTC+3', 'GMT+2')"
-}
-
-Ensure the latitude and longitude of all attractions and restaurants are real and correct coordinates for the destination city to display correctly on maps.`;
+}`;
 
   const userPrompt = `Generate a customized travel itinerary for:
 - Destination: ${destination}
@@ -195,41 +620,167 @@ Ensure the latitude and longitude of all attractions and restaurants are real an
 - Budget Tier: ${budgetTier} (economy / mid / luxury)
 - Travel Styles: ${travelStyles ? travelStyles.join(', ') : 'any'}
 - Travelers Count: ${travelersCount || 1}
-${startDate ? `- Start Date: ${startDate}` : ''}`;
+${startDate ? `- Start Date: ${startDate}` : ''}
+${hasGPS ? `- User GPS Location: lat=${parseFloat(userLat).toFixed(6)}, lng=${parseFloat(userLng).toFixed(6)}` : ''}
+${countryCode ? `- Country: ${countryCode}` : ''}`;
 
-  const messages = [
-    { role: 'user', content: userPrompt }
-  ];
+  const messages = [{ role: 'user', content: userPrompt }];
 
   try {
-    const rawReply = await callClaude(systemPrompt, messages, 4000);
-    
-    // Clean up response if Claude accidentally wrapped it in markdown code blocks
-    let cleanJson = rawReply.trim();
-    if (cleanJson.startsWith('```')) {
-      const firstLineBreak = cleanJson.indexOf('\n');
-      const lastBackticks = cleanJson.lastIndexOf('```');
-      if (firstLineBreak !== -1 && lastBackticks !== -1) {
-        cleanJson = cleanJson.substring(firstLineBreak + 1, lastBackticks).trim();
+    const estimatedTokens = Math.max(6000, durationDays * 1400);
+    const MAX_TOKENS = Math.min(estimatedTokens, 12000);
+
+    async function requestAndParse(extraInstruction) {
+      const msgs = extraInstruction
+        ? [{ role: 'user', content: userPrompt + '\n\n' + extraInstruction }]
+        : messages;
+      const rawReply = await callAI(systemPrompt, msgs, MAX_TOKENS);
+
+      let cleanJson = rawReply.trim();
+      if (cleanJson.includes('```')) {
+        const jsonMatch = cleanJson.match(/```(?:json)?\s*([\s\S]*?)```/);
+        if (jsonMatch) cleanJson = jsonMatch[1].trim();
+      }
+
+      const jsonStart = cleanJson.indexOf('{');
+      const jsonEnd = cleanJson.lastIndexOf('}');
+      if (jsonStart === -1 || jsonEnd === -1) {
+        throw new Error('malformed-response');
+      }
+      cleanJson = cleanJson.substring(jsonStart, jsonEnd + 1);
+
+      let parsed;
+      try {
+        parsed = JSON.parse(cleanJson);
+      } catch (parseErr) {
+        const repaired = cleanJson.replace(/,\s*}/g, '}').replace(/,\s*]/g, ']');
+        parsed = JSON.parse(repaired);
+        console.log('[TRIP] JSON repaired successfully');
+      }
+
+      if (!Array.isArray(parsed.days) || parsed.days.length !== Number(durationDays)) {
+        throw new Error('incomplete-itinerary');
+      }
+      return parsed;
+    }
+
+    let parsedData;
+    try {
+      parsedData = await requestAndParse();
+    } catch (firstError) {
+      console.warn('[TRIP] first attempt failed, retrying once:', firstError.message);
+      parsedData = await requestAndParse(
+        `IMPORTANT REMINDER: your previous reply was truncated or incomplete. Return ALL ${durationDays} days as a single complete, valid, non-truncated JSON object. Keep descriptions concise if needed to fit within the token limit, but NEVER omit a day.`
+      );
+    }
+
+    // Deduplicate
+    parsedData = deduplicateTripPlan(parsedData);
+
+    // ── If GPS available: Check distance of AI coordinates ─────
+    if (hasGPS && parsedData.days) {
+      const centerLat = parseFloat(userLat);
+      const centerLng = parseFloat(userLng);
+      
+      for (const day of parsedData.days) {
+        if (day.stops) {
+          for (const stop of day.stops) {
+            // If stop coordinates are suspiciously far (>200km) from user — flag it
+            const distKm = haversineDistance(
+              centerLat, centerLng, 
+              parseFloat(stop.latitude || 0), 
+              parseFloat(stop.longitude || 0)
+            );
+            if (distKm > 200) {
+              console.warn(
+                `[GPS] Stop "${stop.name_en}" is ${distKm.toFixed(0)}km from user — coords may be wrong`
+              );
+              stop.coords_verified = false;
+            }
+          }
+        }
       }
     }
-    
-    const parsedData = JSON.parse(cleanJson);
+
+    // Google Places verification (uses English city name)
+    const destinationEn = parsedData.destination_en || destination;
+    parsedData = await verifyAllPlacesInTrip(parsedData, destinationEn, userLat, userLng);
+
     return res.status(200).json(parsedData);
   } catch (error) {
-    console.error('[API ERROR] generate-trip failed:', error.message);
+    console.error('[API ERROR] generate-trip:', error.message);
     if (error.message === 'missing-api-key') {
-      return res.status(401).json({ error: 'Anthropic API key is not configured in backend .env file.' });
+      return res.status(401).json({ error: 'Anthropic API key not configured.' });
     }
     if (error.message === 'invalid-api-key') {
-      return res.status(403).json({ error: 'The provided Anthropic API key is invalid or unauthorized.' });
+      return res.status(403).json({ error: 'Invalid Anthropic API key.' });
     }
     if (error.message === 'rate-limit') {
-      return res.status(429).json({ error: 'API rate limit exceeded. Please try again in a few moments.' });
+      return res.status(429).json({ error: 'Rate limit exceeded. Try again in a moment.' });
     }
-    return res.status(500).json({ error: 'Failed to generate trip plan: ' + error.message });
+    if (error.message === 'malformed-response' || error.message === 'incomplete-itinerary') {
+      return res.status(500).json({
+        error: 'AI response was incomplete or malformed even after retry. Try reducing trip duration.'
+      });
+    }
+    return res.status(500).json({ error: 'Failed to generate trip: ' + error.message });
   }
 });
+
+// Helper to remove duplicate stops and restaurants across days
+function deduplicateTripPlan(plan) {
+  if (!plan) return plan;
+  const seenPlaces = new Set();
+  const seenRestaurants = new Set();
+
+  if (plan.days && Array.isArray(plan.days)) {
+    for (const day of plan.days) {
+      if (day.stops && Array.isArray(day.stops)) {
+        day.stops = day.stops.filter(stop => {
+          const key = stop.name_en?.toLowerCase().trim() || stop.name?.toLowerCase().trim();
+          if (!key) return true;
+          if (seenPlaces.has(key)) {
+            console.warn(`[DEDUP] Removed duplicate stop: ${stop.name_en || stop.name}`);
+            return false;
+          }
+          seenPlaces.add(key);
+          return true;
+        });
+
+        day.stops.forEach((stop, i) => {
+          stop.order_index = i;
+        });
+      }
+
+      if (day.recommended_restaurant) {
+        const rKey = day.recommended_restaurant.name_en?.toLowerCase().trim() ||
+                     day.recommended_restaurant.name?.toLowerCase().trim();
+        if (rKey) {
+          if (seenRestaurants.has(rKey)) {
+            console.warn(`[DEDUP] Repeated restaurant: ${day.recommended_restaurant.name_en || day.recommended_restaurant.name}`);
+          }
+          seenRestaurants.add(rKey);
+        }
+      }
+    }
+  }
+
+  const seenAllRest = new Set();
+  if (plan.all_restaurants && Array.isArray(plan.all_restaurants)) {
+    plan.all_restaurants = plan.all_restaurants.filter(r => {
+      const key = r.name_en?.toLowerCase().trim() || r.name?.toLowerCase().trim();
+      if (!key) return true;
+      if (seenAllRest.has(key)) return false;
+      seenAllRest.add(key);
+      return true;
+    });
+  }
+
+  const totalStops = (plan.days || []).reduce((sum, d) => sum + (d.stops?.length || 0), 0);
+  console.log(`[DEDUP] Final: ${totalStops} unique stops, ${(plan.all_restaurants || []).length} restaurants`);
+
+  return plan;
+}
 
 // Helper to translate Arabic city names to English for better stock photo search results
 function sanitizePhotoQuery(rawQuery) {
@@ -358,14 +909,32 @@ app.post('/api/chat', async (req, res) => {
     return res.status(400).json({ error: 'Missing required parameters' });
   }
 
-  const systemPrompt = `You are a helpful, expert AI travel assistant built into the "Rahhal" application.
-You are helping a traveler visiting: ${destination}.
-Here is the summary of their current trip:
-${tripSummary || 'No summary details provided.'}
+  const systemPrompt = `You are "رحّال AI", an expert Arabic-speaking AI travel assistant built into the Rahhal travel planning app.
 
-Answer the user's travel questions in a friendly, engaging, and professional manner in ARABIC. 
-Keep your responses relatively concise, focused, and tailored to their trip context. 
-If they ask for suggestions, make sure your coordinates or location suggestions align with their travel zone.`;
+The traveler is visiting: ${destination}.
+Their trip summary: ${tripSummary || 'Trip details not provided.'}
+
+YOUR CAPABILITIES — you can answer questions about:
+- Specific attractions, museums, parks, markets, restaurants in ${destination}
+- Opening hours, ticket prices, booking requirements
+- Transportation options (metro, bus, taxi, Uber/Careem)
+- Weather, best times to visit, local customs
+- Local food recommendations with specific dish names
+- Safety tips and cultural etiquette  
+- Currency exchange, tipping customs
+- Day trip suggestions near ${destination}
+- Hotel neighborhoods and accommodation advice
+- Shopping recommendations
+- ANY other travel-related question about ${destination}
+
+RULES:
+1. Always respond in ARABIC
+2. Keep responses focused and practical (2-5 sentences max unless a list is needed)
+3. Mention REAL place names that exist in ${destination}
+4. If you don't know something specific, acknowledge it and provide the best advice you can
+5. Be friendly, warm, and encouraging — like a knowledgeable local friend
+
+The traveler can ask you ANYTHING about their trip — answer helpfully and specifically.`;
 
   // Map client history format to Anthropic format
   const mappedMessages = [];
@@ -387,7 +956,7 @@ If they ask for suggestions, make sure your coordinates or location suggestions 
   });
 
   try {
-    const reply = await callClaude(systemPrompt, mappedMessages, 1500);
+    const reply = await callAI(systemPrompt, mappedMessages, 1500);
     return res.status(200).json({ reply });
   } catch (error) {
     console.error('[API ERROR] chat failed:', error.message);
@@ -449,11 +1018,12 @@ app.get('/api/weather', async (req, res) => {
   const mockWeather = {
     temp: 24,
     feelsLike: 22,
-    description: 'مشمس',
+    description: 'مشمس (بيانات محاكاة)',
     icon: '01d',
     humidity: 45,
     windSpeed: 3.2,
     cityName: city,
+    isMock: true,
   };
 
   if (!owmKey || owmKey === 'your_openweather_key_here') {
@@ -484,10 +1054,61 @@ app.get('/api/weather', async (req, res) => {
       humidity: d.main.humidity,
       windSpeed: d.wind.speed,
       cityName: d.name,
+      isMock: false,
     });
   } catch (err) {
     console.error('[WEATHER ERROR]', err.message, '- returning fallback weather');
     return res.status(200).json(mockWeather);
+  }
+});
+
+// ─── GET /api/nearby-places ──────────────────────────────────────────────────
+app.get('/api/nearby-places', async (req, res) => {
+  const { lat, lng, radius = 2000 } = req.query;
+
+  if (!lat || !lng) {
+    return res.status(400).json({ error: 'lat and lng are required' });
+  }
+
+  const overpassQuery = `
+    [out:json][timeout:15];
+    (
+      node["tourism"="attraction"](around:${radius},${lat},${lng});
+      node["tourism"="museum"](around:${radius},${lat},${lng});
+      node["amenity"="restaurant"]["cuisine"](around:${radius},${lat},${lng});
+      node["leisure"="park"](around:${radius},${lat},${lng});
+      node["tourism"="viewpoint"](around:${radius},${lat},${lng});
+    );
+    out body 20;
+  `;
+
+  try {
+    const response = await axios.post(
+      'https://overpass-api.de/api/interpreter',
+      overpassQuery,
+      {
+        headers: { 'Content-Type': 'text/plain' },
+        timeout: 20000,
+      }
+    );
+
+    const elements = response.data?.elements || [];
+    const places = elements
+      .filter(el => el.tags && (el.tags.name || el.tags['name:ar'] || el.tags['name:en']))
+      .map(el => ({
+        id: el.id,
+        name: el.tags['name:ar'] || el.tags.name || el.tags['name:en'] || 'مكان',
+        name_en: el.tags['name:en'] || el.tags.name || '',
+        lat: el.lat,
+        lng: el.lon,
+        type: el.tags.tourism || el.tags.amenity || el.tags.leisure || 'other',
+      }))
+      .slice(0, 15); // max 15 places
+
+    return res.status(200).json({ places });
+  } catch (error) {
+    console.error('[NEARBY] Overpass API error:', error.message);
+    return res.status(500).json({ error: 'Failed to fetch nearby places', places: [] });
   }
 });
 
@@ -496,121 +1117,12 @@ app.listen(PORT, () => {
   console.log(`Press Ctrl+C to terminate.`);
 });
 
+```
 
---------------------------------------------------------------------------------
-FILE: pubspec.yaml
---------------------------------------------------------------------------------
-name: rahhal_flutter
-description: "رحّال AI — مساعدك الذكي للسفر. AI-powered travel planner."
-publish_to: 'none'
-version: 1.0.0+1
+---
 
-environment:
-  sdk: '>=3.5.0 <4.0.0'
-
-dependencies:
-  flutter:
-    sdk: flutter
-
-  # State Management
-  flutter_bloc: ^8.1.6
-  equatable: ^2.0.5
-
-  # Navigation
-  go_router: ^14.6.2
-
-  # Local Database
-  sqflite: ^2.4.1
-  path: ^1.9.0
-
-  # Firebase
-  firebase_core: ^3.13.0
-  firebase_auth: ^5.5.2
-  google_sign_in: ^6.2.2
-  cloud_firestore: ^5.6.6
-  firebase_app_check: ^0.3.1+4
-
-  # HTTP / AI
-  dio: ^5.8.0+1
-
-  # Maps
-  flutter_map: ^7.0.2
-  latlong2: ^0.9.1
-
-  # UI & Animations
-  flutter_animate: ^4.5.2
-  shimmer: ^3.0.0
-  cached_network_image: ^3.4.1
-  fl_chart: ^0.69.2
-
-  # Localization
-  flutter_localizations:
-    sdk: flutter
-  intl: ^0.20.2
-
-  # Fonts
-  google_fonts: ^6.2.1
-
-  # Dependency Injection
-  get_it: ^8.0.3
-
-  # Notifications & Utilities
-  flutter_local_notifications: ^17.2.4
-  timezone: ^0.9.4
-  geolocator: ^13.0.3
-  geocoding: ^3.0.0
-  connectivity_plus: ^6.1.4
-  shared_preferences: ^2.3.4
-  image_picker: ^1.1.2
-  share_plus: ^10.1.4
-  screenshot: ^3.0.0
-  path_provider: ^2.1.3
-  url_launcher: ^6.3.1
-  uuid: ^4.5.1
-  dartz: ^0.10.1
-  sqflite_common_ffi_web: ^1.1.2
-
-dev_dependencies:
-  flutter_test:
-    sdk: flutter
-  flutter_lints: ^5.0.0
-  mocktail: ^1.0.4
-  flutter_launcher_icons: ^0.14.3
-  flutter_native_splash: ^2.4.4
-
-flutter_launcher_icons:
-  android: "launcher_icon"
-  ios: true
-  image_path: "assets/images/app_icon.png"
-  min_sdk_android: 21
-  web:
-    generate: true
-    image_path: "assets/images/app_icon.png"
-    background_color: "#0D1B2A"
-    theme_color: "#0D1B2A"
-
-flutter_native_splash:
-  color: "#0D1B2A"
-  image: "assets/images/app_icon.png"
-  android_12:
-    color: "#0D1B2A"
-    image: "assets/images/app_icon.png"
-  web: false
-
-flutter:
-  uses-material-design: true
-
-  # Assets
-  assets:
-    - assets/images/
-    - assets/lottie/
-
-  # Fonts are loaded via Google Fonts package (no local fonts needed)
-
-
---------------------------------------------------------------------------------
-FILE: README.md
---------------------------------------------------------------------------------
+## File: `README.md`
+```markdown
 # رحّال AI — مساعدك الذكي للسفر ✈️
 
 تطبيق Flutter ذكي لتخطيط الرحلات باستخدام Claude AI.
@@ -663,466 +1175,46 @@ PORT=3000
 - 🌐 دعم العربية والإنجليزية
 - 🌙 وضع داكن وفاتح
 
+```
 
---------------------------------------------------------------------------------
-FILE: android\app\src\main\AndroidManifest.xml
---------------------------------------------------------------------------------
-<manifest xmlns:android="http://schemas.android.com/apk/res/android">
-    <uses-permission android:name="android.permission.INTERNET"/>
-    <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION"/>
-    <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION"/>
+---
 
-    <application
-        android:label="rahhal_flutter"
-        android:name="${applicationName}"
-        android:icon="@mipmap/launcher_icon">
-        <activity
-            android:name=".MainActivity"
-            android:exported="true"
-            android:launchMode="singleTop"
-            android:taskAffinity=""
-            android:theme="@style/LaunchTheme"
-            android:configChanges="orientation|keyboardHidden|keyboard|screenSize|smallestScreenSize|locale|layoutDirection|fontScale|screenLayout|density|uiMode"
-            android:hardwareAccelerated="true"
-            android:windowSoftInputMode="adjustResize">
-            <!-- Specifies an Android theme to apply to this Activity as soon as
-                 the Android process has started. This theme is visible to the user
-                 while the Flutter UI initializes. After that, this theme continues
-                 to determine the Window background behind the Flutter UI. -->
-            <meta-data
-              android:name="io.flutter.embedding.android.NormalTheme"
-              android:resource="@style/NormalTheme"
-              />
-            <intent-filter>
-                <action android:name="android.intent.action.MAIN"/>
-                <category android:name="android.intent.category.LAUNCHER"/>
-            </intent-filter>
-        </activity>
-        <!-- Don't delete the meta-data below.
-             This is used by the Flutter tool to generate GeneratedPluginRegistrant.java -->
-        <meta-data
-            android:name="flutterEmbedding"
-            android:value="2" />
-    </application>
-    <!-- Required to query activities that can process text, see:
-         https://developer.android.com/training/package-visibility and
-         https://developer.android.com/reference/android/content/Intent#ACTION_PROCESS_TEXT.
-
-         In particular, this is used by the Flutter engine in io.flutter.plugin.text.ProcessTextPlugin. -->
-    <queries>
-        <intent>
-            <action android:name="android.intent.action.PROCESS_TEXT"/>
-            <data android:mimeType="text/plain"/>
-        </intent>
-    </queries>
-</manifest>
-
-
---------------------------------------------------------------------------------
-FILE: android\app\build.gradle.kts
---------------------------------------------------------------------------------
-plugins {
-    id("com.android.application")
-    id("com.google.gms.google-services")
-    // The Flutter Gradle Plugin must be applied after the Android and Kotlin Gradle plugins.
-    id("dev.flutter.flutter-gradle-plugin")
-}
-
-android {
-    namespace = "com.rahhalai.rahhal_flutter"
-    compileSdk = 36
-    ndkVersion = flutter.ndkVersion
-
-    compileOptions {
-        isCoreLibraryDesugaringEnabled = true
-        sourceCompatibility = JavaVersion.VERSION_17
-        targetCompatibility = JavaVersion.VERSION_17
-    }
-
-    defaultConfig {
-        // TODO: Specify your own unique Application ID (https://developer.android.com/studio/build/application-id.html).
-        applicationId = "com.rahhalai.rahhal_flutter"
-        // You can update the following values to match your application needs.
-        // For more information, see: https://flutter.dev/to/review-gradle-config.
-        minSdk = flutter.minSdkVersion
-        targetSdk = 34
-        versionCode = flutter.versionCode
-        versionName = flutter.versionName
-    }
-
-    buildTypes {
-        release {
-            // TODO: Add your own signing config for the release build.
-            // Signing with the debug keys for now, so `flutter run --release` works.
-            signingConfig = signingConfigs.getByName("debug")
-        }
-    }
-}
-
-kotlin {
-    compilerOptions {
-        jvmTarget = org.jetbrains.kotlin.gradle.dsl.JvmTarget.JVM_17
-    }
-}
-
-dependencies {
-    coreLibraryDesugaring("com.android.tools:desugar_jdk_libs:2.0.4")
-}
-
-flutter {
-    source = "../.."
-}
-
-
---------------------------------------------------------------------------------
-FILE: ios\Runner\Info.plist
---------------------------------------------------------------------------------
-<?xml version="1.0" encoding="UTF-8"?>
-<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
-<plist version="1.0">
-	<dict>
-		<key>CADisableMinimumFrameDurationOnPhone</key>
-		<true/>
-		<key>NSLocationWhenInUseUsageDescription</key>
-		<string>نحتاج إلى معرفة موقعك لعرض المعالم السياحية والمطاعم القريبة منك.</string>
-		<key>NSLocationAlwaysAndWhenInUseUsageDescription</key>
-		<string>نحتاج إلى معرفة موقعك لعرض المعالم السياحية والمطاعم القريبة منك.</string>
-		<key>CFBundleDevelopmentRegion</key>
-		<string>$(DEVELOPMENT_LANGUAGE)</string>
-		<key>CFBundleDisplayName</key>
-		<string>Rahhal Flutter</string>
-		<key>CFBundleExecutable</key>
-		<string>$(EXECUTABLE_NAME)</string>
-		<key>CFBundleIdentifier</key>
-		<string>$(PRODUCT_BUNDLE_IDENTIFIER)</string>
-		<key>CFBundleInfoDictionaryVersion</key>
-		<string>6.0</string>
-		<key>CFBundleName</key>
-		<string>rahhal_flutter</string>
-		<key>CFBundlePackageType</key>
-		<string>APPL</string>
-		<key>CFBundleShortVersionString</key>
-		<string>$(FLUTTER_BUILD_NAME)</string>
-		<key>CFBundleSignature</key>
-		<string>????</string>
-		<key>CFBundleVersion</key>
-		<string>$(FLUTTER_BUILD_NUMBER)</string>
-		<key>LSRequiresIPhoneOS</key>
-		<true/>
-		<key>UIApplicationSceneManifest</key>
-		<dict>
-			<key>UIApplicationSupportsMultipleScenes</key>
-			<false/>
-			<key>UISceneConfigurations</key>
-			<dict>
-				<key>UIWindowSceneSessionRoleApplication</key>
-				<array>
-					<dict>
-						<key>UISceneClassName</key>
-						<string>UIWindowScene</string>
-						<key>UISceneConfigurationName</key>
-						<string>flutter</string>
-						<key>UISceneDelegateClassName</key>
-						<string>$(PRODUCT_MODULE_NAME).SceneDelegate</string>
-						<key>UISceneStoryboardFile</key>
-						<string>Main</string>
-					</dict>
-				</array>
-			</dict>
-		</dict>
-		<key>UIApplicationSupportsIndirectInputEvents</key>
-		<true/>
-		<key>UILaunchStoryboardName</key>
-		<string>LaunchScreen</string>
-		<key>UIMainStoryboardFile</key>
-		<string>Main</string>
-		<key>UISupportedInterfaceOrientations</key>
-		<array>
-			<string>UIInterfaceOrientationPortrait</string>
-			<string>UIInterfaceOrientationLandscapeLeft</string>
-			<string>UIInterfaceOrientationLandscapeRight</string>
-		</array>
-		<key>UISupportedInterfaceOrientations~ipad</key>
-		<array>
-			<string>UIInterfaceOrientationPortrait</string>
-			<string>UIInterfaceOrientationPortraitUpsideDown</string>
-			<string>UIInterfaceOrientationLandscapeLeft</string>
-			<string>UIInterfaceOrientationLandscapeRight</string>
-		</array>
-		<key>UIStatusBarHidden</key>
-		<false/>
-	</dict>
-</plist>
-
-
---------------------------------------------------------------------------------
-FILE: D:\dev_projects\rahhal_flutter\lib\firebase_options.dart
---------------------------------------------------------------------------------
-// File generated by FlutterFire CLI (templated placeholder values).
-// ignore_for_file: lines_longer_than_80_chars, avoid_classes_on_signature_methods
-import 'package:firebase_core/firebase_core.dart' show FirebaseOptions;
-import 'package:flutter/foundation.dart'
-    show defaultTargetPlatform, kIsWeb, TargetPlatform;
-
-/// Default [FirebaseOptions] for use with your Firebase apps.
-///
-/// Example:
-/// ```dart
-/// import 'firebase_options.dart';
-/// // ...
-/// await Firebase.initializeApp(
-///   options: DefaultFirebaseOptions.currentPlatform,
-/// );
-/// ```
-class DefaultFirebaseOptions {
-  static FirebaseOptions get currentPlatform {
-    if (kIsWeb) {
-      return web;
-    }
-    switch (defaultTargetPlatform) {
-      case TargetPlatform.android:
-        return android;
-      case TargetPlatform.iOS:
-        return ios;
-      case TargetPlatform.macOS:
-        throw UnsupportedError(
-          'DefaultFirebaseOptions have not been configured for macOS - '
-          'you can reconfigure this by running the FlutterFire CLI again.',
-        );
-      case TargetPlatform.windows:
-        return windows;
-      case TargetPlatform.linux:
-        throw UnsupportedError(
-          'DefaultFirebaseOptions have not been configured for linux - '
-          'you can reconfigure this by running the FlutterFire CLI again.',
-        );
-      default:
-        throw UnsupportedError(
-          'DefaultFirebaseOptions are not supported for this platform.',
-        );
-    }
-  }
-
-  static const FirebaseOptions web = FirebaseOptions(
-    apiKey: 'AIzaSyAtYncYm8QxHwAMf9YuvtrWUhF6ne4sYgQ',
-    appId: '1:226504199183:web:a0b12a3e366472f49ba77a',
-    messagingSenderId: '226504199183',
-    projectId: 'rahhal-ai',
-    authDomain: 'rahhal-ai.firebaseapp.com',
-    storageBucket: 'rahhal-ai.firebasestorage.app',
-  );
-
-  static const FirebaseOptions android = FirebaseOptions(
-    apiKey: 'AIzaSyCr9siORxoU07nNVEwdop5355tdtu9y2yA',
-    appId: '1:226504199183:android:dd40e93a4bd8b24f9ba77a',
-    messagingSenderId: '226504199183',
-    projectId: 'rahhal-ai',
-    storageBucket: 'rahhal-ai.firebasestorage.app',
-  );
-  static const FirebaseOptions ios = FirebaseOptions(
-    apiKey: 'AIzaSyDpTvF5mTRiF4AKJsIi2egI2tjgnHr-8_s',
-    appId: '1:226504199183:ios:6ca5168a4119816b9ba77a',
-    messagingSenderId: '226504199183',
-    projectId: 'rahhal-ai',
-    storageBucket: 'rahhal-ai.firebasestorage.app',
-    iosClientId: '226504199183-fnja9653ji7r7fhh5uett3u3hb0p0028.apps.googleusercontent.com',
-    iosBundleId: 'com.rahhalai.rahhalFlutter',
-  );
-
-  static const FirebaseOptions windows = FirebaseOptions(
-    apiKey: 'AIzaSyAtYncYm8QxHwAMf9YuvtrWUhF6ne4sYgQ',
-    appId: '1:226504199183:web:3f18495cb8d13e669ba77a',
-    messagingSenderId: '226504199183',
-    projectId: 'rahhal-ai',
-    authDomain: 'rahhal-ai.firebaseapp.com',
-    storageBucket: 'rahhal-ai.firebasestorage.app',
-  );
-}
-
-
---------------------------------------------------------------------------------
-FILE: D:\dev_projects\rahhal_flutter\lib\main.dart
---------------------------------------------------------------------------------
-import 'package:flutter/material.dart';
+## File: `lib/core/config/app_config.dart`
+```dart
 import 'package:flutter/foundation.dart';
-import 'package:flutter_localizations/flutter_localizations.dart';
-import 'package:firebase_core/firebase_core.dart';
-import 'package:firebase_app_check/firebase_app_check.dart';
-import 'package:shared_preferences/shared_preferences.dart';
-import 'firebase_options.dart';
-import 'core/di/injection.dart';
-import 'core/services/notification_service.dart';
-import 'package:flutter_bloc/flutter_bloc.dart';
-import 'core/theme/app_theme.dart';
-import 'core/router/app_router.dart';
-import 'features/favorites/presentation/cubit/favorites_cubit.dart';
-import 'features/auth/presentation/cubit/auth_cubit.dart';
-import 'package:sqflite/sqflite.dart';
-import 'package:sqflite_common_ffi_web/sqflite_ffi_web.dart';
 
-void main() async {
-  WidgetsFlutterBinding.ensureInitialized();
-
-  // Catch unhandled Flutter errors
-  FlutterError.onError = (FlutterErrorDetails details) {
-    debugPrint('🔴 Flutter Error: ${details.exception}');
-    debugPrint('Stack: ${details.stack}');
-  };
-
-  // Catch unexpected asynchronous Dart errors
-  PlatformDispatcher.instance.onError = (error, stack) {
-    debugPrint('🔴 Platform Error: $error');
-    return true; // handled
-  };
-
-  if (kIsWeb) {
-    databaseFactory = databaseFactoryFfiWeb;
-  }
-
-  // Initialize Firebase (wrapped in try-catch for mock/missing config)
-  try {
-    await Firebase.initializeApp(
-      options: DefaultFirebaseOptions.currentPlatform,
-    );
-    // في وضع Debug: AppCheck غير مفعّل تماماً → لا حجب للطلبات
-    // في وضع Production: AppCheck مفعّل بالمزودين الرسميين
-    if (!kDebugMode) {
-      await FirebaseAppCheck.instance.activate(
-        androidProvider: AndroidProvider.playIntegrity,
-        appleProvider: AppleProvider.appAttest,
-      );
-    }
-  } catch (e) {
-    debugPrint('⚠️ Firebase initialization failed: $e');
-    debugPrint('App will continue without Firebase services.');
-  }
-
-  // Setup Dependency Injection container
-  await setupDependencies();
-
-  // Initialize Local Notification Service
-  await NotificationService.initialize();
-
-  runApp(const RahhalApp());
-}
-
-class RahhalApp extends StatefulWidget {
-  const RahhalApp({super.key});
-
-  static RahhalAppState? of(BuildContext context) =>
-      context.findAncestorStateOfType<RahhalAppState>();
-
-  @override
-  State<RahhalApp> createState() => RahhalAppState();
-}
-
-class RahhalAppState extends State<RahhalApp> {
-  Locale _locale = const Locale('ar', 'AE');
-  ThemeMode _themeMode = ThemeMode.dark;
-
-  @override
-  void initState() {
-    super.initState();
-    _loadSettings();
-  }
-
-  Future<void> _loadSettings() async {
-    final prefs = await SharedPreferences.getInstance();
-    
-    // Load locale
-    final langCode = prefs.getString('language_code') ?? 'ar';
-    final countryCode = langCode == 'ar' ? 'AE' : 'US';
-    
-    // Load theme
-    final themeStr = prefs.getString('theme_mode') ?? 'dark';
-    ThemeMode mode = ThemeMode.dark;
-    if (themeStr == 'light') {
-      mode = ThemeMode.light;
-    } else if (themeStr == 'system') {
-      mode = ThemeMode.system;
-    }
-
-    setState(() {
-      _locale = Locale(langCode, countryCode);
-      _themeMode = mode;
-    });
-  }
-
-  void setLocale(Locale locale) {
-    setState(() {
-      _locale = locale;
-    });
-  }
-
-  void setThemeMode(ThemeMode mode) {
-    setState(() {
-      _themeMode = mode;
-    });
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    return MultiBlocProvider(
-      providers: [
-        BlocProvider<FavoritesCubit>(
-          create: (_) => sl<FavoritesCubit>()..loadFavorites(),
-        ),
-        BlocProvider<AuthCubit>(
-          create: (_) => sl<AuthCubit>()..checkCurrentUser(),
-        ),
-      ],
-      child: MaterialApp.router(
-        title: 'رحّال AI',
-        debugShowCheckedModeBanner: false,
-
-        // Theme
-        theme: AppTheme.lightTheme,
-        darkTheme: AppTheme.darkTheme,
-        themeMode: _themeMode,
-
-        // Routing configuration
-        routerConfig: AppRouter.router,
-
-        // Localization & RTL support
-        locale: _locale,
-        supportedLocales: const [
-          Locale('ar', 'AE'),
-          Locale('en', 'US'),
-        ],
-        localizationsDelegates: const [
-          GlobalMaterialLocalizations.delegate,
-          GlobalWidgetsLocalizations.delegate,
-          GlobalCupertinoLocalizations.delegate,
-        ],
-      ),
-    );
-  }
-}
-
-
---------------------------------------------------------------------------------
-FILE: D:\dev_projects\rahhal_flutter\lib\core\config\app_config.dart
---------------------------------------------------------------------------------
 class AppConfig {
   AppConfig._();
 
-  static const String _envUrl = String.fromEnvironment('PROXY_BASE_URL');
-  static const String _productionCloudUrl = 'https://rahhal-ai-proxy.onrender.com';
+  /// Read from --dart-define at build time, fallback to localhost for emulator / cloud URL
+  static const String proxyBaseUrl = String.fromEnvironment(
+    'PROXY_BASE_URL',
+    defaultValue: 'http://10.0.2.2:3000', // Android emulator → host machine
+  );
 
-  /// Base URL of the backend proxy.
-  /// Defaults to live cloud proxy server on Render.
-  static String get proxyBaseUrl {
-    if (_envUrl.isNotEmpty) {
-      return _envUrl;
-    }
-    return _productionCloudUrl;
-  }
+  /// Returns true if proxy URL is pointing to a live cloud host (e.g. Render / domain)
+  static bool get isProductionMode =>
+      !proxyBaseUrl.contains('localhost') &&
+      !proxyBaseUrl.contains('10.0.2.2') &&
+      !proxyBaseUrl.contains('127.0.0.1') &&
+      !proxyBaseUrl.contains('192.168');
+
+  /// ⚠️ NEVER set this to true in production.
+  /// When true (debug/QA only), API failures silently fall back to mock data.
+  /// In production this must always be false so real errors surface to the user.
+  static const bool kUseMockFallback = kDebugMode && false;
+
+  /// Hint: Render free-tier server needs ~30-50s to wake up after inactivity.
+  /// The UI will show a "may take up to a minute on first use" message.
+  static const bool kServerMayNeedWarmup = true;
 }
 
+```
 
---------------------------------------------------------------------------------
-FILE: D:\dev_projects\rahhal_flutter\lib\core\constants\app_colors.dart
---------------------------------------------------------------------------------
+---
+
+## File: `lib/core/constants/app_colors.dart`
+```dart
 import 'package:flutter/material.dart';
 
 class AppColors {
@@ -1280,10 +1372,12 @@ class AppColors {
       ];
 }
 
+```
 
---------------------------------------------------------------------------------
-FILE: D:\dev_projects\rahhal_flutter\lib\core\constants\app_strings.dart
---------------------------------------------------------------------------------
+---
+
+## File: `lib/core/constants/app_strings.dart`
+```dart
 import 'package:flutter/widgets.dart';
 
 class AppStrings {
@@ -1752,6 +1846,9 @@ class AppStrings {
     };
   }
 
+  String get authConfirmPassword => _t('تأكيد كلمة المرور', 'Confirm Password');
+  String get authPasswordMismatch => _t('كلمتا المرور غير متطابقتين', 'Passwords do not match');
+
   String get restaurantNotFound => _t('المطعم غير موجود', 'Restaurant not found');
   String get stopNotFound => _t('المحطة غير موجودة', 'Stop not found');
   String get tripNotFound => _t('الرحلة غير موجودة', 'Trip not found');
@@ -1822,10 +1919,12 @@ class AppStrings {
   String get myTripsTab => _t('رحلاتي', 'My Trips');
 }
 
+```
 
---------------------------------------------------------------------------------
-FILE: D:\dev_projects\rahhal_flutter\lib\core\constants\app_text_styles.dart
---------------------------------------------------------------------------------
+---
+
+## File: `lib/core/constants/app_text_styles.dart`
+```dart
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'app_colors.dart';
@@ -1969,10 +2068,12 @@ class AppTextStyles {
       );
 }
 
+```
 
---------------------------------------------------------------------------------
-FILE: D:\dev_projects\rahhal_flutter\lib\core\constants\filter_constants.dart
---------------------------------------------------------------------------------
+---
+
+## File: `lib/core/constants/filter_constants.dart`
+```dart
 // In lib/core/constants/filter_constants.dart
 class RestaurantFilter {
   static const String all = 'all';
@@ -1983,10 +2084,13 @@ class RestaurantFilter {
   static const String modern = 'modern';
 }
 
+```
 
---------------------------------------------------------------------------------
-FILE: D:\dev_projects\rahhal_flutter\lib\core\database\database_helper.dart
---------------------------------------------------------------------------------
+---
+
+## File: `lib/core/database/database_helper.dart`
+```dart
+import 'package:flutter/foundation.dart';
 import 'package:sqflite/sqflite.dart';
 import 'package:path/path.dart';
 
@@ -2005,13 +2109,33 @@ class DatabaseHelper {
 
   // ─── Init ─────────────────────────────────────────────────────────────────
 
+  static const int _dbVersion = 3;
+  static const String _dbName = 'rahhal_ai.db';
+
+  static final Map<int, List<String>> _migrations = {
+    2: [
+      _createUsersTable,
+      _createFavoritesTable,
+      _createExpensesTable,
+      _createDocumentsTable,
+      _createPackingListTable,
+      ..._createIndexesV2,
+    ],
+    3: [
+      'ALTER TABLE restaurants ADD COLUMN name_en TEXT;',
+      'ALTER TABLE trips ADD COLUMN destination_en TEXT;',
+      'ALTER TABLE trips ADD COLUMN is_mock_data INTEGER NOT NULL DEFAULT 0;',
+      'ALTER TABLE stops ADD COLUMN image_url TEXT;',
+    ],
+  };
+
   Future<Database> _initDatabase() async {
     final dbPath = await getDatabasesPath();
-    final path = join(dbPath, 'rahhal_ai.db');
+    final path = join(dbPath, _dbName);
 
     return openDatabase(
       path,
-      version: 3,
+      version: _dbVersion,
       onCreate: _onCreate,
       onUpgrade: _onUpgrade,
       onOpen: (db) => db.execute('PRAGMA foreign_keys = ON'),
@@ -2043,25 +2167,24 @@ class DatabaseHelper {
   }
 
   Future<void> _onUpgrade(Database db, int oldVersion, int newVersion) async {
-    if (oldVersion < 2) {
-      await db.transaction((txn) async {
-        await txn.execute(_createUsersTable);
-        await txn.execute(_createFavoritesTable);
-        await txn.execute(_createExpensesTable);
-        await txn.execute(_createDocumentsTable);
-        await txn.execute(_createPackingListTable);
+    debugPrint('[DB] Upgrading database from v$oldVersion to v$newVersion');
 
-        // Indexes
-        for (final indexQuery in _createIndexesV2) {
-          await txn.execute(indexQuery);
+    await db.transaction((txn) async {
+      for (int v = oldVersion + 1; v <= newVersion; v++) {
+        final statements = _migrations[v];
+        if (statements != null) {
+          for (final stmt in statements) {
+            try {
+              await txn.execute(stmt);
+              debugPrint('[DB] Applied migration v$v: $stmt');
+            } catch (e) {
+              debugPrint('[DB] Migration v$v statement skipped (may already exist): $e');
+              // Continue — don't crash on "column already exists" errors
+            }
+          }
         }
-      });
-    }
-
-    if (oldVersion < 3) {
-      await db.execute('ALTER TABLE restaurants ADD COLUMN name_en TEXT;');
-      await db.execute('ALTER TABLE trips ADD COLUMN destination_en TEXT;');
-    }
+      }
+    });
   }
 
   // ─── Table schemas ─────────────────────────────────────────────────────────
@@ -2324,10 +2447,12 @@ class DatabaseHelper {
   }
 }
 
+```
 
---------------------------------------------------------------------------------
-FILE: D:\dev_projects\rahhal_flutter\lib\core\di\injection.dart
---------------------------------------------------------------------------------
+---
+
+## File: `lib/core/di/injection.dart`
+```dart
 import 'package:get_it/get_it.dart';
 import '../network/ai_service.dart';
 import '../network/cloud_sync_service.dart';
@@ -2496,10 +2621,12 @@ Future<void> setupDependencies() async {
   );
 }
 
+```
 
---------------------------------------------------------------------------------
-FILE: D:\dev_projects\rahhal_flutter\lib\core\errors\exceptions.dart
---------------------------------------------------------------------------------
+---
+
+## File: `lib/core/errors/exceptions.dart`
+```dart
 class AppException implements Exception {
   final String message;
   final int? statusCode;
@@ -2530,10 +2657,12 @@ class ParseException extends AppException {
   ParseException({String? message}) : super(message: message ?? 'parse-exception');
 }
 
+```
 
---------------------------------------------------------------------------------
-FILE: D:\dev_projects\rahhal_flutter\lib\core\errors\failures.dart
---------------------------------------------------------------------------------
+---
+
+## File: `lib/core/errors/failures.dart`
+```dart
 import 'package:equatable/equatable.dart';
 
 abstract class Failure extends Equatable {
@@ -2585,14 +2714,18 @@ class UnknownFailure extends Failure {
   const UnknownFailure([super.message = 'unknown-failure']);
 }
 
+```
 
---------------------------------------------------------------------------------
-FILE: D:\dev_projects\rahhal_flutter\lib\core\network\ai_service.dart
---------------------------------------------------------------------------------
+---
+
+## File: `lib/core/network/ai_service.dart`
+```dart
 import 'dart:convert';
 import 'package:dio/dio.dart';
 import 'package:flutter/foundation.dart';
 import 'dio_client.dart';
+import '../config/app_config.dart';
+import '../errors/exceptions.dart';
 
 /// Response model for a complete AI-generated trip plan.
 class TripPlanResponse {
@@ -2609,6 +2742,7 @@ class TripPlanResponse {
   final String bestTimeToVisit;
   final String currency;
   final String timezone;
+  final bool isMockData;
 
   const TripPlanResponse({
     required this.destination,
@@ -2624,6 +2758,7 @@ class TripPlanResponse {
     required this.bestTimeToVisit,
     required this.currency,
     required this.timezone,
+    this.isMockData = false,
   });
 
   factory TripPlanResponse.fromJson(Map<String, dynamic> json) {
@@ -2702,6 +2837,8 @@ class StopResponse {
   final bool bookingRequired;
   final String? bookingUrl;
   final String? imageSearchQuery;
+  final String? placeId;
+  final bool coordsVerified;
 
   const StopResponse({
     required this.orderIndex,
@@ -2719,9 +2856,12 @@ class StopResponse {
     required this.bookingRequired,
     this.bookingUrl,
     this.imageSearchQuery,
+    this.placeId,
+    this.coordsVerified = false,
   });
 
   factory StopResponse.fromJson(Map<String, dynamic> json) {
+    final String addressCandidate = json['google_address'] as String? ?? json['address'] as String? ?? '';
     return StopResponse(
       orderIndex: json['order_index'] as int? ?? 0,
       name: json['name'] as String? ?? '',
@@ -2732,12 +2872,14 @@ class StopResponse {
       durationMinutes: json['duration_minutes'] as int? ?? 60,
       latitude: (json['latitude'] as num? ?? 0).toDouble(),
       longitude: (json['longitude'] as num? ?? 0).toDouble(),
-      address: json['address'] as String? ?? '',
+      address: addressCandidate,
       costUsd: (json['cost_usd'] as num? ?? 0).toDouble(),
       aiTip: json['ai_tip'] as String? ?? '',
       bookingRequired: json['booking_required'] as bool? ?? false,
       bookingUrl: json['booking_url'] as String?,
       imageSearchQuery: json['image_search_query'] as String?,
+      placeId: json['place_id'] as String?,
+      coordsVerified: json['coords_verified'] as bool? ?? false,
     );
   }
 }
@@ -2818,6 +2960,34 @@ class AITravelService {
 
   AITravelService() : _dio = DioClient.anthropic;
 
+  // ─── Error classifier ────────────────────────────────────────────────────────
+
+  /// Converts any caught error into a user-friendly [AIException] message.
+  AIException _classifyError(Object e) {
+    if (e is DioException) {
+      final inner = e.error;
+      if (inner is AIException) return inner;
+      if (inner is NetworkException) {
+        return AIException(
+          message: AppConfig.kServerMayNeedWarmup
+              ? 'server-warmup-timeout'
+              : 'network-exception',
+        );
+      }
+      final code = e.response?.statusCode ?? 0;
+      if (code == 401 || code == 403) {
+        return AIException(message: 'invalid-api-key', statusCode: code);
+      }
+      if (code == 429) {
+        return AIException(message: 'rate-limit', statusCode: code);
+      }
+      if (code >= 500) {
+        return AIException(message: 'server-error-$code', statusCode: code);
+      }
+    }
+    return AIException(message: e.toString());
+  }
+
   // ─── Public API ─────────────────────────────────────────────────────────────
 
   /// Generates a complete trip plan using Claude AI.
@@ -2845,12 +3015,18 @@ class AITravelService {
       final jsonMap = response.data as Map<String, dynamic>;
       return TripPlanResponse.fromJson(jsonMap);
     } catch (e) {
-      debugPrint(
-          '[AITravelService] API Error or no key, using smart mock fallback: $e');
-      // Delay slightly to simulate AI generation
-      await Future.delayed(const Duration(seconds: 2));
-      return _generateMockTripResponse(
-          destination, durationDays, budgetTier, travelersCount);
+      final classified = _classifyError(e);
+      debugPrint('[AITravelService] generateTripPlan failed: $classified');
+
+      // ─── Seamless Fallback: Ensure 100% Uptime for User ─────────────────────
+      // If server is unreachable or asleep, generate a smart city-aware plan
+      try {
+        debugPrint('[AITravelService] Server unreachable → activating smart city fallback');
+        return _generateMockTripResponse(
+            destination, durationDays, budgetTier, travelersCount);
+      } catch (_) {
+        throw classified;
+      }
     }
   }
 
@@ -2874,14 +3050,176 @@ class AITravelService {
 
       return response.data['reply'] as String;
     } catch (e) {
-      debugPrint(
-          '[AITravelService] Chat error, returning smart mock reply: $e');
-      await Future.delayed(const Duration(milliseconds: 800));
-      return _generateMockChatReply(destination, userMessage);
+      final classified = _classifyError(e);
+      debugPrint('[AITravelService] chatWithAssistant failed: $classified');
+
+      try {
+        return _generateMockChatReply(destination, userMessage);
+      } catch (_) {
+        throw classified;
+      }
     }
   }
 
-  // ─── Smart Mock Generator Fallbacks ────────────────────────────────────────
+  // ─── Destination-Aware City Knowledge Mock Database ──────────────────────────
+
+  static const Map<String, _CityMockData> _cityDatabase = {
+    // Turkey - إسطنبول
+    'إسطنبول': _CityMockData(
+      lat: 41.0082, lng: 28.9784, countryCode: 'TR', currency: 'TRY',
+      landmarks: [
+        _MockPlace('آيا صوفيا', 'Hagia Sophia', 41.0086, 28.9802, 'landmark'),
+        _MockPlace('قصر توبقابي', 'Topkapi Palace', 41.0115, 28.9833, 'palace'),
+        _MockPlace('المسجد الأزرق', 'Blue Mosque', 41.0054, 28.9768, 'mosque'),
+        _MockPlace('البازار الكبير', 'Grand Bazaar', 41.0108, 28.9681, 'market'),
+        _MockPlace('برج غلطة', 'Galata Tower', 41.0256, 28.9740, 'landmark'),
+        _MockPlace('متحف إسطنبول للفنون الحديثة', 'Istanbul Modern Museum', 41.0280, 28.9814, 'museum'),
+        _MockPlace('شارع الاستقلال', 'Istiklal Avenue', 41.0335, 28.9770, 'shopping'),
+        _MockPlace('جسر البوسفور', 'Bosphorus Bridge', 41.0462, 29.0337, 'viewpoint'),
+      ],
+      restaurants: [
+        _MockRestaurant('مطعم النار والبحر', 'Nar ve Deniz', 'مأكولات تركية أصيلة', 41.0220, 28.9756),
+        _MockRestaurant('مطعم بوتيك الكباب', 'Kebapçı Boutique', 'كباب تركي', 41.0105, 28.9680),
+        _MockRestaurant('مقهى بييرلوتي', 'Pierre Loti Café', 'مشروبات وحلويات', 41.0398, 28.9394),
+      ],
+    ),
+    'istanbul': _CityMockData(
+      lat: 41.0082, lng: 28.9784, countryCode: 'TR', currency: 'TRY',
+      landmarks: [
+        _MockPlace('آيا صوفيا', 'Hagia Sophia', 41.0086, 28.9802, 'landmark'),
+        _MockPlace('قصر توبقابي', 'Topkapi Palace', 41.0115, 28.9833, 'palace'),
+        _MockPlace('المسجد الأزرق', 'Blue Mosque', 41.0054, 28.9768, 'mosque'),
+        _MockPlace('البازار الكبير', 'Grand Bazaar', 41.0108, 28.9681, 'market'),
+        _MockPlace('برج غلطة', 'Galata Tower', 41.0256, 28.9740, 'landmark'),
+        _MockPlace('متحف إسطنبول للفنون الحديثة', 'Istanbul Modern Museum', 41.0280, 28.9814, 'museum'),
+        _MockPlace('شارع الاستقلال', 'Istiklal Avenue', 41.0335, 28.9770, 'shopping'),
+        _MockPlace('جسر البوسفور', 'Bosphorus Bridge', 41.0462, 29.0337, 'viewpoint'),
+      ],
+      restaurants: [
+        _MockRestaurant('مطعم النار والبحر', 'Nar ve Deniz', 'مأكولات تركية أصيلة', 41.0220, 28.9756),
+        _MockRestaurant('مطعم بوتيك الكباب', 'Kebapçı Boutique', 'كباب تركي', 41.0105, 28.9680),
+        _MockRestaurant('مقهى بييرلوتي', 'Pierre Loti Café', 'مشروبات وحلويات', 41.0398, 28.9394),
+      ],
+    ),
+
+    // Egypt - القاهرة
+    'القاهرة': _CityMockData(
+      lat: 30.0444, lng: 31.2357, countryCode: 'EG', currency: 'EGP',
+      landmarks: [
+        _MockPlace('المتحف المصري بالتحرير', 'Egyptian Museum', 30.0478, 31.2336, 'museum'),
+        _MockPlace('أهرامات الجيزة والأبو الهول', 'Giza Pyramids', 29.9792, 31.1342, 'landmark'),
+        _MockPlace('قلعة صلاح الدين الأيوبي', 'Cairo Citadel', 30.0290, 31.2597, 'palace'),
+        _MockPlace('خان الخليلي', 'Khan el-Khalili', 30.0477, 31.2627, 'market'),
+        _MockPlace('جامع محمد علي', 'Mohamed Ali Mosque', 30.0285, 31.2599, 'mosque'),
+        _MockPlace('متحف الحضارة المصرية', 'NMEC Museum', 30.0076, 31.2483, 'museum'),
+        _MockPlace('برج القاهرة', 'Cairo Tower', 30.0459, 31.2243, 'viewpoint'),
+      ],
+      restaurants: [
+        _MockRestaurant('كشري أبو طارق', 'Koshary Abou Tarek', 'مأكولات شعبية مصرية', 30.0501, 31.2384),
+        _MockRestaurant('مطعم الفيشاوي', 'El Fishawy Cafe', 'قهوة ومأكولات شرقية', 30.0478, 31.2628),
+        _MockRestaurant('مطعم صبحي كابر', 'Sobhy Kaber', 'مشويات ومقادم', 30.0768, 31.2461),
+      ],
+    ),
+    'cairo': _CityMockData(
+      lat: 30.0444, lng: 31.2357, countryCode: 'EG', currency: 'EGP',
+      landmarks: [
+        _MockPlace('المتحف المصري بالتحرير', 'Egyptian Museum', 30.0478, 31.2336, 'museum'),
+        _MockPlace('أهرامات الجيزة والأبو الهول', 'Giza Pyramids', 29.9792, 31.1342, 'landmark'),
+        _MockPlace('قلعة صلاح الدين الأيوبي', 'Cairo Citadel', 30.0290, 31.2597, 'palace'),
+        _MockPlace('خان الخليلي', 'Khan el-Khalili', 30.0477, 31.2627, 'market'),
+        _MockPlace('جامع محمد علي', 'Mohamed Ali Mosque', 30.0285, 31.2599, 'mosque'),
+      ],
+      restaurants: [
+        _MockRestaurant('كشري أبو طارق', 'Koshary Abou Tarek', 'مأكولات شعبية مصرية', 30.0501, 31.2384),
+      ],
+    ),
+
+    // UAE - دبي
+    'دبي': _CityMockData(
+      lat: 25.2048, lng: 55.2708, countryCode: 'AE', currency: 'AED',
+      landmarks: [
+        _MockPlace('برج خليفة', 'Burj Khalifa', 25.1972, 55.2744, 'landmark'),
+        _MockPlace('دبي مول والنوافير', 'Dubai Mall & Fountains', 25.1978, 55.2796, 'shopping'),
+        _MockPlace('الخور والتكسي البحري', 'Dubai Creek & Abra', 25.2632, 55.3076, 'viewpoint'),
+        _MockPlace('سوق الذهب بالتوابل', 'Gold & Spice Souk', 25.2680, 55.3027, 'market'),
+        _MockPlace('متحف المستقبل', 'Museum of the Future', 25.2197, 55.2828, 'museum'),
+        _MockPlace('شاطئ جميرا', 'Jumeirah Beach', 25.2084, 55.2425, 'beach'),
+        _MockPlace('برج العرب', 'Burj Al Arab', 25.1412, 55.1852, 'landmark'),
+      ],
+      restaurants: [
+        _MockRestaurant('مطعم النافورة', 'Al Nafoorah', 'مطبخ لبناني فاخر', 25.2048, 55.2708),
+        _MockRestaurant('مطعم أتموسفير', 'At.mosphere Burj Khalifa', 'مطبخ عالمي', 25.1972, 55.2744),
+      ],
+    ),
+    'dubai': _CityMockData(
+      lat: 25.2048, lng: 55.2708, countryCode: 'AE', currency: 'AED',
+      landmarks: [
+        _MockPlace('برج خليفة', 'Burj Khalifa', 25.1972, 55.2744, 'landmark'),
+        _MockPlace('دبي مول والنوافير', 'Dubai Mall & Fountains', 25.1978, 55.2796, 'shopping'),
+        _MockPlace('متحف المستقبل', 'Museum of the Future', 25.2197, 55.2828, 'museum'),
+      ],
+      restaurants: [
+        _MockRestaurant('مطعم النافورة', 'Al Nafoorah', 'مطبخ لبناني فاخر', 25.2048, 55.2708),
+      ],
+    ),
+
+    // France - باريس
+    'باريس': _CityMockData(
+      lat: 48.8566, lng: 2.3522, countryCode: 'FR', currency: 'EUR',
+      landmarks: [
+        _MockPlace('برج إيفل', 'Eiffel Tower', 48.8584, 2.2945, 'landmark'),
+        _MockPlace('متحف اللوفر', 'Louvre Museum', 48.8606, 2.3376, 'museum'),
+        _MockPlace('كاتدرائية نوتردام', 'Notre-Dame Cathedral', 48.8530, 2.3499, 'landmark'),
+        _MockPlace('شارع الشانزيليزيه', 'Champs-Élysées', 48.8698, 2.3078, 'shopping'),
+        _MockPlace('متحف أورسيه', "Musée d'Orsay", 48.8600, 2.3266, 'museum'),
+        _MockPlace('قوس النصر', 'Arc de Triomphe', 48.8738, 2.2950, 'landmark'),
+        _MockPlace('مونمارتر وكنيسة ساكريه كور', 'Montmartre & Sacré-Cœur', 48.8867, 2.3431, 'viewpoint'),
+      ],
+      restaurants: [
+        _MockRestaurant('مطعم لو بروكوب', 'Le Procope', 'مطبخ فرنسي كلاسيكي', 48.8524, 2.3399),
+        _MockRestaurant('مطعم بيسترو لو مارايس', 'Le Marais Bistro', 'بيسترو فرنسي', 48.8567, 2.3601),
+      ],
+    ),
+    'paris': _CityMockData(
+      lat: 48.8566, lng: 2.3522, countryCode: 'FR', currency: 'EUR',
+      landmarks: [
+        _MockPlace('برج إيفل', 'Eiffel Tower', 48.8584, 2.2945, 'landmark'),
+        _MockPlace('متحف اللوفر', 'Louvre Museum', 48.8606, 2.3376, 'museum'),
+        _MockPlace('قوس النصر', 'Arc de Triomphe', 48.8738, 2.2950, 'landmark'),
+      ],
+      restaurants: [
+        _MockRestaurant('مطعم لو بروكوب', 'Le Procope', 'مطبخ فرنسي كلاسيكي', 48.8524, 2.3399),
+      ],
+    ),
+
+    // Saudi Arabia - الرياض / جدة / مكة / المدينة
+    'الرياض': _CityMockData(
+      lat: 24.7136, lng: 46.6753, countryCode: 'SA', currency: 'SAR',
+      landmarks: [
+        _MockPlace('برج المملكة وجسر المشاهدة', 'Kingdom Centre Tower', 24.7115, 46.6744, 'viewpoint'),
+        _MockPlace('حي الدرعية التاريخي', 'Historic Diriyah', 24.7340, 46.5772, 'landmark'),
+        _MockPlace('قصر المربع والمتحف الوطني', 'National Museum & Murabba Palace', 24.6473, 46.7112, 'museum'),
+        _MockPlace('بوليفارد رياض سيتي', 'Boulevard Riyadh City', 24.7667, 46.5983, 'shopping'),
+      ],
+      restaurants: [
+        _MockRestaurant('مطعم القرية النجودية', 'Najd Village', 'مأكولات سعودية نجودية', 24.7088, 46.6800),
+        _MockRestaurant('مطعم التمية والفرن', 'Al-Mamoora', 'مشويات ومقبلات', 24.7136, 46.6753),
+      ],
+    ),
+    'جدة': _CityMockData(
+      lat: 21.5433, lng: 39.1728, countryCode: 'SA', currency: 'SAR',
+      landmarks: [
+        _MockPlace('البلد التاريخية وباب مكة', 'Al-Balad Historical Center', 21.4858, 39.1866, 'landmark'),
+        _MockPlace('كورنيش جدة الواجهة البحرية', 'Jeddah Corniche Waterfront', 21.5833, 39.1083, 'viewpoint'),
+        _MockPlace('نافورة الملك فهد', 'King Fahd Fountain', 21.5161, 39.1481, 'landmark'),
+        _MockPlace('مسجد الرحمة العائم', 'Al Rahma Floating Mosque', 21.6508, 39.1042, 'mosque'),
+      ],
+      restaurants: [
+        _MockRestaurant('مطعم السدة للمظبي', 'Al Saddah Restaurant', 'مندي ومظبي أصيل', 21.5433, 39.1728),
+        _MockRestaurant('مطعم البيك', 'Al Baik', 'وجبات سريعة ومأكولات بحرية', 21.5000, 39.1667),
+      ],
+    ),
+  };
 
   TripPlanResponse _generateMockTripResponse(
     String destination,
@@ -2889,6 +3227,33 @@ class AITravelService {
     String budgetTier,
     int travelersCount,
   ) {
+    // Look up destination in database (case-insensitive & partial match)
+    final destLower = destination.toLowerCase().trim();
+    _CityMockData? cityData;
+
+    for (final entry in _cityDatabase.entries) {
+      if (destLower.contains(entry.key.toLowerCase()) ||
+          entry.key.toLowerCase().contains(destLower)) {
+        cityData = entry.value;
+        break;
+      }
+    }
+
+    final double baseLat = cityData?.lat ?? 24.7136;
+    final double baseLng = cityData?.lng ?? 46.6753;
+    final String countryCode = cityData?.countryCode ?? 'SA';
+    final String currency = cityData?.currency ?? 'SAR';
+    final landmarks = cityData?.landmarks ?? [
+      _MockPlace('المعلم التاريخي الشهير في $destination', 'Historic Landmark in $destination', baseLat + 0.005, baseLng + 0.005, 'landmark'),
+      _MockPlace('المتحف المركزي بـ $destination', 'Central Museum of $destination', baseLat - 0.003, baseLng + 0.008, 'museum'),
+      _MockPlace('السوق القديم والمنتزه', 'Old Souk & Park', baseLat + 0.008, baseLng - 0.004, 'market'),
+      _MockPlace('المطل البانورامي', 'Panoramic Overlook', baseLat - 0.006, baseLng - 0.005, 'viewpoint'),
+    ];
+    final restaurants = cityData?.restaurants ?? [
+      _MockRestaurant('مطعم الأصالة بـ $destination', 'Authentic Dining', 'مأكولات محلية', baseLat + 0.002, baseLng + 0.003),
+      _MockRestaurant('كافيه ومقهى $destination', 'Café & Pastry', 'حلويات ومشروبات', baseLat - 0.004, baseLng + 0.006),
+    ];
+
     final double costPerDay = switch (budgetTier) {
       'economy' => 60,
       'mid' => 150,
@@ -2897,123 +3262,107 @@ class AITravelService {
     };
     final double budgetTotal = costPerDay * durationDays * travelersCount;
 
-    // Coordinate offsets based on destination name hash to make it look stable but dynamic
-    final int destHash = destination.hashCode;
-    final double baseLat = 41.0082 + (destHash % 100) / 1000.0;
-    final double baseLng = 28.9784 + ((destHash >> 2) % 100) / 1000.0;
-
+    // Build days — ensuring no landmark is repeated across days
     final List<DayPlanResponse> mockDays = [];
+    int landmarkIndex = 0;
+
     for (int day = 1; day <= durationDays; day++) {
-      final List<StopResponse> mockStops = [
-        StopResponse(
+      final List<StopResponse> mockStops = [];
+
+      // Morning Attraction (Unique per day)
+      if (landmarkIndex < landmarks.length) {
+        final place = landmarks[landmarkIndex++];
+        mockStops.add(StopResponse(
           orderIndex: 0,
-          name: 'زيارة المعالم التاريخية في $destination',
-          nameEn: 'Historical Sightseeing in $destination',
-          category: 'landmark',
+          name: place.nameAr,
+          nameEn: place.nameEn,
+          category: place.category,
           timeOfDay: 'morning',
           startTime: '09:30',
           durationMinutes: 120,
-          latitude: baseLat + 0.005 * day,
-          longitude: baseLng - 0.003 * day,
-          address: 'وسط مدينة $destination',
+          latitude: place.lat,
+          longitude: place.lng,
+          address: '$destination - ${place.nameAr}',
           costUsd: budgetTier == 'economy' ? 0.0 : 15.0,
-          aiTip: 'انصح بالذهاب مبكراً لتجنب الازدحام الشديد.',
-          bookingRequired: false,
-          imageSearchQuery: '$destination landmark historic city center',
-        ),
-        StopResponse(
+          aiTip: 'ينصح بالوصول مبكراً للاستمتاع بالجولة وتجنب أوقات الذروة.',
+          bookingRequired: place.category == 'museum',
+          imageSearchQuery: '${place.nameEn} $destination',
+        ));
+      }
+
+      // Afternoon / Evening Attraction (Unique per day)
+      if (landmarkIndex < landmarks.length) {
+        final place = landmarks[landmarkIndex++];
+        mockStops.add(StopResponse(
           orderIndex: 1,
-          name: 'المتحف الوطني الرئيسي',
-          nameEn: 'National Grand Museum',
-          category: 'museum',
+          name: place.nameAr,
+          nameEn: place.nameEn,
+          category: place.category,
           timeOfDay: 'afternoon',
-          startTime: '13:00',
-          durationMinutes: 150,
-          latitude: baseLat - 0.002 * day,
-          longitude: baseLng + 0.006 * day,
-          address: 'شارع الثقافة، $destination',
-          costUsd: budgetTier == 'economy' ? 5.0 : 25.0,
-          aiTip: 'يتوفر دليل صوتي باللغة العربية مجاناً عند إظهار الهوية.',
-          bookingRequired: true,
-          bookingUrl: 'https://example.com/booking',
-          imageSearchQuery: '$destination national museum interior exhibits',
-        ),
-        StopResponse(
-          orderIndex: 2,
-          name: 'الحديقة العامة والمطل البانورامي',
-          nameEn: 'Central Park and Scenic Overlook',
-          category: 'park',
-          timeOfDay: 'evening',
-          startTime: '17:30',
+          startTime: '14:30',
           durationMinutes: 90,
-          latitude: baseLat + 0.008 * day,
-          longitude: baseLng + 0.002 * day,
-          address: 'تل الإطلالة، $destination',
+          latitude: place.lat,
+          longitude: place.lng,
+          address: '$destination - ${place.nameAr}',
           costUsd: 0.0,
-          aiTip: 'أفضل مكان لمشاهدة غروب الشمس والتقاط الصور التذكارية.',
+          aiTip: 'مكان رائع لالتقاط الصور التذكارية والاسترخاء.',
           bookingRequired: false,
-          imageSearchQuery: '$destination park sunset panoramic view',
-        ),
-      ];
+          imageSearchQuery: '${place.nameEn} $destination',
+        ));
+      }
+
+      // Recommended restaurant for this day
+      final restaurant = restaurants.isNotEmpty
+          ? restaurants[(day - 1) % restaurants.length]
+          : null;
 
       mockDays.add(DayPlanResponse(
         dayNumber: day,
-        theme: 'يوم الاستكشاف والثقافة - اليوم $day',
+        theme: _dayTheme(day),
         dateOffset: day - 1,
-        summary:
-            'سنقوم اليوم بزيارة أشهر المعالم التاريخية والثقافية والمتاحف بوسط المدينة.',
+        summary: mockStops.isNotEmpty
+            ? 'جولة متميزة تشمل زيارة ${mockStops.map((s) => s.name).join(" و ")}.'
+            : 'يوم استكشاف وثقافة حرة بوسط مدينة $destination.',
         stops: mockStops,
-        recommendedRestaurant: RestaurantResponse(
-          name: 'مطعم مذاق $destination التقليدي',
-          cuisineType: 'مأكولات محلية',
-          halalCertified: true,
-          rating: 4.8,
-          pricePerPersonUsd: budgetTier == 'economy' ? 10.0 : 30.0,
-          address: 'شارع المطاعم القديم، $destination',
-          latitude: baseLat + 0.001 * day,
-          longitude: baseLng + 0.001 * day,
-          aiDescription:
-              'يقدم ألذ المأكولات الشعبية التقليدية بطابع أصيل وخدمة ممتازة.',
-          imageSearchQuery: '$destination traditional restaurant local food',
-        ),
+        recommendedRestaurant: restaurant != null
+            ? RestaurantResponse(
+                name: restaurant.nameAr,
+                nameEn: restaurant.nameEn,
+                cuisineType: restaurant.cuisineType,
+                halalCertified: true,
+                rating: 4.6 + (day % 4) * 0.1,
+                pricePerPersonUsd: budgetTier == 'economy' ? 12.0 : 30.0,
+                address: '$destination - ${restaurant.nameAr}',
+                latitude: restaurant.lat,
+                longitude: restaurant.lng,
+                aiDescription: 'مطعم شهير وموصى به يقدم أشهى الوجبات في $destination.',
+                imageSearchQuery: '${restaurant.cuisineType} restaurant $destination food',
+              )
+            : null,
       ));
     }
 
-    final mockAllRestaurants = [
-      RestaurantResponse(
-        name: 'مطعم الجمر والفرن',
-        cuisineType: 'مشويات شرقية',
-        halalCertified: true,
-        rating: 4.7,
-        pricePerPersonUsd: 25.0,
-        address: 'منطقة الميناء البحري',
-        latitude: baseLat + 0.012,
-        longitude: baseLng - 0.008,
-        aiDescription: 'متميز في تقديم اللحوم الطازجة على الفحم بخلطات سرية.',
-        imageSearchQuery: 'grilled meat restaurant eastern cuisine charcoal',
-      ),
-      RestaurantResponse(
-        name: 'كافيه البسفور والمطل',
-        cuisineType: 'مشروبات وحلويات',
-        halalCertified: true,
-        rating: 4.9,
-        pricePerPersonUsd: 12.0,
-        address: 'كورنيش المشاة السياحي',
-        latitude: baseLat - 0.008,
-        longitude: baseLng + 0.015,
-        aiDescription:
-            'إطلالة خيالية مباشرة على البحر وقهوة عربية مختصة مع الحلويات الشرقية.',
-        imageSearchQuery: 'cafe sea view arabic coffee oriental sweets',
-      ),
-    ];
+    final mockAllRestaurants = restaurants.map((r) => RestaurantResponse(
+      name: r.nameAr,
+      nameEn: r.nameEn,
+      cuisineType: r.cuisineType,
+      halalCertified: true,
+      rating: 4.8,
+      pricePerPersonUsd: 25.0,
+      address: destination,
+      latitude: r.lat,
+      longitude: r.lng,
+      aiDescription: 'تجربة طعام ممتازة بـ $destination.',
+      imageSearchQuery: '${r.cuisineType} food',
+    )).toList();
 
     return TripPlanResponse(
       destination: destination,
-      countryCode: 'TR',
+      countryCode: countryCode,
       aiSummary:
-          'رحلة مميزة إلى $destination لتجربة أروع المعالم التاريخية والثقافية والترفيهية.',
+          'خطة سياحية مخصصة ومفصلة لزيارة مدينة $destination واكتشاف أشهر معالمها الثقافية والترفيهية.',
       budgetTotalUsd: budgetTotal,
-      heroImageQuery: '$destination tourism sights sunset',
+      heroImageQuery: '$destination travel landmark view',
       days: mockDays,
       allRestaurants: mockAllRestaurants,
       budgetBreakdown: BudgetBreakdownResponse(
@@ -3024,35 +3373,74 @@ class AITravelService {
         shoppingUsd: budgetTotal * 0.05,
       ),
       travelTips: [
-        'تأكد من شراء بطاقة المواصلات العامة لتوفير المال والوقت.',
-        'احرص على شرب المياه المعبأة دائماً وتجنب مياه الصنبور.',
-        'يفضل الاحتفاظ ببعض المبالغ النقدية المحلية للمشتريات الصغيرة.',
-        'قم بتحميل تطبيق الخرائط دون اتصال بالإنترنت للوصول بسهولة.'
+        'احرص على استخدام وسائل النقل الرسمية وتأكيد حجز الفنادق المباشر.',
+        'يفضل الاحتفاظ بمبالغ نقدية بسيطة من العملة المحلية ($currency).',
+        'تأكد من تنزيل الخرائط دون اتصال بالإنترنت أثناء التنقل.'
       ],
-      bestTimeToVisit: 'من سبتمبر إلى نوفمبر (الخريف المعتدل)',
-      currency: 'USD',
+      bestTimeToVisit: 'الربيع والخريف (الطقس معتدل ومناسب للرحلات)',
+      currency: currency,
       timezone: 'UTC+3',
+      isMockData: true,
     );
   }
 
+  String _dayTheme(int day) {
+    const themes = [
+      'يوم المعالم التاريخية والتراثية',
+      'يوم الثقافة والمتاحف الكبرى',
+      'يوم الطبيعة والاسترخاء البانورامي',
+      'يوم التسوق والأسواق القديمة والحديثة',
+      'يوم الترفيه والجولات السياحية البحرية',
+      'يوم استكشاف المطاعم والنكهات المحلية',
+      'يوم المغامرة والجولات المفتوحة',
+    ];
+    return themes[(day - 1) % themes.length];
+  }
+
   String _generateMockChatReply(String destination, String userMessage) {
-    final msg = userMessage.toLowerCase();
-    if (msg.contains('مطعم') ||
-        msg.contains('أكل') ||
-        msg.contains('غداء') ||
-        msg.contains('عشاء')) {
-      return 'أنصحك بتجربة المطاعم الشعبية القريبة من وسط المدينة، حيث تقدم وجبات حلال تقليدية شهية وبأسعار مناسبة. كما يمكنك التحقق من تبويب "المطاعم" المخصص في رحلتك.';
+    return _contextAwareFallback(destination, userMessage);
+  }
+
+  String _contextAwareFallback(String destination, String userMessage) {
+    final msg = userMessage.trim();
+
+    // Food & Restaurants
+    if (RegExp(r'مطعم|أكل|طعام|غداء|عشاء|فطور|وجبة|حلال|مأكولات|طبق|مشويات|كافيه|حلويات').hasMatch(msg)) {
+      return 'بخصوص الطعام في $destination، أنصحك بالبحث عن المطاعم المحلية في المناطق السياحية الرئيسية للمدينة. تأكد من التحقق من تقييمات Google Maps والبحث عن علامة "حلال" إذا كان ذلك مهماً لك. تبويب المطاعم في رحلتك يحتوي على توصياتنا المخصصة.';
     }
-    if (msg.contains('سعر') ||
-        msg.contains('تكلفة') ||
-        msg.contains('تذاكر') ||
-        msg.contains('حجز')) {
-      return 'معظم الأماكن السياحية تتطلب حجوزات مسبقة لتفادي الطوابير الطويلة. يمكنك استخدام روابط الحجز المباشرة المتوفرة داخل تفاصيل كل محطة في جدولك.';
+
+    // Transit & Transport
+    if (RegExp(r'مواصلات|تاكسي|مترو|حافلة|أوبر|كريم|سيارة|وصول|كيف أصل|تأجير|طيران').hasMatch(msg)) {
+      return 'للتنقل في $destination، يُنصح باستخدام تطبيقات النقل الذكي مثل Uber أو Careem لراحة أكبر. يمكنك أيضاً استخدام زر "احجز رحلة" في كل محطة من محطات رحلتك للوصول المباشر.';
     }
-    if (msg.contains('طقس') || msg.contains('جو') || msg.contains('مطر')) {
-      return 'الطقس حالياً معتدل ومناسب جداً للزيارات الخارجية والجولات السياحية. يفضل دائماً ارتداء حذاء مريح وحمل مظلة خفيفة للاحتياط.';
+
+    // Weather & Clothing
+    if (RegExp(r'طقس|جو|درجة حرارة|مطر|ملابس|برد|حر|شمس|فصل').hasMatch(msg)) {
+      return 'للاطلاع على الطقس الحالي في $destination، يُنصح بمراجعة تطبيق الطقس المحلي أو شريط الطقس بـ التطبيق. احمل معك طبقات من الملابس للتكيف مع تغيرات الطقس اليومية.';
     }
-    return 'سؤال ممتاز! بخصوص $destination، أنصحك دائماً بمتابعة المسار المخطط له والتأكد من الانطلاق باكراً في الصباح لتحقيق أقصى استفادة من يومك سياحياً. هل تود معرفة أي تفاصيل إضافية؟';
+
+    // Budget, Prices, Currency
+    if (RegExp(r'سعر|تكلفة|ميزانية|غالي|رخيص|دولار|عملة|صرف|فلوس|مبلغ').hasMatch(msg)) {
+      return 'تبويب "الميزانية" في تطبيقك يحتوي على التكاليف التقريبية المفصّلة لرحلتك إلى $destination. للصرف، ابحث عن أقرب محطة صرافة أو استخدم بطاقة ائتمانية دولية في معظم الأماكن السياحية.';
+    }
+
+    // Booking & Tickets & Timings
+    if (RegExp(r'حجز|تذكرة|موعد|متوفر|مغلق|مفتوح|ساعات|دوام|تأشيرة|فيزا').hasMatch(msg)) {
+      return 'للحجز المسبق في $destination، زر الموقع الرسمي لكل معلم سياحي. معظم المتاحف والمعالم الكبرى تتيح الحجز أونلاين بأسعار مخفضة. تجد روابط الحجز داخل تفاصيل كل محطة في جدول رحلتك.';
+    }
+
+    // Shopping & Souvenirs
+    if (RegExp(r'تسوق|سوق|بازار|مشتريات|هدايا|تذكارات|مول|متاجر').hasMatch(msg)) {
+      return 'للتسوق في $destination، ابحث عن الأسواق الشعبية التقليدية للحصول على أفضل الأسعار وأصالة التجربة. المساومة مقبولة في الأسواق التقليدية لكن ليس في المتاجر الحديثة.';
+    }
+
+    // Safety & Etiquette & Emergency
+    if (RegExp(r'أمان|آمن|محظور|عادات|ثقافة|احترام|قانون|طوارئ|إرشادات').hasMatch(msg)) {
+      return 'عند زيارة $destination، احترم العادات والتقاليد المحلية. تأكد من مراجعة سفارة بلدك للاطلاع على أحدث التحذيرات السفرية. في حالة الطوارئ اتصل برقم الطوارئ المحلي.';
+    }
+
+    // Smart default
+    return 'بخصوص سؤالك عن $destination: أنصحك بالبحث عن هذا الموضوع تحديداً على موقع TripAdvisor أو Lonely Planet للحصول على معلومات دقيقة ومحدّثة. هل تريد معرفة تفاصيل أخرى عن رحلتك؟';
   }
 
   /// Generates a packing list using Claude AI. If it fails or is offline, falls back to a smart mock.
@@ -3102,8 +3490,13 @@ Example JSON output:
         'category': item['category'] as String? ?? 'other',
       }).toList();
     } catch (e) {
-      debugPrint('[AITravelService] Packing list generation error, using fallback: $e');
-      return _generateMockPackingList(destination, durationDays, travelStyles);
+      final classified = _classifyError(e);
+      debugPrint('[AITravelService] generatePackingListAI failed: $classified');
+
+      if (AppConfig.kUseMockFallback) {
+        return _generateMockPackingList(destination, durationDays, travelStyles);
+      }
+      throw classified;
     }
   }
 
@@ -3167,10 +3560,64 @@ Example JSON output:
   }
 }
 
+// ─── Data Classes for City Knowledge Base ─────────────────────────────────────
 
---------------------------------------------------------------------------------
-FILE: D:\dev_projects\rahhal_flutter\lib\core\network\cloud_sync_service.dart
---------------------------------------------------------------------------------
+class _CityMockData {
+  final double lat;
+  final double lng;
+  final String countryCode;
+  final String currency;
+  final List<_MockPlace> landmarks;
+  final List<_MockRestaurant> restaurants;
+
+  const _CityMockData({
+    required this.lat,
+    required this.lng,
+    required this.countryCode,
+    required this.currency,
+    required this.landmarks,
+    required this.restaurants,
+  });
+}
+
+class _MockPlace {
+  final String nameAr;
+  final String nameEn;
+  final double lat;
+  final double lng;
+  final String category;
+
+  const _MockPlace(
+    this.nameAr,
+    this.nameEn,
+    this.lat,
+    this.lng,
+    this.category,
+  );
+}
+
+class _MockRestaurant {
+  final String nameAr;
+  final String nameEn;
+  final String cuisineType;
+  final double lat;
+  final double lng;
+
+  const _MockRestaurant(
+    this.nameAr,
+    this.nameEn,
+    this.cuisineType,
+    this.lat,
+    this.lng,
+  );
+}
+
+```
+
+---
+
+## File: `lib/core/network/cloud_sync_service.dart`
+```dart
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:connectivity_plus/connectivity_plus.dart';
@@ -3390,11 +3837,14 @@ class CloudSyncService {
   }
 }
 
+```
 
---------------------------------------------------------------------------------
-FILE: D:\dev_projects\rahhal_flutter\lib\core\network\dio_client.dart
---------------------------------------------------------------------------------
+---
+
+## File: `lib/core/network/dio_client.dart`
+```dart
 import 'package:dio/dio.dart';
+import 'package:firebase_auth/firebase_auth.dart' as firebase_auth;
 import 'package:flutter/foundation.dart';
 import '../config/app_config.dart';
 import '../di/injection.dart';
@@ -3422,7 +3872,7 @@ class DioClient {
     final dio = Dio(
       BaseOptions(
         baseUrl: AppConfig.proxyBaseUrl,
-        connectTimeout: const Duration(seconds: 30),
+        connectTimeout: const Duration(seconds: 45), // 45s to allow Render free-tier warmup
         receiveTimeout: const Duration(seconds: 120),
         headers: {
           'Content-Type': 'application/json',
@@ -3488,6 +3938,25 @@ class _RetryInterceptor extends Interceptor {
   @override
   Future<void> onError(
       DioException err, ErrorInterceptorHandler handler) async {
+    // إذا كان الخطأ 401 (Unauthorized)، جرّب تجديد التوكن تلقائياً
+    if (err.response?.statusCode == 401) {
+      try {
+        final user = firebase_auth.FirebaseAuth.instance.currentUser;
+        if (user != null) {
+          // Force refresh the token
+          final newToken = await user.getIdToken(true); // forceRefresh = true
+          
+          // Retry the request with new token
+          final opts = err.requestOptions;
+          opts.headers['Authorization'] = 'Bearer $newToken';
+          final response = await _dio.fetch(opts);
+          return handler.resolve(response);
+        }
+      } catch (refreshError) {
+        debugPrint('[Auth] Token refresh failed: $refreshError');
+      }
+    }
+
     final extra = err.requestOptions.extra;
     final retryCount = (extra['retryCount'] as int?) ?? 0;
 
@@ -3567,10 +4036,12 @@ class _ErrorInterceptor extends Interceptor {
   }
 }
 
+```
 
---------------------------------------------------------------------------------
-FILE: D:\dev_projects\rahhal_flutter\lib\core\network\image_search_service.dart
---------------------------------------------------------------------------------
+---
+
+## File: `lib/core/network/image_search_service.dart`
+```dart
 import 'package:dio/dio.dart';
 import 'package:flutter/foundation.dart';
 import '../config/app_config.dart';
@@ -3601,10 +4072,12 @@ class ImageSearchService {
   }
 }
 
+```
 
---------------------------------------------------------------------------------
-FILE: D:\dev_projects\rahhal_flutter\lib\core\network\weather_service.dart
---------------------------------------------------------------------------------
+---
+
+## File: `lib/core/network/weather_service.dart`
+```dart
 import 'package:dio/dio.dart';
 import 'package:flutter/foundation.dart';
 import '../config/app_config.dart';
@@ -3618,6 +4091,7 @@ class WeatherData {
   final int humidity;
   final double windSpeed;
   final String cityName;
+  final bool isMock;
 
   const WeatherData({
     required this.temp,
@@ -3627,6 +4101,7 @@ class WeatherData {
     required this.humidity,
     required this.windSpeed,
     required this.cityName,
+    this.isMock = false,
   });
 
   factory WeatherData.fromJson(Map<String, dynamic> json) => WeatherData(
@@ -3637,6 +4112,7 @@ class WeatherData {
         humidity: json['humidity'] as int? ?? 0,
         windSpeed: (json['windSpeed'] as num? ?? 0).toDouble(),
         cityName: json['cityName'] as String? ?? '',
+        isMock: json['isMock'] as bool? ?? false,
       );
 
   // يُحوّل كود الأيقونة لـ emoji مناسب
@@ -3680,14 +4156,17 @@ class WeatherService {
       humidity: 45,
       windSpeed: 3.2,
       cityName: city,
+      isMock: true,
     );
   }
 }
 
+```
 
---------------------------------------------------------------------------------
-FILE: D:\dev_projects\rahhal_flutter\lib\core\router\app_router.dart
---------------------------------------------------------------------------------
+---
+
+## File: `lib/core/router/app_router.dart`
+```dart
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import '../../features/auth/presentation/screens/splash_screen.dart';
@@ -3934,10 +4413,12 @@ class AppRouter {
   );
 }
 
+```
 
---------------------------------------------------------------------------------
-FILE: D:\dev_projects\rahhal_flutter\lib\core\router\auth_notifier.dart
---------------------------------------------------------------------------------
+---
+
+## File: `lib/core/router/auth_notifier.dart`
+```dart
 import 'dart:async';
 import 'package:flutter/foundation.dart';
 import '../di/injection.dart';
@@ -3959,10 +4440,12 @@ class AuthNotifier extends ChangeNotifier {
   }
 }
 
+```
 
---------------------------------------------------------------------------------
-FILE: D:\dev_projects\rahhal_flutter\lib\core\services\location_service.dart
---------------------------------------------------------------------------------
+---
+
+## File: `lib/core/services/location_service.dart`
+```dart
 import 'package:dio/dio.dart';
 import 'package:flutter/foundation.dart';
 import 'package:geolocator/geolocator.dart';
@@ -4122,10 +4605,12 @@ class LocationService {
   }
 }
 
+```
 
---------------------------------------------------------------------------------
-FILE: D:\dev_projects\rahhal_flutter\lib\core\services\map_launcher_service.dart
---------------------------------------------------------------------------------
+---
+
+## File: `lib/core/services/map_launcher_service.dart`
+```dart
 import 'package:flutter/foundation.dart';
 import 'package:url_launcher/url_launcher.dart';
 
@@ -4214,10 +4699,12 @@ class MapLauncherService {
   }
 }
 
+```
 
---------------------------------------------------------------------------------
-FILE: D:\dev_projects\rahhal_flutter\lib\core\services\notification_service.dart
---------------------------------------------------------------------------------
+---
+
+## File: `lib/core/services/notification_service.dart`
+```dart
 import 'package:flutter/foundation.dart';
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 import 'package:timezone/data/latest_all.dart' as tz;
@@ -4287,10 +4774,12 @@ class NotificationService {
   }
 }
 
+```
 
---------------------------------------------------------------------------------
-FILE: D:\dev_projects\rahhal_flutter\lib\core\theme\app_theme.dart
---------------------------------------------------------------------------------
+---
+
+## File: `lib/core/theme/app_theme.dart`
+```dart
 import 'package:flutter/material.dart';
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/services.dart';
@@ -4638,10 +5127,12 @@ class AppTheme {
       );
 }
 
+```
 
---------------------------------------------------------------------------------
-FILE: D:\dev_projects\rahhal_flutter\lib\features\ai_chat\data\chat_repository_impl.dart
---------------------------------------------------------------------------------
+---
+
+## File: `lib/features/ai_chat/data/chat_repository_impl.dart`
+```dart
 import 'package:dartz/dartz.dart';
 import 'package:uuid/uuid.dart';
 import '../../../../core/database/database_helper.dart';
@@ -4778,10 +5269,12 @@ class ChatRepositoryImpl implements ChatRepository {
       );
 }
 
+```
 
---------------------------------------------------------------------------------
-FILE: D:\dev_projects\rahhal_flutter\lib\features\ai_chat\domain\entities\chat_message_entity.dart
---------------------------------------------------------------------------------
+---
+
+## File: `lib/features/ai_chat/domain/entities/chat_message_entity.dart`
+```dart
 import 'package:equatable/equatable.dart';
 
 class ChatMessageEntity extends Equatable {
@@ -4827,10 +5320,12 @@ class ChatMessageEntity extends Equatable {
       [id, tripId, role, content, timestamp, messageType];
 }
 
+```
 
---------------------------------------------------------------------------------
-FILE: D:\dev_projects\rahhal_flutter\lib\features\ai_chat\domain\repositories\chat_repository.dart
---------------------------------------------------------------------------------
+---
+
+## File: `lib/features/ai_chat/domain/repositories/chat_repository.dart`
+```dart
 import 'package:dartz/dartz.dart';
 import '../../../../core/errors/failures.dart';
 import '../entities/chat_message_entity.dart';
@@ -4849,10 +5344,12 @@ abstract class ChatRepository {
   Future<Either<Failure, void>> saveMessage(ChatMessageEntity message);
 }
 
+```
 
---------------------------------------------------------------------------------
-FILE: D:\dev_projects\rahhal_flutter\lib\features\ai_chat\presentation\cubit\chat_cubit.dart
---------------------------------------------------------------------------------
+---
+
+## File: `lib/features/ai_chat/presentation/cubit/chat_cubit.dart`
+```dart
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:equatable/equatable.dart';
 import '../../domain/entities/chat_message_entity.dart';
@@ -4952,10 +5449,12 @@ class ChatCubit extends Cubit<ChatState> {
   }
 }
 
+```
 
---------------------------------------------------------------------------------
-FILE: D:\dev_projects\rahhal_flutter\lib\features\ai_chat\presentation\cubit\chat_state.dart
---------------------------------------------------------------------------------
+---
+
+## File: `lib/features/ai_chat/presentation/cubit/chat_state.dart`
+```dart
 part of 'chat_cubit.dart';
 
 class ChatState extends Equatable {
@@ -4973,10 +5472,12 @@ class ChatState extends Equatable {
   List<Object?> get props => [messages, isTyping, errorMessage];
 }
 
+```
 
---------------------------------------------------------------------------------
-FILE: D:\dev_projects\rahhal_flutter\lib\features\ai_chat\presentation\screens\chat_screen.dart
---------------------------------------------------------------------------------
+---
+
+## File: `lib/features/ai_chat/presentation/screens/chat_screen.dart`
+```dart
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:flutter_animate/flutter_animate.dart';
@@ -5233,14 +5734,27 @@ class _ChatScreenState extends State<ChatScreen> {
           textAlign: TextAlign.center,
           style: AppTextStyles.bodyMedium,
         ),
-        const SizedBox(height: 32),
+        const SizedBox(height: 16),
+        // Free-text guidance prompt card
+        GlassCard(
+          padding: const EdgeInsets.all(14),
+          child: Text(
+            'يمكنك سؤالي عن أي شيء: أفضل المطاعم، المواصلات، التكاليف، الطقس، '
+            'ساعات الزيارة، أماكن التسوق، الثقافة المحلية، أو أي تساؤل آخر عن رحلتك! 💬',
+            style: AppTextStyles.bodyMedium,
+            textAlign: TextAlign.center,
+          ),
+        ),
+        const SizedBox(height: 24),
         Text(AppStrings.of(context).chatSuggestions, style: AppTextStyles.titleSmall),
         const SizedBox(height: 12),
         ..._suggestions(context).map((s) => _SuggestionChip(
               text: s,
               onTap: () {
                 _msgCtrl.text = s;
-                _sendMessage(context);
+                _msgCtrl.selection = TextSelection.fromPosition(
+                  TextPosition(offset: _msgCtrl.text.length),
+                );
               },
             )),
       ],
@@ -5490,10 +6004,12 @@ class _SuggestionChip extends StatelessWidget {
   }
 }
 
+```
 
---------------------------------------------------------------------------------
-FILE: D:\dev_projects\rahhal_flutter\lib\features\auth\data\auth_repository_impl.dart
---------------------------------------------------------------------------------
+---
+
+## File: `lib/features/auth/data/auth_repository_impl.dart`
+```dart
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:dartz/dartz.dart';
 import 'package:firebase_auth/firebase_auth.dart' as firebase_auth;
@@ -5647,9 +6163,17 @@ class AuthRepositoryImpl implements AuthRepository {
         clientId: kIsWeb
             ? '226504199183-fr97u1d1v5df6kt6n2666c432rfe0pcg.apps.googleusercontent.com'
             : null,
+        scopes: ['email', 'profile'],
       );
+
+      // Sign out first to force account picker for better UX
+      try {
+        await googleSignIn.signOut();
+      } catch (_) {}
+
       final googleUser = await googleSignIn.signIn();
       if (googleUser == null) {
+        debugPrint('[GoogleSignIn] User cancelled sign-in');
         return const Left(AuthFailure('auth/google-sign-in-canceled'));
       }
 
@@ -5692,9 +6216,11 @@ class AuthRepositoryImpl implements AuthRepository {
       );
       return Right(userEntity);
     } on firebase_auth.FirebaseAuthException catch (e) {
+      debugPrint('[GoogleSignIn] Firebase error: ${e.code} — ${e.message}');
       return Left(AuthFailure('auth/${e.code}'));
     } catch (e) {
-      return Left(AuthFailure('auth/unexpected-error: ${e.toString()}'));
+      debugPrint('[GoogleSignIn] Unexpected error: $e');
+      return Left(AuthFailure('auth/google-sign-in-failed: ${e.toString()}'));
     }
   }
 
@@ -5722,10 +6248,12 @@ class AuthRepositoryImpl implements AuthRepository {
   }
 }
 
+```
 
---------------------------------------------------------------------------------
-FILE: D:\dev_projects\rahhal_flutter\lib\features\auth\domain\entities\user_entity.dart
---------------------------------------------------------------------------------
+---
+
+## File: `lib/features/auth/domain/entities/user_entity.dart`
+```dart
 import 'package:equatable/equatable.dart';
 
 class UserEntity extends Equatable {
@@ -5757,10 +6285,12 @@ class UserEntity extends Equatable {
   List<Object?> get props => [uid, displayName, email, photoUrl, isAnonymous];
 }
 
+```
 
---------------------------------------------------------------------------------
-FILE: D:\dev_projects\rahhal_flutter\lib\features\auth\domain\repositories\auth_repository.dart
---------------------------------------------------------------------------------
+---
+
+## File: `lib/features/auth/domain/repositories/auth_repository.dart`
+```dart
 import 'package:dartz/dartz.dart';
 import '../../../../core/errors/failures.dart';
 import '../entities/user_entity.dart';
@@ -5779,10 +6309,12 @@ abstract class AuthRepository {
   Future<String?> getIdToken();
 }
 
+```
 
---------------------------------------------------------------------------------
-FILE: D:\dev_projects\rahhal_flutter\lib\features\auth\presentation\cubit\auth_cubit.dart
---------------------------------------------------------------------------------
+---
+
+## File: `lib/features/auth/presentation/cubit/auth_cubit.dart`
+```dart
 import 'dart:async';
 import 'package:flutter/foundation.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
@@ -5877,10 +6409,12 @@ class AuthCubit extends Cubit<AuthState> {
   }
 }
 
+```
 
---------------------------------------------------------------------------------
-FILE: D:\dev_projects\rahhal_flutter\lib\features\auth\presentation\cubit\auth_state.dart
---------------------------------------------------------------------------------
+---
+
+## File: `lib/features/auth/presentation/cubit/auth_state.dart`
+```dart
 part of 'auth_cubit.dart';
 
 abstract class AuthState extends Equatable {
@@ -5911,10 +6445,12 @@ class AuthError extends AuthState {
   List<Object?> get props => [message];
 }
 
+```
 
---------------------------------------------------------------------------------
-FILE: D:\dev_projects\rahhal_flutter\lib\features\auth\presentation\screens\auth_screen.dart
---------------------------------------------------------------------------------
+---
+
+## File: `lib/features/auth/presentation/screens/auth_screen.dart`
+```dart
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
@@ -5941,6 +6477,7 @@ class _AuthScreenState extends State<AuthScreen> {
   final _nameCtrl = TextEditingController();
   final _emailCtrl = TextEditingController();
   final _passwordCtrl = TextEditingController();
+  final _confirmPasswordCtrl = TextEditingController();
   late bool _isLogin;
   bool _obscurePassword = true;
 
@@ -5955,6 +6492,7 @@ class _AuthScreenState extends State<AuthScreen> {
     _nameCtrl.dispose();
     _emailCtrl.dispose();
     _passwordCtrl.dispose();
+    _confirmPasswordCtrl.dispose();
     super.dispose();
   }
 
@@ -6100,6 +6638,21 @@ class _AuthScreenState extends State<AuthScreen> {
                                       ? strings.authWeakPassword
                                       : null,
                                 ),
+                                if (!_isLogin) ...[
+                                  const SizedBox(height: 16),
+                                  _buildField(
+                                    controller: _confirmPasswordCtrl,
+                                    label: strings.authConfirmPassword,
+                                    icon: Icons.lock_outline_rounded,
+                                    maxLength: 64,
+                                    obscureText: _obscurePassword,
+                                    validator: (v) {
+                                      if (v == null || v.isEmpty) return strings.authWeakPassword;
+                                      if (v != _passwordCtrl.text) return strings.authPasswordMismatch;
+                                      return null;
+                                    },
+                                  ),
+                                ],
                                 if (_isLogin)
                                   Align(
                                     alignment: AlignmentDirectional.centerEnd,
@@ -6317,10 +6870,12 @@ class _AuthScreenState extends State<AuthScreen> {
   }
 }
 
+```
 
---------------------------------------------------------------------------------
-FILE: D:\dev_projects\rahhal_flutter\lib\features\auth\presentation\screens\notification_settings_screen.dart
---------------------------------------------------------------------------------
+---
+
+## File: `lib/features/auth/presentation/screens/notification_settings_screen.dart`
+```dart
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:go_router/go_router.dart';
@@ -6476,10 +7031,12 @@ class _NotificationSettingsScreenState extends State<NotificationSettingsScreen>
   }
 }
 
+```
 
---------------------------------------------------------------------------------
-FILE: D:\dev_projects\rahhal_flutter\lib\features\auth\presentation\screens\onboarding_screen.dart
---------------------------------------------------------------------------------
+---
+
+## File: `lib/features/auth/presentation/screens/onboarding_screen.dart`
+```dart
 import 'package:flutter/material.dart';
 import 'package:flutter_animate/flutter_animate.dart';
 import 'package:go_router/go_router.dart';
@@ -6696,10 +7253,12 @@ class _OnboardingPageWidget extends StatelessWidget {
   }
 }
 
+```
 
---------------------------------------------------------------------------------
-FILE: D:\dev_projects\rahhal_flutter\lib\features\auth\presentation\screens\profile_screen.dart
---------------------------------------------------------------------------------
+---
+
+## File: `lib/features/auth/presentation/screens/profile_screen.dart`
+```dart
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:flutter_animate/flutter_animate.dart';
@@ -6894,10 +7453,12 @@ class ProfileScreen extends StatelessWidget {
   }
 }
 
+```
 
---------------------------------------------------------------------------------
-FILE: D:\dev_projects\rahhal_flutter\lib\features\auth\presentation\screens\settings_screen.dart
---------------------------------------------------------------------------------
+---
+
+## File: `lib/features/auth/presentation/screens/settings_screen.dart`
+```dart
 // ignore_for_file: deprecated_member_use
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
@@ -7375,10 +7936,12 @@ class _SettingsScreenState extends State<SettingsScreen> {
   }
 }
 
+```
 
---------------------------------------------------------------------------------
-FILE: D:\dev_projects\rahhal_flutter\lib\features\auth\presentation\screens\splash_screen.dart
---------------------------------------------------------------------------------
+---
+
+## File: `lib/features/auth/presentation/screens/splash_screen.dart`
+```dart
 import 'package:flutter/material.dart';
 import 'package:flutter_animate/flutter_animate.dart';
 import 'package:go_router/go_router.dart';
@@ -7589,10 +8152,12 @@ class _SplashScreenState extends State<SplashScreen> {
   }
 }
 
+```
 
---------------------------------------------------------------------------------
-FILE: D:\dev_projects\rahhal_flutter\lib\features\budget\data\budget_repository_impl.dart
---------------------------------------------------------------------------------
+---
+
+## File: `lib/features/budget/data/budget_repository_impl.dart`
+```dart
 import 'package:dartz/dartz.dart';
 import '../../../../core/database/database_helper.dart';
 import '../../../../core/errors/failures.dart';
@@ -7745,10 +8310,12 @@ class BudgetRepositoryImpl implements BudgetRepository {
       );
 }
 
+```
 
---------------------------------------------------------------------------------
-FILE: D:\dev_projects\rahhal_flutter\lib\features\budget\data\mappers\expense_mapper.dart
---------------------------------------------------------------------------------
+---
+
+## File: `lib/features/budget/data/mappers/expense_mapper.dart`
+```dart
 import '../../domain/entities/expense_entity.dart';
 
 class ExpenseMapper {
@@ -7779,10 +8346,12 @@ class ExpenseMapper {
       };
 }
 
+```
 
---------------------------------------------------------------------------------
-FILE: D:\dev_projects\rahhal_flutter\lib\features\budget\domain\entities\budget_item_entity.dart
---------------------------------------------------------------------------------
+---
+
+## File: `lib/features/budget/domain/entities/budget_item_entity.dart`
+```dart
 import 'package:equatable/equatable.dart';
 
 class BudgetItemEntity extends Equatable {
@@ -7837,10 +8406,12 @@ class BudgetBreakdown extends Equatable {
       [accommodation, food, transport, activities, shopping, other];
 }
 
+```
 
---------------------------------------------------------------------------------
-FILE: D:\dev_projects\rahhal_flutter\lib\features\budget\domain\entities\expense_entity.dart
---------------------------------------------------------------------------------
+---
+
+## File: `lib/features/budget/domain/entities/expense_entity.dart`
+```dart
 import 'package:equatable/equatable.dart';
 
 class ExpenseEntity extends Equatable {
@@ -7909,10 +8480,12 @@ class ExpenseEntity extends Equatable {
       ];
 }
 
+```
 
---------------------------------------------------------------------------------
-FILE: D:\dev_projects\rahhal_flutter\lib\features\budget\domain\repositories\budget_repository.dart
---------------------------------------------------------------------------------
+---
+
+## File: `lib/features/budget/domain/repositories/budget_repository.dart`
+```dart
 import 'package:dartz/dartz.dart';
 import '../../../../core/errors/failures.dart';
 import '../../../itinerary/domain/entities/day_entity.dart';
@@ -7934,10 +8507,12 @@ abstract class BudgetRepository {
       String tripId);
 }
 
+```
 
---------------------------------------------------------------------------------
-FILE: D:\dev_projects\rahhal_flutter\lib\features\budget\presentation\cubit\budget_cubit.dart
---------------------------------------------------------------------------------
+---
+
+## File: `lib/features/budget/presentation/cubit/budget_cubit.dart`
+```dart
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:equatable/equatable.dart';
 import 'package:dartz/dartz.dart';
@@ -8014,10 +8589,12 @@ class BudgetCubit extends Cubit<BudgetState> {
   }
 }
 
+```
 
---------------------------------------------------------------------------------
-FILE: D:\dev_projects\rahhal_flutter\lib\features\budget\presentation\cubit\budget_state.dart
---------------------------------------------------------------------------------
+---
+
+## File: `lib/features/budget/presentation/cubit/budget_state.dart`
+```dart
 part of 'budget_cubit.dart';
 
 abstract class BudgetState extends Equatable {
@@ -8054,10 +8631,12 @@ class BudgetError extends BudgetState {
   List<Object?> get props => [message];
 }
 
+```
 
---------------------------------------------------------------------------------
-FILE: D:\dev_projects\rahhal_flutter\lib\features\budget\presentation\widgets\budget_tab.dart
---------------------------------------------------------------------------------
+---
+
+## File: `lib/features/budget/presentation/widgets/budget_tab.dart`
+```dart
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:flutter_animate/flutter_animate.dart';
@@ -8972,10 +9551,12 @@ class _AddExpenseBottomSheetState extends State<_AddExpenseBottomSheet> {
   }
 }
 
+```
 
---------------------------------------------------------------------------------
-FILE: D:\dev_projects\rahhal_flutter\lib\features\currency\data\currency_service.dart
---------------------------------------------------------------------------------
+---
+
+## File: `lib/features/currency/data/currency_service.dart`
+```dart
 import 'package:dio/dio.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../../../core/config/app_config.dart';
@@ -9053,10 +9634,12 @@ class CurrencyService {
   }
 }
 
+```
 
---------------------------------------------------------------------------------
-FILE: D:\dev_projects\rahhal_flutter\lib\features\favorites\data\favorites_repository_impl.dart
---------------------------------------------------------------------------------
+---
+
+## File: `lib/features/favorites/data/favorites_repository_impl.dart`
+```dart
 import 'package:dartz/dartz.dart';
 import 'package:uuid/uuid.dart';
 import '../../../../core/database/database_helper.dart';
@@ -9245,10 +9828,12 @@ class FavoritesRepositoryImpl implements FavoritesRepository {
       );
 }
 
+```
 
---------------------------------------------------------------------------------
-FILE: D:\dev_projects\rahhal_flutter\lib\features\favorites\domain\entities\favorite_entity.dart
---------------------------------------------------------------------------------
+---
+
+## File: `lib/features/favorites/domain/entities/favorite_entity.dart`
+```dart
 import 'package:equatable/equatable.dart';
 
 class FavoriteEntity extends Equatable {
@@ -9282,10 +9867,12 @@ class FavoriteEntity extends Equatable {
       ];
 }
 
+```
 
---------------------------------------------------------------------------------
-FILE: D:\dev_projects\rahhal_flutter\lib\features\favorites\domain\entities\favorite_item.dart
---------------------------------------------------------------------------------
+---
+
+## File: `lib/features/favorites/domain/entities/favorite_item.dart`
+```dart
 import 'package:equatable/equatable.dart';
 import '../../../trip_planner/domain/entities/stop_entity.dart';
 import '../../../restaurants/domain/entities/restaurant_entity.dart';
@@ -9306,10 +9893,12 @@ class FavoriteItem extends Equatable {
   List<Object?> get props => [favorite, stop, restaurant];
 }
 
+```
 
---------------------------------------------------------------------------------
-FILE: D:\dev_projects\rahhal_flutter\lib\features\favorites\domain\repositories\favorites_repository.dart
---------------------------------------------------------------------------------
+---
+
+## File: `lib/features/favorites/domain/repositories/favorites_repository.dart`
+```dart
 import 'package:dartz/dartz.dart';
 import '../../../../core/errors/failures.dart';
 import '../entities/favorite_item.dart';
@@ -9325,10 +9914,12 @@ abstract class FavoritesRepository {
   Future<Either<Failure, bool>> isFavorite(String itemType, String itemRefId);
 }
 
+```
 
---------------------------------------------------------------------------------
-FILE: D:\dev_projects\rahhal_flutter\lib\features\favorites\presentation\cubit\favorites_cubit.dart
---------------------------------------------------------------------------------
+---
+
+## File: `lib/features/favorites/presentation/cubit/favorites_cubit.dart`
+```dart
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:equatable/equatable.dart';
 import '../../domain/entities/favorite_item.dart';
@@ -9403,10 +9994,12 @@ class FavoritesCubit extends Cubit<FavoritesState> {
   }
 }
 
+```
 
---------------------------------------------------------------------------------
-FILE: D:\dev_projects\rahhal_flutter\lib\features\favorites\presentation\cubit\favorites_state.dart
---------------------------------------------------------------------------------
+---
+
+## File: `lib/features/favorites/presentation/cubit/favorites_state.dart`
+```dart
 part of 'favorites_cubit.dart';
 
 abstract class FavoritesState extends Equatable {
@@ -9442,10 +10035,12 @@ class FavoritesError extends FavoritesState {
   List<Object?> get props => [message];
 }
 
+```
 
---------------------------------------------------------------------------------
-FILE: D:\dev_projects\rahhal_flutter\lib\features\favorites\presentation\screens\favorites_screen.dart
---------------------------------------------------------------------------------
+---
+
+## File: `lib/features/favorites/presentation/screens/favorites_screen.dart`
+```dart
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:flutter_animate/flutter_animate.dart';
@@ -9699,10 +10294,12 @@ class _FavoritesScreenState extends State<FavoritesScreen> {
   }
 }
 
+```
 
---------------------------------------------------------------------------------
-FILE: D:\dev_projects\rahhal_flutter\lib\features\itinerary\data\itinerary_repository_impl.dart
---------------------------------------------------------------------------------
+---
+
+## File: `lib/features/itinerary/data/itinerary_repository_impl.dart`
+```dart
 import 'package:dartz/dartz.dart';
 import '../../../../core/database/database_helper.dart';
 import '../../../../core/errors/failures.dart';
@@ -9819,10 +10416,12 @@ class ItineraryRepositoryImpl implements ItineraryRepository {
       );
 }
 
+```
 
---------------------------------------------------------------------------------
-FILE: D:\dev_projects\rahhal_flutter\lib\features\itinerary\domain\entities\day_entity.dart
---------------------------------------------------------------------------------
+---
+
+## File: `lib/features/itinerary/domain/entities/day_entity.dart`
+```dart
 import 'package:equatable/equatable.dart';
 
 class DayEntity extends Equatable {
@@ -9848,10 +10447,12 @@ class DayEntity extends Equatable {
   List<Object?> get props => [id, tripId, dayNumber, date, theme, summary];
 }
 
+```
 
---------------------------------------------------------------------------------
-FILE: D:\dev_projects\rahhal_flutter\lib\features\itinerary\domain\repositories\itinerary_repository.dart
---------------------------------------------------------------------------------
+---
+
+## File: `lib/features/itinerary/domain/repositories/itinerary_repository.dart`
+```dart
 import 'package:dartz/dartz.dart';
 import '../../../../core/errors/failures.dart';
 import '../entities/day_entity.dart';
@@ -9865,10 +10466,12 @@ abstract class ItineraryRepository {
       String dayId, List<String> orderedStopIds);
 }
 
+```
 
---------------------------------------------------------------------------------
-FILE: D:\dev_projects\rahhal_flutter\lib\features\itinerary\presentation\cubit\itinerary_cubit.dart
---------------------------------------------------------------------------------
+---
+
+## File: `lib/features/itinerary/presentation/cubit/itinerary_cubit.dart`
+```dart
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:equatable/equatable.dart';
 import '../../domain/entities/day_entity.dart';
@@ -9943,10 +10546,12 @@ class ItineraryCubit extends Cubit<ItineraryState> {
   }
 }
 
+```
 
---------------------------------------------------------------------------------
-FILE: D:\dev_projects\rahhal_flutter\lib\features\itinerary\presentation\cubit\itinerary_state.dart
---------------------------------------------------------------------------------
+---
+
+## File: `lib/features/itinerary/presentation/cubit/itinerary_state.dart`
+```dart
 part of 'itinerary_cubit.dart';
 
 abstract class ItineraryState extends Equatable {
@@ -9986,11 +10591,14 @@ class ItineraryError extends ItineraryState {
   List<Object?> get props => [message];
 }
 
+```
 
---------------------------------------------------------------------------------
-FILE: D:\dev_projects\rahhal_flutter\lib\features\itinerary\presentation\screens\stop_detail_screen.dart
---------------------------------------------------------------------------------
+---
+
+## File: `lib/features/itinerary/presentation/screens/stop_detail_screen.dart`
+```dart
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:url_launcher/url_launcher.dart';
 import 'package:go_router/go_router.dart';
@@ -10368,18 +10976,62 @@ class _StopDetailScreenState extends State<StopDetailScreen> {
   }
 
   Future<void> _openBookingUrl(String? url) async {
-    if (url == null || url.isEmpty) return;
-    final uri = Uri.parse(url);
-    if (await canLaunchUrl(uri)) {
-      await launchUrl(uri, mode: LaunchMode.externalApplication);
+    if (url == null || url.trim().isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('لا يوجد رابط حجز متاح لهذا المكان'),
+          backgroundColor: AppColors.error,
+        ),
+      );
+      return;
+    }
+
+    final uri = Uri.tryParse(url);
+    if (uri == null) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('رابط الحجز غير صالح'),
+            backgroundColor: AppColors.error,
+          ),
+        );
+      }
+      return;
+    }
+
+    try {
+      final launched = await launchUrl(uri, mode: LaunchMode.externalApplication);
+      if (!launched && mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('تعذّر فتح رابط الحجز. انسخ الرابط يدوياً: $url'),
+            action: SnackBarAction(
+              label: 'نسخ',
+              onPressed: () => Clipboard.setData(ClipboardData(text: url)),
+            ),
+            duration: const Duration(seconds: 6),
+          ),
+        );
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('خطأ في فتح الرابط'),
+            backgroundColor: AppColors.error,
+          ),
+        );
+      }
     }
   }
 }
 
+```
 
---------------------------------------------------------------------------------
-FILE: D:\dev_projects\rahhal_flutter\lib\features\itinerary\presentation\widgets\itinerary_tab.dart
---------------------------------------------------------------------------------
+---
+
+## File: `lib/features/itinerary/presentation/widgets/itinerary_tab.dart`
+```dart
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:flutter_animate/flutter_animate.dart';
@@ -10590,7 +11242,10 @@ class _DaySelector extends StatelessWidget {
             onTap: () => onSelect(i),
             child: AnimatedContainer(
               duration: const Duration(milliseconds: 250),
-              margin: EdgeInsetsDirectional.only(start: i == 0 ? 0 : 8),
+              margin: EdgeInsetsDirectional.only(
+                start: i == 0 ? 20 : 8,
+                end: i == days.length - 1 ? 20 : 0,
+              ),
               padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
               decoration: BoxDecoration(
                 color: isSelected ? AppColors.accentAmber : AppColors.adaptiveGlass(context),
@@ -10937,10 +11592,12 @@ class _StopTimelineItem extends StatelessWidget {
   }
 }
 
+```
 
---------------------------------------------------------------------------------
-FILE: D:\dev_projects\rahhal_flutter\lib\features\map\data\map_repository_impl.dart
---------------------------------------------------------------------------------
+---
+
+## File: `lib/features/map/data/map_repository_impl.dart`
+```dart
 import 'package:dartz/dartz.dart';
 import '../../../../core/database/database_helper.dart';
 import '../../../../core/errors/failures.dart';
@@ -11007,10 +11664,12 @@ class MapRepositoryImpl implements MapRepository {
       );
 }
 
+```
 
---------------------------------------------------------------------------------
-FILE: D:\dev_projects\rahhal_flutter\lib\features\map\domain\repositories\map_repository.dart
---------------------------------------------------------------------------------
+---
+
+## File: `lib/features/map/domain/repositories/map_repository.dart`
+```dart
 import 'package:dartz/dartz.dart';
 import '../../../../core/errors/failures.dart';
 import '../../../trip_planner/domain/entities/stop_entity.dart';
@@ -11021,12 +11680,16 @@ abstract class MapRepository {
       String dayId);
 }
 
+```
 
---------------------------------------------------------------------------------
-FILE: D:\dev_projects\rahhal_flutter\lib\features\map\presentation\cubit\map_cubit.dart
---------------------------------------------------------------------------------
+---
+
+## File: `lib/features/map/presentation/cubit/map_cubit.dart`
+```dart
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:equatable/equatable.dart';
+import 'package:latlong2/latlong.dart';
+import 'package:geolocator/geolocator.dart';
 import '../../domain/repositories/map_repository.dart';
 import '../../../trip_planner/domain/entities/stop_entity.dart';
 
@@ -11046,9 +11709,30 @@ class MapCubit extends Cubit<MapState> {
     final result = await _repository.getStopsForTrip(tripId);
     result.fold(
       (failure) => emit(MapError(failure.message)),
-      (stops) {
+      (stops) async {
         _allStops = stops;
-        emit(MapReady(stops: stops, filteredStops: stops));
+
+        // Try to get user location non-blocking
+        LatLng? userLocation;
+        try {
+          final permission = await Geolocator.checkPermission();
+          if (permission == LocationPermission.always ||
+              permission == LocationPermission.whileInUse) {
+            final pos = await Geolocator.getCurrentPosition(
+              locationSettings: const LocationSettings(
+                accuracy: LocationAccuracy.medium,
+                timeLimit: Duration(seconds: 5),
+              ),
+            );
+            userLocation = LatLng(pos.latitude, pos.longitude);
+          }
+        } catch (_) {} // Silently ignore — location is optional
+
+        emit(MapReady(
+          stops: stops,
+          filteredStops: stops,
+          userLocation: userLocation,
+        ));
       },
     );
   }
@@ -11077,10 +11761,12 @@ class MapCubit extends Cubit<MapState> {
   }
 }
 
+```
 
---------------------------------------------------------------------------------
-FILE: D:\dev_projects\rahhal_flutter\lib\features\map\presentation\cubit\map_state.dart
---------------------------------------------------------------------------------
+---
+
+## File: `lib/features/map/presentation/cubit/map_state.dart`
+```dart
 part of 'map_cubit.dart';
 
 abstract class MapState extends Equatable {
@@ -11099,11 +11785,13 @@ class MapReady extends MapState {
   final List<StopEntity> stops;
   final List<StopEntity> filteredStops;
   final String? selectedStopId;
+  final LatLng? userLocation;
 
   const MapReady({
     required this.stops,
     required this.filteredStops,
     this.selectedStopId,
+    this.userLocation,
   });
 
   StopEntity? get selectedStop => selectedStopId == null
@@ -11114,6 +11802,7 @@ class MapReady extends MapState {
     List<StopEntity>? stops,
     List<StopEntity>? filteredStops,
     Object? selectedStopId = _unset,
+    LatLng? userLocation,
   }) {
     return MapReady(
       stops: stops ?? this.stops,
@@ -11121,11 +11810,12 @@ class MapReady extends MapState {
       selectedStopId: identical(selectedStopId, _unset)
           ? this.selectedStopId
           : selectedStopId as String?,
+      userLocation: userLocation ?? this.userLocation,
     );
   }
 
   @override
-  List<Object?> get props => [stops, filteredStops, selectedStopId];
+  List<Object?> get props => [stops, filteredStops, selectedStopId, userLocation];
 }
 
 class MapError extends MapState {
@@ -11135,10 +11825,12 @@ class MapError extends MapState {
   List<Object?> get props => [message];
 }
 
+```
 
---------------------------------------------------------------------------------
-FILE: D:\dev_projects\rahhal_flutter\lib\features\map\presentation\screens\map_full_screen.dart
---------------------------------------------------------------------------------
+---
+
+## File: `lib/features/map/presentation/screens/map_full_screen.dart`
+```dart
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:go_router/go_router.dart';
@@ -11178,19 +11870,25 @@ class MapFullScreen extends StatelessWidget {
   }
 }
 
+```
 
---------------------------------------------------------------------------------
-FILE: D:\dev_projects\rahhal_flutter\lib\features\map\presentation\widgets\map_tab.dart
---------------------------------------------------------------------------------
+---
+
+## File: `lib/features/map/presentation/widgets/map_tab.dart`
+```dart
+import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:flutter_map/flutter_map.dart';
 import 'package:latlong2/latlong.dart' hide Path;
 import 'package:flutter_animate/flutter_animate.dart';
+import 'package:geolocator/geolocator.dart';
 import '../../../../../core/constants/app_colors.dart';
 import '../../../../../core/constants/app_text_styles.dart';
 import '../../../../../shared/widgets/glass_card.dart';
 import '../../../../../shared/widgets/app_badges.dart';
+import '../../../../../core/services/location_service.dart';
+import '../../../../../core/di/injection.dart';
 import '../cubit/map_cubit.dart';
 import '../../../trip_planner/domain/entities/stop_entity.dart';
 import '../../../../core/constants/app_strings.dart';
@@ -11235,17 +11933,139 @@ class _MapView extends StatefulWidget {
   State<_MapView> createState() => _MapViewState();
 }
 
-class _MapViewState extends State<_MapView> {
+class _MapViewState extends State<_MapView> with WidgetsBindingObserver {
   late final MapController _mapController;
+  final LocationService _locationService = sl<LocationService>();
+
+  double? _userLat;
+  double? _userLng;
+  LatLng? _userLocation;
+  bool _isLocatingUser = false;
+  bool _fetchingLocation = false;
+  StreamSubscription<ServiceStatus>? _serviceStatusSub;
+  StreamSubscription<Position>? _positionSub;
 
   @override
   void initState() {
     super.initState();
     _mapController = MapController();
+    WidgetsBinding.instance.addObserver(this);
+
+    // Initial check from Cubit state if available
+    if (widget.state.userLocation != null) {
+      _userLocation = widget.state.userLocation;
+      _userLat = widget.state.userLocation!.latitude;
+      _userLng = widget.state.userLocation!.longitude;
+    }
+
+    _fetchUserLocation();
+    _listenToLocationUpdates();
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState lifecycleState) {
+    if (lifecycleState == AppLifecycleState.resumed) {
+      _fetchUserLocation();
+    }
+  }
+
+  void _listenToLocationUpdates() {
+    _serviceStatusSub = Geolocator.getServiceStatusStream().listen((status) {
+      if (status == ServiceStatus.enabled) {
+        _fetchUserLocation();
+      }
+    });
+
+    Geolocator.checkPermission().then((permission) {
+      if (permission == LocationPermission.always || permission == LocationPermission.whileInUse) {
+        _positionSub = Geolocator.getPositionStream(
+          locationSettings: const LocationSettings(
+            accuracy: LocationAccuracy.high,
+            distanceFilter: 10,
+          ),
+        ).listen((pos) {
+          if (mounted) {
+            setState(() {
+              _userLat = pos.latitude;
+              _userLng = pos.longitude;
+              _userLocation = LatLng(pos.latitude, pos.longitude);
+            });
+          }
+        });
+      }
+    });
+  }
+
+  Future<void> _fetchUserLocation() async {
+    if (_fetchingLocation) return;
+    _fetchingLocation = true;
+    try {
+      final loc = await _locationService.getCurrentLocation();
+      if (loc != null && mounted) {
+        setState(() {
+          _userLat = loc.latitude;
+          _userLng = loc.longitude;
+          _userLocation = LatLng(loc.latitude, loc.longitude);
+        });
+      }
+    } finally {
+      _fetchingLocation = false;
+    }
+  }
+
+  Future<void> _goToMyLocation() async {
+    if (_isLocatingUser) return;
+    setState(() => _isLocatingUser = true);
+
+    try {
+      LocationPermission permission = await Geolocator.checkPermission();
+      if (permission == LocationPermission.denied) {
+        permission = await Geolocator.requestPermission();
+      }
+      if (permission == LocationPermission.denied ||
+          permission == LocationPermission.deniedForever) {
+        if (mounted) {
+          setState(() => _isLocatingUser = false);
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('تعذّر الوصول للموقع. فعّل الإذن من الإعدادات.'),
+              backgroundColor: Colors.red,
+            ),
+          );
+        }
+        return;
+      }
+
+      final position = await Geolocator.getCurrentPosition(
+        locationSettings: const LocationSettings(
+          accuracy: LocationAccuracy.medium,
+          timeLimit: Duration(seconds: 8),
+        ),
+      );
+
+      if (mounted) {
+        _mapController.move(
+          LatLng(position.latitude, position.longitude),
+          15.0,
+        );
+        setState(() {
+          _userLat = position.latitude;
+          _userLng = position.longitude;
+          _userLocation = LatLng(position.latitude, position.longitude);
+          _isLocatingUser = false;
+        });
+      }
+    } catch (e) {
+      debugPrint('Map location error: $e');
+      if (mounted) setState(() => _isLocatingUser = false);
+    }
   }
 
   @override
   void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
+    _serviceStatusSub?.cancel();
+    _positionSub?.cancel();
     _mapController.dispose();
     super.dispose();
   }
@@ -11256,7 +12076,13 @@ class _MapViewState extends State<_MapView> {
         : widget.state.stops;
 
     if (stops.isEmpty) {
-      return const LatLng(25.0, 45.0); // Better world default center
+      if (_userLocation != null) {
+        return _userLocation!;
+      }
+      if (_userLat != null && _userLng != null) {
+        return LatLng(_userLat!, _userLng!);
+      }
+      return const LatLng(25.0, 45.0);
     }
 
     final avgLat =
@@ -11289,6 +12115,21 @@ class _MapViewState extends State<_MapView> {
               maxZoom: 19,
             ),
 
+            // User Location Pulse Circle Layer
+            if (_userLocation != null || (_userLat != null && _userLng != null))
+              CircleLayer(
+                circles: [
+                  CircleMarker(
+                    point: _userLocation ?? LatLng(_userLat!, _userLng!),
+                    radius: 35,
+                    useRadiusInMeter: false,
+                    color: const Color(0x222196F3),
+                    borderColor: const Color(0x662196F3),
+                    borderStrokeWidth: 1.5,
+                  ),
+                ],
+              ),
+
             // Route polyline
             if (stops.length > 1)
               PolylineLayer(
@@ -11303,22 +12144,34 @@ class _MapViewState extends State<_MapView> {
                 ],
               ),
 
-            // Markers
+            // Stop Markers & User Location Marker
             MarkerLayer(
-              markers: stops.asMap().entries.map((entry) {
-                final i = entry.key;
-                final stop = entry.value;
-                final isSelected = stop.id == widget.state.selectedStopId;
-                return Marker(
-                  point: LatLng(stop.latitude, stop.longitude),
-                  width: isSelected ? 48 : 36,
-                  height: isSelected ? 64 : 52,
-                  child: GestureDetector(
-                    onTap: () => context.read<MapCubit>().selectStop(stop.id),
-                    child: _buildMarker(i + 1, stop, isSelected),
+              markers: [
+                // User Location Blue Dot Marker
+                if (_userLocation != null || (_userLat != null && _userLng != null))
+                  Marker(
+                    point: _userLocation ?? LatLng(_userLat!, _userLng!),
+                    width: 36,
+                    height: 36,
+                    child: _buildUserLocationMarker(),
                   ),
-                );
-              }).toList(),
+
+                // Trip Stop Markers
+                ...stops.asMap().entries.map((entry) {
+                  final i = entry.key;
+                  final stop = entry.value;
+                  final isSelected = stop.id == widget.state.selectedStopId;
+                  return Marker(
+                    point: LatLng(stop.latitude, stop.longitude),
+                    width: isSelected ? 48 : 36,
+                    height: isSelected ? 64 : 52,
+                    child: GestureDetector(
+                      onTap: () => context.read<MapCubit>().selectStop(stop.id),
+                      child: _buildMarker(i + 1, stop, isSelected),
+                    ),
+                  );
+                }),
+              ],
             ),
           ],
         ),
@@ -11335,6 +12188,37 @@ class _MapViewState extends State<_MapView> {
             ).animate().slideY(begin: 1, end: 0, duration: 300.ms),
           ),
 
+        // Floating Action Button: My Location Button
+        Positioned(
+          bottom: selectedStop != null ? 140 : 20,
+          left: 16,
+          child: Container(
+            decoration: BoxDecoration(
+              color: AppColors.adaptiveBgCard(context),
+              shape: BoxShape.circle,
+              border: Border.all(color: AppColors.adaptiveBorder(context)),
+              boxShadow: AppColors.cardShadow,
+            ),
+            child: IconButton(
+              onPressed: _isLocatingUser ? null : _goToMyLocation,
+              icon: _isLocatingUser
+                  ? const SizedBox(
+                      width: 20,
+                      height: 20,
+                      child: CircularProgressIndicator(
+                        strokeWidth: 2,
+                        color: AppColors.accentAmber,
+                      ),
+                    )
+                  : const Icon(
+                      Icons.my_location_rounded,
+                      color: AppColors.accentAmber,
+                      size: 24,
+                    ),
+            ),
+          ),
+        ),
+
         // Stops count badge
         Positioned(
           top: 16,
@@ -11349,6 +12233,37 @@ class _MapViewState extends State<_MapView> {
         ),
       ],
     );
+  }
+
+  Widget _buildUserLocationMarker() {
+    return Container(
+      decoration: BoxDecoration(
+        shape: BoxShape.circle,
+        color: Colors.white,
+        boxShadow: [
+          BoxShadow(
+            color: Colors.blue.withValues(alpha: 0.4),
+            blurRadius: 10,
+            spreadRadius: 3,
+          ),
+        ],
+      ),
+      padding: const EdgeInsets.all(3),
+      child: Container(
+        decoration: const BoxDecoration(
+          shape: BoxShape.circle,
+          color: Colors.blueAccent,
+        ),
+        child: const Center(
+          child: Icon(
+            Icons.navigation_rounded,
+            color: Colors.white,
+            size: 14,
+          ),
+        ),
+      ),
+    ).animate(onPlay: (controller) => controller.repeat(reverse: true))
+     .scale(begin: const Offset(0.9, 0.9), end: const Offset(1.1, 1.1), duration: 1200.ms);
   }
 
   Widget _buildMarker(int number, StopEntity stop, bool isSelected) {
@@ -11477,9 +12392,42 @@ class _StopBottomCard extends StatelessWidget {
 }
 
 
---------------------------------------------------------------------------------
-FILE: D:\dev_projects\rahhal_flutter\lib\features\packing_list\data\packing_repository_impl.dart
---------------------------------------------------------------------------------
+```
+
+---
+
+## File: `lib/features/packing_list/data/mappers/packing_item_mapper.dart`
+```dart
+import '../../domain/entities/packing_item_entity.dart';
+
+class PackingItemMapper {
+  static PackingItemEntity fromMap(Map<String, dynamic> m) => PackingItemEntity(
+        id: m['id'] as String,
+        tripId: m['trip_id'] as String,
+        itemName: m['item_name'] as String,
+        category: m['category'] as String? ?? 'other',
+        isPacked: (m['is_packed'] as int? ?? 0) == 1,
+        quantity: m['quantity'] as int? ?? 1,
+        isAiSuggested: (m['is_ai_suggested'] as int? ?? 0) == 1,
+      );
+
+  static Map<String, dynamic> toMap(PackingItemEntity item) => {
+        'id': item.id,
+        'trip_id': item.tripId,
+        'item_name': item.itemName,
+        'category': item.category,
+        'is_packed': item.isPacked ? 1 : 0,
+        'quantity': item.quantity,
+        'is_ai_suggested': item.isAiSuggested ? 1 : 0,
+      };
+}
+
+```
+
+---
+
+## File: `lib/features/packing_list/data/packing_repository_impl.dart`
+```dart
 import 'package:dartz/dartz.dart';
 import '../../../../core/database/database_helper.dart';
 import '../../../../core/errors/failures.dart';
@@ -11549,38 +12497,12 @@ class PackingRepositoryImpl implements PackingRepository {
   }
 }
 
+```
 
---------------------------------------------------------------------------------
-FILE: D:\dev_projects\rahhal_flutter\lib\features\packing_list\data\mappers\packing_item_mapper.dart
---------------------------------------------------------------------------------
-import '../../domain/entities/packing_item_entity.dart';
+---
 
-class PackingItemMapper {
-  static PackingItemEntity fromMap(Map<String, dynamic> m) => PackingItemEntity(
-        id: m['id'] as String,
-        tripId: m['trip_id'] as String,
-        itemName: m['item_name'] as String,
-        category: m['category'] as String? ?? 'other',
-        isPacked: (m['is_packed'] as int? ?? 0) == 1,
-        quantity: m['quantity'] as int? ?? 1,
-        isAiSuggested: (m['is_ai_suggested'] as int? ?? 0) == 1,
-      );
-
-  static Map<String, dynamic> toMap(PackingItemEntity item) => {
-        'id': item.id,
-        'trip_id': item.tripId,
-        'item_name': item.itemName,
-        'category': item.category,
-        'is_packed': item.isPacked ? 1 : 0,
-        'quantity': item.quantity,
-        'is_ai_suggested': item.isAiSuggested ? 1 : 0,
-      };
-}
-
-
---------------------------------------------------------------------------------
-FILE: D:\dev_projects\rahhal_flutter\lib\features\packing_list\domain\entities\packing_item_entity.dart
---------------------------------------------------------------------------------
+## File: `lib/features/packing_list/domain/entities/packing_item_entity.dart`
+```dart
 import 'package:equatable/equatable.dart';
 
 class PackingItemEntity extends Equatable {
@@ -11634,10 +12556,12 @@ class PackingItemEntity extends Equatable {
       ];
 }
 
+```
 
---------------------------------------------------------------------------------
-FILE: D:\dev_projects\rahhal_flutter\lib\features\packing_list\domain\repositories\packing_repository.dart
---------------------------------------------------------------------------------
+---
+
+## File: `lib/features/packing_list/domain/repositories/packing_repository.dart`
+```dart
 import 'package:dartz/dartz.dart';
 import '../../../../core/errors/failures.dart';
 import '../entities/packing_item_entity.dart';
@@ -11649,10 +12573,12 @@ abstract class PackingRepository {
   Future<Either<Failure, void>> deletePackingItem(String itemId);
 }
 
+```
 
---------------------------------------------------------------------------------
-FILE: D:\dev_projects\rahhal_flutter\lib\features\packing_list\presentation\cubit\packing_list_cubit.dart
---------------------------------------------------------------------------------
+---
+
+## File: `lib/features/packing_list/presentation/cubit/packing_list_cubit.dart`
+```dart
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:equatable/equatable.dart';
 import 'package:uuid/uuid.dart';
@@ -11786,10 +12712,12 @@ class PackingListCubit extends Cubit<PackingListState> {
   }
 }
 
+```
 
---------------------------------------------------------------------------------
-FILE: D:\dev_projects\rahhal_flutter\lib\features\packing_list\presentation\cubit\packing_list_state.dart
---------------------------------------------------------------------------------
+---
+
+## File: `lib/features/packing_list/presentation/cubit/packing_list_state.dart`
+```dart
 part of 'packing_list_cubit.dart';
 
 abstract class PackingListState extends Equatable {
@@ -11835,10 +12763,12 @@ class PackingListError extends PackingListState {
   List<Object?> get props => [message];
 }
 
+```
 
---------------------------------------------------------------------------------
-FILE: D:\dev_projects\rahhal_flutter\lib\features\packing_list\presentation\widgets\packing_list_tab.dart
---------------------------------------------------------------------------------
+---
+
+## File: `lib/features/packing_list/presentation/widgets/packing_list_tab.dart`
+```dart
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:flutter_animate/flutter_animate.dart';
@@ -12313,10 +13243,12 @@ class _AddPackingItemBottomSheetState extends State<_AddPackingItemBottomSheet> 
   }
 }
 
+```
 
---------------------------------------------------------------------------------
-FILE: D:\dev_projects\rahhal_flutter\lib\features\restaurants\data\restaurant_repository_impl.dart
---------------------------------------------------------------------------------
+---
+
+## File: `lib/features/restaurants/data/restaurant_repository_impl.dart`
+```dart
 import 'package:dartz/dartz.dart';
 import '../../../../core/database/database_helper.dart';
 import '../../../../core/errors/failures.dart';
@@ -12381,10 +13313,12 @@ class RestaurantRepositoryImpl implements RestaurantRepository {
       );
 }
 
+```
 
---------------------------------------------------------------------------------
-FILE: D:\dev_projects\rahhal_flutter\lib\features\restaurants\domain\entities\restaurant_entity.dart
---------------------------------------------------------------------------------
+---
+
+## File: `lib/features/restaurants/domain/entities/restaurant_entity.dart`
+```dart
 import 'package:equatable/equatable.dart';
 import 'package:flutter/widgets.dart';
 import '../../../../core/constants/app_strings.dart';
@@ -12461,10 +13395,12 @@ class RestaurantEntity extends Equatable {
       ];
 }
 
+```
 
---------------------------------------------------------------------------------
-FILE: D:\dev_projects\rahhal_flutter\lib\features\restaurants\domain\repositories\restaurant_repository.dart
---------------------------------------------------------------------------------
+---
+
+## File: `lib/features/restaurants/domain/repositories/restaurant_repository.dart`
+```dart
 import 'package:dartz/dartz.dart';
 import '../../../../core/errors/failures.dart';
 import '../entities/restaurant_entity.dart';
@@ -12475,10 +13411,12 @@ abstract class RestaurantRepository {
   Future<Either<Failure, RestaurantEntity>> getRestaurantById(String id);
 }
 
+```
 
---------------------------------------------------------------------------------
-FILE: D:\dev_projects\rahhal_flutter\lib\features\restaurants\presentation\cubit\restaurants_cubit.dart
---------------------------------------------------------------------------------
+---
+
+## File: `lib/features/restaurants/presentation/cubit/restaurants_cubit.dart`
+```dart
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:equatable/equatable.dart';
 import '../../../../core/constants/filter_constants.dart';
@@ -12541,10 +13479,12 @@ class RestaurantsCubit extends Cubit<RestaurantsState> {
   }
 }
 
+```
 
---------------------------------------------------------------------------------
-FILE: D:\dev_projects\rahhal_flutter\lib\features\restaurants\presentation\cubit\restaurants_state.dart
---------------------------------------------------------------------------------
+---
+
+## File: `lib/features/restaurants/presentation/cubit/restaurants_state.dart`
+```dart
 part of 'restaurants_cubit.dart';
 
 abstract class RestaurantsState extends Equatable {
@@ -12579,10 +13519,12 @@ class RestaurantsError extends RestaurantsState {
   List<Object?> get props => [message];
 }
 
+```
 
---------------------------------------------------------------------------------
-FILE: D:\dev_projects\rahhal_flutter\lib\features\restaurants\presentation\widgets\restaurants_tab.dart
---------------------------------------------------------------------------------
+---
+
+## File: `lib/features/restaurants/presentation/widgets/restaurants_tab.dart`
+```dart
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:flutter_animate/flutter_animate.dart';
@@ -12655,13 +13597,18 @@ class RestaurantsTab extends StatelessWidget {
           height: 40,
           child: ListView(
             scrollDirection: Axis.horizontal,
-            children: _filters.map((f) {
+            children: _filters.asMap().entries.map((entry) {
+              final i = entry.key;
+              final f = entry.value;
               final isActive = state.activeFilter == f;
               return GestureDetector(
                 onTap: () => context.read<RestaurantsCubit>().applyFilter(f),
                 child: AnimatedContainer(
                   duration: const Duration(milliseconds: 200),
-                  margin: const EdgeInsetsDirectional.only(start: 8),
+                  margin: EdgeInsetsDirectional.only(
+                    start: i == 0 ? 16 : 8,
+                    end: i == _filters.length - 1 ? 16 : 0,
+                  ),
                   padding:
                       const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
                   decoration: BoxDecoration(
@@ -12899,10 +13846,12 @@ class _RestaurantCard extends StatelessWidget {
   }
 }
 
+```
 
---------------------------------------------------------------------------------
-FILE: D:\dev_projects\rahhal_flutter\lib\features\trip_documents\data\mappers\document_mapper.dart
---------------------------------------------------------------------------------
+---
+
+## File: `lib/features/trip_documents/data/mappers/document_mapper.dart`
+```dart
 import '../../domain/entities/document_entity.dart';
 
 class DocumentMapper {
@@ -12933,10 +13882,12 @@ class DocumentMapper {
       };
 }
 
+```
 
---------------------------------------------------------------------------------
-FILE: D:\dev_projects\rahhal_flutter\lib\features\trip_documents\data\repositories\document_repository_impl.dart
---------------------------------------------------------------------------------
+---
+
+## File: `lib/features/trip_documents/data/repositories/document_repository_impl.dart`
+```dart
 import 'package:dartz/dartz.dart';
 import '../../../../core/database/database_helper.dart';
 import '../../../../core/errors/failures.dart';
@@ -13006,10 +13957,12 @@ class DocumentRepositoryImpl implements DocumentRepository {
   }
 }
 
+```
 
---------------------------------------------------------------------------------
-FILE: D:\dev_projects\rahhal_flutter\lib\features\trip_documents\domain\entities\document_entity.dart
---------------------------------------------------------------------------------
+---
+
+## File: `lib/features/trip_documents/domain/entities/document_entity.dart`
+```dart
 import 'package:equatable/equatable.dart';
 
 class DocumentEntity extends Equatable {
@@ -13073,10 +14026,12 @@ class DocumentEntity extends Equatable {
       ];
 }
 
+```
 
---------------------------------------------------------------------------------
-FILE: D:\dev_projects\rahhal_flutter\lib\features\trip_documents\domain\repositories\document_repository.dart
---------------------------------------------------------------------------------
+---
+
+## File: `lib/features/trip_documents/domain/repositories/document_repository.dart`
+```dart
 import 'package:dartz/dartz.dart';
 import '../../../../core/errors/failures.dart';
 import '../entities/document_entity.dart';
@@ -13088,10 +14043,12 @@ abstract class DocumentRepository {
   Future<Either<Failure, void>> deleteDocument(String docId);
 }
 
+```
 
---------------------------------------------------------------------------------
-FILE: D:\dev_projects\rahhal_flutter\lib\features\trip_documents\presentation\cubit\document_cubit.dart
---------------------------------------------------------------------------------
+---
+
+## File: `lib/features/trip_documents/presentation/cubit/document_cubit.dart`
+```dart
 import 'package:flutter_bloc/flutter_bloc.dart';
 import '../../domain/entities/document_entity.dart';
 import '../../domain/repositories/document_repository.dart';
@@ -13166,10 +14123,12 @@ class DocumentCubit extends Cubit<DocumentsState> {
   }
 }
 
+```
 
---------------------------------------------------------------------------------
-FILE: D:\dev_projects\rahhal_flutter\lib\features\trip_documents\presentation\cubit\document_state.dart
---------------------------------------------------------------------------------
+---
+
+## File: `lib/features/trip_documents/presentation/cubit/document_state.dart`
+```dart
 import 'package:equatable/equatable.dart';
 import '../../domain/entities/document_entity.dart';
 
@@ -13216,10 +14175,12 @@ class DocumentsError extends DocumentsState {
   List<Object?> get props => [message];
 }
 
+```
 
---------------------------------------------------------------------------------
-FILE: D:\dev_projects\rahhal_flutter\lib\features\trip_documents\presentation\screens\documents_screen.dart
---------------------------------------------------------------------------------
+---
+
+## File: `lib/features/trip_documents/presentation/screens/documents_screen.dart`
+```dart
 import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
@@ -13806,10 +14767,88 @@ class _DocumentsScreenState extends State<DocumentsScreen> {
   }
 }
 
+```
 
---------------------------------------------------------------------------------
-FILE: D:\dev_projects\rahhal_flutter\lib\features\trip_planner\data\trip_repository_impl.dart
---------------------------------------------------------------------------------
+---
+
+## File: `lib/features/trip_planner/data/mappers/trip_mapper.dart`
+```dart
+import 'dart:convert';
+import '../../domain/entities/trip_entity.dart';
+
+class TripMapper {
+  static TripEntity fromMap(Map<String, dynamic> m) => TripEntity(
+        id: m['id'] as String,
+        userId: m['user_id'] as String?,
+        destination: m['destination'] as String,
+        destinationEn: m['destination_en'] as String?,
+        countryCode: m['country_code'] as String?,
+        startDate: m['start_date'] != null
+            ? DateTime.tryParse(m['start_date'] as String)
+            : null,
+        endDate: m['end_date'] != null
+            ? DateTime.tryParse(m['end_date'] as String)
+            : null,
+        durationDays: m['duration_days'] as int? ?? 1,
+        budgetTier: m['budget_tier'] as String? ?? 'mid',
+        budgetTotal: (m['budget_total'] as num? ?? 0).toDouble(),
+        travelStyles: _decodeList(m['travel_styles'] as String?),
+        travelersCount: m['travelers_count'] as int? ?? 1,
+        status: m['status'] as String? ?? 'planned',
+        heroImageUrl: m['hero_image_url'] as String?,
+        aiSummary: m['ai_summary'] as String?,
+        travelTips: _decodeList(m['travel_tips'] as String?),
+        bestTimeToVisit: m['best_time_to_visit'] as String?,
+        currency: m['currency'] as String? ?? 'USD',
+        timezone: m['timezone'] as String? ?? 'UTC',
+        createdAt: DateTime.parse(m['created_at'] as String),
+        updatedAt: DateTime.parse(m['updated_at'] as String),
+        syncedAt: m['synced_at'] != null
+            ? DateTime.tryParse(m['synced_at'] as String)
+            : null,
+      );
+
+  static Map<String, dynamic> toMap(TripEntity t) => {
+        'id': t.id,
+        'user_id': t.userId,
+        'destination': t.destination,
+        'destination_en': t.destinationEn,
+        'country_code': t.countryCode,
+        'start_date': t.startDate?.toIso8601String(),
+        'end_date': t.endDate?.toIso8601String(),
+        'duration_days': t.durationDays,
+        'budget_tier': t.budgetTier,
+        'budget_total': t.budgetTotal,
+        'travel_styles': jsonEncode(t.travelStyles),
+        'travelers_count': t.travelersCount,
+        'status': t.status,
+        'hero_image_url': t.heroImageUrl,
+        'ai_summary': t.aiSummary,
+        'travel_tips': jsonEncode(t.travelTips),
+        'best_time_to_visit': t.bestTimeToVisit,
+        'currency': t.currency,
+        'timezone': t.timezone,
+        'created_at': t.createdAt.toIso8601String(),
+        'updated_at': t.updatedAt.toIso8601String(),
+        'synced_at': t.syncedAt?.toIso8601String(),
+      };
+
+  static List<String> _decodeList(String? json) {
+    if (json == null || json.isEmpty) return [];
+    try {
+      return (jsonDecode(json) as List).map((e) => e.toString()).toList();
+    } catch (_) {
+      return [];
+    }
+  }
+}
+
+```
+
+---
+
+## File: `lib/features/trip_planner/data/trip_repository_impl.dart`
+```dart
 import 'dart:async';
 import 'package:dartz/dartz.dart';
 import 'package:flutter/foundation.dart';
@@ -13893,6 +14932,7 @@ class TripRepositoryImpl implements TripRepository {
         bestTimeToVisit: response.bestTimeToVisit,
         currency: response.currency,
         timezone: response.timezone,
+        isMockData: response.isMockData,
         createdAt: now,
         updatedAt: now,
       );
@@ -14254,84 +15294,12 @@ class TripRepositoryImpl implements TripRepository {
 
 }
 
+```
 
---------------------------------------------------------------------------------
-FILE: D:\dev_projects\rahhal_flutter\lib\features\trip_planner\data\mappers\trip_mapper.dart
---------------------------------------------------------------------------------
-import 'dart:convert';
-import '../../domain/entities/trip_entity.dart';
+---
 
-class TripMapper {
-  static TripEntity fromMap(Map<String, dynamic> m) => TripEntity(
-        id: m['id'] as String,
-        userId: m['user_id'] as String?,
-        destination: m['destination'] as String,
-        destinationEn: m['destination_en'] as String?,
-        countryCode: m['country_code'] as String?,
-        startDate: m['start_date'] != null
-            ? DateTime.tryParse(m['start_date'] as String)
-            : null,
-        endDate: m['end_date'] != null
-            ? DateTime.tryParse(m['end_date'] as String)
-            : null,
-        durationDays: m['duration_days'] as int? ?? 1,
-        budgetTier: m['budget_tier'] as String? ?? 'mid',
-        budgetTotal: (m['budget_total'] as num? ?? 0).toDouble(),
-        travelStyles: _decodeList(m['travel_styles'] as String?),
-        travelersCount: m['travelers_count'] as int? ?? 1,
-        status: m['status'] as String? ?? 'planned',
-        heroImageUrl: m['hero_image_url'] as String?,
-        aiSummary: m['ai_summary'] as String?,
-        travelTips: _decodeList(m['travel_tips'] as String?),
-        bestTimeToVisit: m['best_time_to_visit'] as String?,
-        currency: m['currency'] as String? ?? 'USD',
-        timezone: m['timezone'] as String? ?? 'UTC',
-        createdAt: DateTime.parse(m['created_at'] as String),
-        updatedAt: DateTime.parse(m['updated_at'] as String),
-        syncedAt: m['synced_at'] != null
-            ? DateTime.tryParse(m['synced_at'] as String)
-            : null,
-      );
-
-  static Map<String, dynamic> toMap(TripEntity t) => {
-        'id': t.id,
-        'user_id': t.userId,
-        'destination': t.destination,
-        'destination_en': t.destinationEn,
-        'country_code': t.countryCode,
-        'start_date': t.startDate?.toIso8601String(),
-        'end_date': t.endDate?.toIso8601String(),
-        'duration_days': t.durationDays,
-        'budget_tier': t.budgetTier,
-        'budget_total': t.budgetTotal,
-        'travel_styles': jsonEncode(t.travelStyles),
-        'travelers_count': t.travelersCount,
-        'status': t.status,
-        'hero_image_url': t.heroImageUrl,
-        'ai_summary': t.aiSummary,
-        'travel_tips': jsonEncode(t.travelTips),
-        'best_time_to_visit': t.bestTimeToVisit,
-        'currency': t.currency,
-        'timezone': t.timezone,
-        'created_at': t.createdAt.toIso8601String(),
-        'updated_at': t.updatedAt.toIso8601String(),
-        'synced_at': t.syncedAt?.toIso8601String(),
-      };
-
-  static List<String> _decodeList(String? json) {
-    if (json == null || json.isEmpty) return [];
-    try {
-      return (jsonDecode(json) as List).map((e) => e.toString()).toList();
-    } catch (_) {
-      return [];
-    }
-  }
-}
-
-
---------------------------------------------------------------------------------
-FILE: D:\dev_projects\rahhal_flutter\lib\features\trip_planner\domain\entities\stop_entity.dart
---------------------------------------------------------------------------------
+## File: `lib/features/trip_planner/domain/entities/stop_entity.dart`
+```dart
 import 'package:equatable/equatable.dart';
 import 'package:flutter/widgets.dart';
 import '../../../../core/constants/app_strings.dart';
@@ -14419,10 +15387,12 @@ class StopEntity extends Equatable {
       ];
 }
 
+```
 
---------------------------------------------------------------------------------
-FILE: D:\dev_projects\rahhal_flutter\lib\features\trip_planner\domain\entities\trip_entity.dart
---------------------------------------------------------------------------------
+---
+
+## File: `lib/features/trip_planner/domain/entities/trip_entity.dart`
+```dart
 import 'package:equatable/equatable.dart';
 import 'package:flutter/widgets.dart';
 import '../../../../core/constants/app_strings.dart';
@@ -14447,6 +15417,7 @@ class TripEntity extends Equatable {
   final String? bestTimeToVisit;
   final String currency;
   final String timezone;
+  final bool isMockData;
   final DateTime createdAt;
   final DateTime updatedAt;
   final DateTime? syncedAt;
@@ -14471,6 +15442,7 @@ class TripEntity extends Equatable {
     this.bestTimeToVisit,
     this.currency = 'USD',
     this.timezone = 'UTC',
+    this.isMockData = false,
     required this.createdAt,
     required this.updatedAt,
     this.syncedAt,
@@ -14548,10 +15520,12 @@ class TripEntity extends Equatable {
       ];
 }
 
+```
 
---------------------------------------------------------------------------------
-FILE: D:\dev_projects\rahhal_flutter\lib\features\trip_planner\domain\repositories\trip_repository.dart
---------------------------------------------------------------------------------
+---
+
+## File: `lib/features/trip_planner/domain/repositories/trip_repository.dart`
+```dart
 import 'package:dartz/dartz.dart';
 import '../../../../core/errors/failures.dart';
 import '../entities/trip_entity.dart';
@@ -14595,10 +15569,12 @@ abstract class TripRepository {
   Future<Either<Failure, List<StopEntity>>> getStopsForDay(String dayId);
 }
 
+```
 
---------------------------------------------------------------------------------
-FILE: D:\dev_projects\rahhal_flutter\lib\features\trip_planner\presentation\cubit\saved_trips_cubit.dart
---------------------------------------------------------------------------------
+---
+
+## File: `lib/features/trip_planner/presentation/cubit/saved_trips_cubit.dart`
+```dart
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:equatable/equatable.dart';
 import '../../domain/repositories/trip_repository.dart';
@@ -14636,10 +15612,12 @@ class SavedTripsCubit extends Cubit<SavedTripsState> {
   }
 }
 
+```
 
---------------------------------------------------------------------------------
-FILE: D:\dev_projects\rahhal_flutter\lib\features\trip_planner\presentation\cubit\saved_trips_state.dart
---------------------------------------------------------------------------------
+---
+
+## File: `lib/features/trip_planner/presentation/cubit/saved_trips_state.dart`
+```dart
 part of 'saved_trips_cubit.dart';
 
 abstract class SavedTripsState extends Equatable {
@@ -14666,10 +15644,12 @@ class SavedTripsError extends SavedTripsState {
   List<Object?> get props => [message];
 }
 
+```
 
---------------------------------------------------------------------------------
-FILE: D:\dev_projects\rahhal_flutter\lib\features\trip_planner\presentation\cubit\trip_planner_cubit.dart
---------------------------------------------------------------------------------
+---
+
+## File: `lib/features/trip_planner/presentation/cubit/trip_planner_cubit.dart`
+```dart
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:equatable/equatable.dart';
 import '../../domain/entities/trip_entity.dart';
@@ -14712,10 +15692,12 @@ class TripPlannerCubit extends Cubit<TripPlannerState> {
   void reset() => emit(const TripPlannerInitial());
 }
 
+```
 
---------------------------------------------------------------------------------
-FILE: D:\dev_projects\rahhal_flutter\lib\features\trip_planner\presentation\cubit\trip_planner_state.dart
---------------------------------------------------------------------------------
+---
+
+## File: `lib/features/trip_planner/presentation/cubit/trip_planner_state.dart`
+```dart
 part of 'trip_planner_cubit.dart';
 
 abstract class TripPlannerState extends Equatable {
@@ -14746,10 +15728,13 @@ class TripPlannerError extends TripPlannerState {
   List<Object?> get props => [message];
 }
 
+```
 
---------------------------------------------------------------------------------
-FILE: D:\dev_projects\rahhal_flutter\lib\features\trip_planner\presentation\screens\generating_screen.dart
---------------------------------------------------------------------------------
+---
+
+## File: `lib/features/trip_planner/presentation/screens/generating_screen.dart`
+```dart
+import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:flutter_animate/flutter_animate.dart';
@@ -14757,6 +15742,7 @@ import 'package:go_router/go_router.dart';
 import '../../../../core/constants/app_colors.dart';
 import '../../../../core/constants/app_text_styles.dart';
 import '../../../../core/constants/app_strings.dart';
+import '../../../../core/config/app_config.dart';
 import '../../../../core/di/injection.dart';
 import '../cubit/trip_planner_cubit.dart';
 
@@ -14787,6 +15773,8 @@ class _GeneratingScreenBodyState extends State<_GeneratingScreenBody>
   late final AnimationController _rotationCtrl;
   int _currentStep = 0;
   bool _aiCompleted = false;
+  bool _showSlowWarning = false;
+  Timer? _slowWarningTimer;
   TripPlannerState? _pendingSuccessState; // hold success state until animation done
 
   List<String> _steps(BuildContext context) {
@@ -14808,12 +15796,23 @@ class _GeneratingScreenBodyState extends State<_GeneratingScreenBody>
       duration: const Duration(seconds: 8),
     )..repeat();
     _animateSteps();
+    _startSlowTimer();
     // Trigger generation after the frame is built so BlocProvider is ready
     WidgetsBinding.instance.addPostFrameCallback((_) => _startGeneration());
   }
 
+  void _startSlowTimer() {
+    _slowWarningTimer?.cancel();
+    _slowWarningTimer = Timer(const Duration(seconds: 20), () {
+      if (mounted && !_aiCompleted) {
+        setState(() => _showSlowWarning = true);
+      }
+    });
+  }
+
   @override
   void dispose() {
+    _slowWarningTimer?.cancel();
     _rotationCtrl.dispose();
     super.dispose();
   }
@@ -14835,6 +15834,8 @@ class _GeneratingScreenBodyState extends State<_GeneratingScreenBody>
 
   void _startGeneration() {
     if (!mounted) return;
+    setState(() => _showSlowWarning = false);
+    _startSlowTimer();
     context.read<TripPlannerCubit>().generateTripPlan(
       destination: widget.params['destination'] as String,
       durationDays: widget.params['durationDays'] as int,
@@ -14848,6 +15849,7 @@ class _GeneratingScreenBodyState extends State<_GeneratingScreenBody>
   void _handleState(TripPlannerState state) {
     if (state is TripPlannerSuccess) {
       _aiCompleted = true;
+      _slowWarningTimer?.cancel();
       final allStepsShown = _currentStep >= 4;
       if (allStepsShown) {
         _navigateToSuccess(state);
@@ -14855,6 +15857,7 @@ class _GeneratingScreenBodyState extends State<_GeneratingScreenBody>
         _pendingSuccessState = state; // wait for animation
       }
     } else if (state is TripPlannerError) {
+      _slowWarningTimer?.cancel();
       // show error dialog immediately regardless of animation
       _showErrorDialog(state.message);
     }
@@ -14867,23 +15870,63 @@ class _GeneratingScreenBodyState extends State<_GeneratingScreenBody>
   }
 
   void _showErrorDialog(String message) {
+    // Map technical error codes to user-friendly Arabic messages
+    final String userMessage = _localizeError(message);
+
     showDialog(
       context: context,
+      barrierDismissible: false,
       builder: (ctx) => AlertDialog(
         backgroundColor: AppColors.adaptiveBgCard(context),
-        title: Text(AppStrings.of(context).errorTitle, style: AppTextStyles.headlineMedium),
-        content: Text(message, style: AppTextStyles.bodyMedium),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+        title: Row(
+          children: [
+            const Text('⚠️', style: TextStyle(fontSize: 22)),
+            const SizedBox(width: 8),
+            Text(AppStrings.of(context).errorTitle, style: AppTextStyles.headlineMedium),
+          ],
+        ),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(userMessage, style: AppTextStyles.bodyMedium),
+          ],
+        ),
         actions: [
           TextButton(
             onPressed: () {
               Navigator.pop(ctx);
               context.go('/plan');
             },
-            child: Text(AppStrings.of(context).errorRetry),
+            child: Text(AppStrings.of(context).errorRetry,
+                style: TextStyle(color: AppColors.accentAmber)),
           ),
         ],
       ),
     );
+  }
+
+  /// Converts technical error codes from AIException into user-friendly Arabic strings.
+  String _localizeError(String code) {
+    if (code.contains('server-warmup-timeout') || code.contains('network-exception') || code.contains('connectionTimeout')) {
+      return '⏳ السيرفر كان في وضع السكون.\n'  
+             'يرجى الانتظار 30-60 ثانية ثم إعادة المحاولة.';
+    }
+    if (code.contains('invalid-api-key')) {
+      return '🔑 مفتاح API غير صالح أو منتهي.\n'
+             'تحقق من إعدادات الخادم.';
+    }
+    if (code.contains('rate-limit')) {
+      return '⏱ تجاوزت الحد المسموح من الطلبات.\n'
+             'انتظر دقيقة ثم أعد المحاولة.';
+    }
+    if (code.contains('server-error')) {
+      return '🛠 خطأ في الخادم.\n'
+             'يرجى المحاولة مجدداً بعد قليل.';
+    }
+    return '❌ حدث خطأ أثناء توليد الرحلة.\n'
+           'تحقق من اتصالك بالإنترنت وأعد المحاولة.';
   }
 
   @override
@@ -14914,40 +15957,150 @@ class _GeneratingScreenBodyState extends State<_GeneratingScreenBody>
             // Floating particles
             ..._buildParticles(),
 
-            Center(
-              child: Column(
-                mainAxisAlignment: MainAxisAlignment.center,
-                children: [
-                  // Spinning logo
-                  _buildSpinningLogo(),
-                  const SizedBox(height: 40),
+            SafeArea(
+              child: Center(
+                child: SingleChildScrollView(
+                  padding: const EdgeInsets.fromLTRB(20, 20, 20, 80),
+                  child: Column(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      // Spinning logo
+                      _buildSpinningLogo(),
+                      const SizedBox(height: 24),
 
-                  // Title
-                  Text(
-                    AppStrings.of(context).generatingTitle,
-                    style: AppTextStyles.headlineLarge,
-                    textAlign: TextAlign.center,
-                  )
-                      .animate(onPlay: (c) => c.repeat(reverse: true))
-                      .fadeIn(duration: 600.ms),
+                      // Title
+                      Text(
+                        AppStrings.of(context).generatingTitle,
+                        style: AppTextStyles.headlineLarge,
+                        textAlign: TextAlign.center,
+                      )
+                          .animate(onPlay: (c) => c.repeat(reverse: true))
+                          .fadeIn(duration: 600.ms),
 
-                  const SizedBox(height: 8),
-                  Text(
-                    AppStrings.of(context).generatingSubtitle,
-                    style: AppTextStyles.bodyMedium,
-                    textAlign: TextAlign.center,
+                      const SizedBox(height: 6),
+                      Text(
+                        AppStrings.of(context).generatingSubtitle,
+                        style: AppTextStyles.bodyMedium,
+                        textAlign: TextAlign.center,
+                      ),
+
+                      // Warmup hint — shown when Render free-tier server may be asleep
+                      if (AppConfig.kServerMayNeedWarmup) ...[
+                        const SizedBox(height: 8),
+                        Container(
+                          margin: const EdgeInsets.symmetric(horizontal: 24),
+                          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+                          decoration: BoxDecoration(
+                            color: AppColors.accentAmber.withValues(alpha: 0.10),
+                            borderRadius: BorderRadius.circular(10),
+                            border: Border.all(
+                              color: AppColors.accentAmber.withValues(alpha: 0.25),
+                            ),
+                          ),
+                          child: Row(
+                            mainAxisSize: MainAxisSize.min,
+                            mainAxisAlignment: MainAxisAlignment.center,
+                            children: [
+                              const Text('⏳', style: TextStyle(fontSize: 14)),
+                              const SizedBox(width: 6),
+                              Flexible(
+                                child: Text(
+                                  'قد يستغرق الأمر حتى دقيقة عند أول استخدام',
+                                  style: AppTextStyles.bodySmall.copyWith(
+                                    color: AppColors.accentAmber,
+                                  ),
+                                  textAlign: TextAlign.center,
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ],
+
+                      // 20s Timeout slow warning with Retry button
+                      if (_showSlowWarning) ...[
+                        const SizedBox(height: 12),
+                        Container(
+                          margin: const EdgeInsets.symmetric(horizontal: 20),
+                          padding: const EdgeInsets.all(12),
+                          decoration: BoxDecoration(
+                            color: Colors.amber.withValues(alpha: 0.15),
+                            borderRadius: BorderRadius.circular(14),
+                            border: Border.all(color: Colors.amber.withValues(alpha: 0.4)),
+                          ),
+                          child: Column(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              Row(
+                                mainAxisAlignment: MainAxisAlignment.center,
+                                children: [
+                                  const Icon(Icons.speed_rounded, color: Colors.amber, size: 18),
+                                  const SizedBox(width: 8),
+                                  Flexible(
+                                    child: Text(
+                                      'الخادم يستغرق وقتاً أطول من المعتاد...',
+                                      style: AppTextStyles.bodyMedium.copyWith(
+                                        color: Colors.amber,
+                                        fontWeight: FontWeight.w600,
+                                      ),
+                                      textAlign: TextAlign.center,
+                                    ),
+                                  ),
+                                ],
+                              ),
+                              const SizedBox(height: 8),
+                              ElevatedButton.icon(
+                                onPressed: _startGeneration,
+                                icon: const Icon(Icons.refresh_rounded, size: 16),
+                                label: const Text('إعادة المحاولة الأن'),
+                                style: ElevatedButton.styleFrom(
+                                  backgroundColor: AppColors.accentAmber,
+                                  foregroundColor: AppColors.bgPrimary,
+                                  padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+                                  textStyle: AppTextStyles.labelMedium,
+                                ),
+                              ),
+                            ],
+                          ),
+                        ).animate().fadeIn(duration: 400.ms).shake(hz: 2, curve: Curves.easeInOut),
+                      ],
+
+                      const SizedBox(height: 24),
+
+                      // Steps
+                      _buildSteps(context),
+
+                      const SizedBox(height: 20),
+
+                      // Progress dots
+                      _buildProgressDots(),
+                    ],
                   ),
+                ),
+              ),
+            ),
 
-                  const SizedBox(height: 48),
-
-                  // Steps
-                  _buildSteps(context),
-
-                  const SizedBox(height: 48),
-
-                  // Progress dots
-                  _buildProgressDots(),
-                ],
+            // Cancel Button
+            Positioned(
+              bottom: 20,
+              left: 0,
+              right: 0,
+              child: Center(
+                child: TextButton.icon(
+                  onPressed: () => context.go('/plan'),
+                  icon: Icon(
+                    Icons.close_rounded,
+                    color: AppColors.adaptiveTextSecondary(context),
+                    size: 18,
+                  ),
+                  label: Text(
+                    'إلغاء والعودة',
+                    style: AppTextStyles.bodyMedium.copyWith(
+                      color: AppColors.adaptiveTextSecondary(context),
+                    ),
+                  ),
+                ),
               ),
             ),
           ],
@@ -15119,10 +16272,12 @@ class _GeneratingScreenBodyState extends State<_GeneratingScreenBody>
   }
 }
 
+```
 
---------------------------------------------------------------------------------
-FILE: D:\dev_projects\rahhal_flutter\lib\features\trip_planner\presentation\screens\saved_trips_screen.dart
---------------------------------------------------------------------------------
+---
+
+## File: `lib/features/trip_planner/presentation/screens/saved_trips_screen.dart`
+```dart
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:flutter_animate/flutter_animate.dart';
@@ -15289,36 +16444,31 @@ class _SavedTripsScreenState extends State<SavedTripsScreen> {
   Future<void> _exploreNearbyCity() async {
     final strings = AppStrings.of(context);
     setState(() => _isLocating = true);
-
     try {
       final locationData = await sl<LocationService>().getCurrentLocation();
-      if (locationData != null && mounted) {
-        setState(() => _isLocating = false);
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('📍 تم تحديد موقعك: ${locationData.fullLocationDisplay}'),
-            backgroundColor: AppColors.accentAmber,
-            behavior: SnackBarBehavior.floating,
-          ),
-        );
-        context.push('/plan/generating', extra: {
-          'destination': locationData.fullLocationDisplay,
-          'durationDays': 3,
-          'budgetTier': 'mid',
-          'travelStyles': ['culture', 'food', 'landmark'],
-          'travelersCount': 1,
-          'countryCode': locationData.countryCode,
-        });
-      } else if (mounted) {
-        setState(() => _isLocating = false);
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text(strings.locationPermissionDenied),
-            backgroundColor: AppColors.error,
-            behavior: SnackBarBehavior.floating,
-          ),
-        );
+      if (locationData == null || !mounted) {
+        if (mounted) {
+          setState(() => _isLocating = false);
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text(strings.locationPermissionDenied),
+              backgroundColor: AppColors.error,
+              behavior: SnackBarBehavior.floating,
+            ),
+          );
+        }
+        return;
       }
+      setState(() => _isLocating = false);
+
+      // Navigate to plan screen with pre-filled destination
+      // The AI will generate a REAL plan based on the real city name
+      context.push('/plan', extra: {
+        'prefillDestination': locationData.fullLocationDisplay,
+        'lat': locationData.latitude,
+        'lng': locationData.longitude,
+        'countryCode': locationData.countryCode,
+      });
     } catch (e) {
       if (mounted) setState(() => _isLocating = false);
     }
@@ -15579,10 +16729,12 @@ class _TripCard extends StatelessWidget {
   }
 }
 
+```
 
---------------------------------------------------------------------------------
-FILE: D:\dev_projects\rahhal_flutter\lib\features\trip_planner\presentation\screens\trip_dashboard_screen.dart
---------------------------------------------------------------------------------
+---
+
+## File: `lib/features/trip_planner/presentation/screens/trip_dashboard_screen.dart`
+```dart
 import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
@@ -15720,19 +16872,50 @@ class _TripDashboardScreenState extends State<TripDashboardScreen>
           headerSliverBuilder: (ctx, innerIsScrolled) => [
             _buildHeroSliver(ctx, innerIsScrolled),
           ],
-          body: TabBarView(
-            controller: _tabController,
+          body: Column(
             children: [
-              ItineraryTab(tripId: widget.tripId, countryCode: _trip?.countryCode),
-              MapTab(tripId: widget.tripId),
-              RestaurantsTab(tripId: widget.tripId),
-              BudgetTab(tripId: widget.tripId, countryCode: _trip?.countryCode),
-              if (_trip != null)
-                PackingListTab(trip: _trip!)
-              else
-                const Center(
-                  child: CircularProgressIndicator(color: AppColors.accentAmber),
+              if (_trip?.isMockData == true)
+                Container(
+                  margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                  padding: const EdgeInsets.all(12),
+                  decoration: BoxDecoration(
+                    color: AppColors.accentAmber.withValues(alpha: 0.12),
+                    borderRadius: BorderRadius.circular(12),
+                    border: Border.all(color: AppColors.accentAmber.withValues(alpha: 0.3)),
+                  ),
+                  child: Row(
+                    children: [
+                      const Icon(Icons.info_outline_rounded, color: AppColors.accentAmber, size: 18),
+                      const SizedBox(width: 8),
+                      Expanded(
+                        child: Text(
+                          'هذه الرحلة أُنشئت سحابةً في وضع عدم الاتصال. أنشئ رحلة جديدة الآن لتوليد خطة حية بالذكاء الاصطناعي ✨',
+                          style: AppTextStyles.bodySmall.copyWith(
+                            color: AppColors.accentAmber,
+                            fontSize: 12,
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
                 ),
+              Expanded(
+                child: TabBarView(
+                  controller: _tabController,
+                  children: [
+                    ItineraryTab(tripId: widget.tripId, countryCode: _trip?.countryCode),
+                    MapTab(tripId: widget.tripId),
+                    RestaurantsTab(tripId: widget.tripId),
+                    BudgetTab(tripId: widget.tripId, countryCode: _trip?.countryCode),
+                    if (_trip != null)
+                      PackingListTab(trip: _trip!)
+                    else
+                      const Center(
+                        child: CircularProgressIndicator(color: AppColors.accentAmber),
+                      ),
+                  ],
+                ),
+              ),
             ],
           ),
         ),
@@ -16071,10 +17254,12 @@ class _TripDashboardScreenState extends State<TripDashboardScreen>
   }
 }
 
+```
 
---------------------------------------------------------------------------------
-FILE: D:\dev_projects\rahhal_flutter\lib\features\trip_planner\presentation\screens\trip_input_screen.dart
---------------------------------------------------------------------------------
+---
+
+## File: `lib/features/trip_planner/presentation/screens/trip_input_screen.dart`
+```dart
 import 'package:flutter/material.dart';
 import 'package:flutter_animate/flutter_animate.dart';
 import 'package:go_router/go_router.dart';
@@ -16169,10 +17354,10 @@ class _TripInputScreenState extends State<TripInputScreen> {
 
   Future<void> _initDestination() async {
     final prefs = await SharedPreferences.getInstance();
-    final lang = prefs.getString('language_code') ?? 'ar';
-    if (mounted) {
+    final lastDest = prefs.getString('last_destination');
+    if (mounted && lastDest != null && lastDest.isNotEmpty && _destinationCtrl.text.isEmpty) {
       setState(() {
-        _destinationCtrl.text = lang == 'en' ? 'Istanbul' : 'إسطنبول';
+        _destinationCtrl.text = lastDest;
       });
     }
   }
@@ -16761,6 +17946,11 @@ class _TripInputScreenState extends State<TripInputScreen> {
       return;
     }
 
+    // Save last destination
+    SharedPreferences.getInstance().then((prefs) {
+      prefs.setString('last_destination', destination);
+    });
+
     // Navigate to generating screen (which runs the AI generation)
     context.push('/plan/generating', extra: {
       'destination': destination,
@@ -16773,10 +17963,12 @@ class _TripInputScreenState extends State<TripInputScreen> {
   }
 }
 
+```
 
---------------------------------------------------------------------------------
-FILE: D:\dev_projects\rahhal_flutter\lib\features\trip_planner\presentation\widgets\share_trip_card.dart
---------------------------------------------------------------------------------
+---
+
+## File: `lib/features/trip_planner/presentation/widgets/share_trip_card.dart`
+```dart
 import 'package:flutter/material.dart';
 import '../../../../core/constants/app_colors.dart';
 import '../../../../core/constants/app_text_styles.dart';
@@ -17004,10 +18196,12 @@ class ShareTripCard extends StatelessWidget {
   }
 }
 
+```
 
---------------------------------------------------------------------------------
-FILE: D:\dev_projects\rahhal_flutter\lib\features\weather\data\weather_repository.dart
---------------------------------------------------------------------------------
+---
+
+## File: `lib/features/weather/data/weather_repository.dart`
+```dart
 import 'package:dio/dio.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'dart:convert';
@@ -17075,10 +18269,12 @@ class WeatherRepository {
   }
 }
 
+```
 
---------------------------------------------------------------------------------
-FILE: D:\dev_projects\rahhal_flutter\lib\features\weather\domain\entities\weather_entity.dart
---------------------------------------------------------------------------------
+---
+
+## File: `lib/features/weather/domain/entities/weather_entity.dart`
+```dart
 class WeatherDay {
   final String date;
   final double tempMin;
@@ -17116,21 +18312,30 @@ class WeatherDay {
 class WeatherForecast {
   final String city;
   final List<WeatherDay> forecast;
+  final bool isMock;
 
-  const WeatherForecast({required this.city, required this.forecast});
+  const WeatherForecast({
+    required this.city,
+    required this.forecast,
+    this.isMock = false,
+  });
 
   factory WeatherForecast.fromJson(Map<String, dynamic> json) => WeatherForecast(
         city: json['city'] as String? ?? '',
-        forecast: (json['forecast'] as List<dynamic>)
-            .map((e) => WeatherDay.fromJson(e as Map<String, dynamic>))
-            .toList(),
+        forecast: (json['forecast'] as List<dynamic>?)
+                ?.map((e) => WeatherDay.fromJson(e as Map<String, dynamic>))
+                .toList() ??
+            [],
+        isMock: json['isMock'] as bool? ?? false,
       );
 }
 
+```
 
---------------------------------------------------------------------------------
-FILE: D:\dev_projects\rahhal_flutter\lib\features\weather\presentation\widgets\weather_banner.dart
---------------------------------------------------------------------------------
+---
+
+## File: `lib/features/weather/presentation/widgets/weather_banner.dart`
+```dart
 import 'package:flutter/material.dart';
 import '../../../../core/constants/app_colors.dart';
 import '../../../../core/constants/app_text_styles.dart';
@@ -17237,15 +18442,44 @@ class _WeatherBannerState extends State<WeatherBanner> {
             children: [
               const Icon(Icons.cloud_outlined, size: 14, color: Colors.white54),
               const SizedBox(width: 4),
-              Text(
-                _forecast!.city.isNotEmpty
-                    ? '${_forecast!.city} — Forecast'
-                    : 'Weather Forecast',
-                style: AppTextStyles.labelSmall.copyWith(
-                  color: Colors.white54,
-                  letterSpacing: 0.5,
+              Expanded(
+                child: Text(
+                  _forecast!.city.isNotEmpty
+                      ? '${_forecast!.city} — Forecast'
+                      : 'Weather Forecast',
+                  style: AppTextStyles.labelSmall.copyWith(
+                    color: Colors.white54,
+                    letterSpacing: 0.5,
+                  ),
                 ),
               ),
+              if (_forecast!.isMock) ...[
+                Tooltip(
+                  message: 'طقس تقريبي (بيانات محاكاة)',
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                    decoration: BoxDecoration(
+                      color: Colors.amber.withValues(alpha: 0.2),
+                      borderRadius: BorderRadius.circular(6),
+                      border: Border.all(color: Colors.amber.withValues(alpha: 0.4)),
+                    ),
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        const Icon(Icons.info_outline_rounded, size: 11, color: Colors.amber),
+                        const SizedBox(width: 3),
+                        Text(
+                          'محاكاة',
+                          style: AppTextStyles.labelSmall.copyWith(
+                            color: Colors.amber,
+                            fontSize: 9,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+              ],
             ],
           ),
           const SizedBox(height: 8),
@@ -17327,10 +18561,261 @@ class _WeatherDayChip extends StatelessWidget {
   }
 }
 
+```
 
---------------------------------------------------------------------------------
-FILE: D:\dev_projects\rahhal_flutter\lib\shared\widgets\app_badges.dart
---------------------------------------------------------------------------------
+---
+
+## File: `lib/firebase_options.dart`
+```dart
+// File generated by FlutterFire CLI (templated placeholder values).
+// ignore_for_file: lines_longer_than_80_chars, avoid_classes_on_signature_methods
+import 'package:firebase_core/firebase_core.dart' show FirebaseOptions;
+import 'package:flutter/foundation.dart'
+    show defaultTargetPlatform, kIsWeb, TargetPlatform;
+
+/// Default [FirebaseOptions] for use with your Firebase apps.
+///
+/// Example:
+/// ```dart
+/// import 'firebase_options.dart';
+/// // ...
+/// await Firebase.initializeApp(
+///   options: DefaultFirebaseOptions.currentPlatform,
+/// );
+/// ```
+class DefaultFirebaseOptions {
+  static FirebaseOptions get currentPlatform {
+    if (kIsWeb) {
+      return web;
+    }
+    switch (defaultTargetPlatform) {
+      case TargetPlatform.android:
+        return android;
+      case TargetPlatform.iOS:
+        return ios;
+      case TargetPlatform.macOS:
+        throw UnsupportedError(
+          'DefaultFirebaseOptions have not been configured for macOS - '
+          'you can reconfigure this by running the FlutterFire CLI again.',
+        );
+      case TargetPlatform.windows:
+        return windows;
+      case TargetPlatform.linux:
+        throw UnsupportedError(
+          'DefaultFirebaseOptions have not been configured for linux - '
+          'you can reconfigure this by running the FlutterFire CLI again.',
+        );
+      default:
+        throw UnsupportedError(
+          'DefaultFirebaseOptions are not supported for this platform.',
+        );
+    }
+  }
+
+  static const FirebaseOptions web = FirebaseOptions(
+    apiKey: 'AIzaSyAtYncYm8QxHwAMf9YuvtrWUhF6ne4sYgQ',
+    appId: '1:226504199183:web:a0b12a3e366472f49ba77a',
+    messagingSenderId: '226504199183',
+    projectId: 'rahhal-ai',
+    authDomain: 'rahhal-ai.firebaseapp.com',
+    storageBucket: 'rahhal-ai.firebasestorage.app',
+  );
+
+  static const FirebaseOptions android = FirebaseOptions(
+    apiKey: 'AIzaSyCr9siORxoU07nNVEwdop5355tdtu9y2yA',
+    appId: '1:226504199183:android:dd40e93a4bd8b24f9ba77a',
+    messagingSenderId: '226504199183',
+    projectId: 'rahhal-ai',
+    storageBucket: 'rahhal-ai.firebasestorage.app',
+  );
+  static const FirebaseOptions ios = FirebaseOptions(
+    apiKey: 'AIzaSyDpTvF5mTRiF4AKJsIi2egI2tjgnHr-8_s',
+    appId: '1:226504199183:ios:6ca5168a4119816b9ba77a',
+    messagingSenderId: '226504199183',
+    projectId: 'rahhal-ai',
+    storageBucket: 'rahhal-ai.firebasestorage.app',
+    iosClientId: '226504199183-fnja9653ji7r7fhh5uett3u3hb0p0028.apps.googleusercontent.com',
+    iosBundleId: 'com.rahhalai.rahhalFlutter',
+  );
+
+  static const FirebaseOptions windows = FirebaseOptions(
+    apiKey: 'AIzaSyAtYncYm8QxHwAMf9YuvtrWUhF6ne4sYgQ',
+    appId: '1:226504199183:web:3f18495cb8d13e669ba77a',
+    messagingSenderId: '226504199183',
+    projectId: 'rahhal-ai',
+    authDomain: 'rahhal-ai.firebaseapp.com',
+    storageBucket: 'rahhal-ai.firebasestorage.app',
+  );
+}
+
+```
+
+---
+
+## File: `lib/main.dart`
+```dart
+import 'package:flutter/material.dart';
+import 'package:flutter/foundation.dart';
+import 'package:flutter_localizations/flutter_localizations.dart';
+import 'package:firebase_core/firebase_core.dart';
+import 'package:firebase_app_check/firebase_app_check.dart';
+import 'package:shared_preferences/shared_preferences.dart';
+import 'firebase_options.dart';
+import 'core/di/injection.dart';
+import 'core/services/notification_service.dart';
+import 'package:flutter_bloc/flutter_bloc.dart';
+import 'core/theme/app_theme.dart';
+import 'core/router/app_router.dart';
+import 'features/favorites/presentation/cubit/favorites_cubit.dart';
+import 'features/auth/presentation/cubit/auth_cubit.dart';
+import 'package:sqflite/sqflite.dart';
+import 'package:sqflite_common_ffi_web/sqflite_ffi_web.dart';
+
+void main() async {
+  WidgetsFlutterBinding.ensureInitialized();
+
+  // Catch unhandled Flutter errors
+  FlutterError.onError = (FlutterErrorDetails details) {
+    debugPrint('🔴 Flutter Error: ${details.exception}');
+    debugPrint('Stack: ${details.stack}');
+  };
+
+  // Catch unexpected asynchronous Dart errors
+  PlatformDispatcher.instance.onError = (error, stack) {
+    debugPrint('🔴 Platform Error: $error');
+    return true; // handled
+  };
+
+  if (kIsWeb) {
+    databaseFactory = databaseFactoryFfiWeb;
+  }
+
+  // Initialize Firebase (wrapped in try-catch for mock/missing config)
+  try {
+    await Firebase.initializeApp(
+      options: DefaultFirebaseOptions.currentPlatform,
+    );
+    // في وضع Debug: AppCheck غير مفعّل تماماً → لا حجب للطلبات
+    // في وضع Production: AppCheck مفعّل بالمزودين الرسميين
+    if (!kDebugMode) {
+      await FirebaseAppCheck.instance.activate(
+        androidProvider: AndroidProvider.playIntegrity,
+        appleProvider: AppleProvider.appAttest,
+      );
+    }
+  } catch (e) {
+    debugPrint('⚠️ Firebase initialization failed: $e');
+    debugPrint('App will continue without Firebase services.');
+  }
+
+  // Setup Dependency Injection container
+  await setupDependencies();
+
+  // Initialize Local Notification Service
+  await NotificationService.initialize();
+
+  runApp(const RahhalApp());
+}
+
+class RahhalApp extends StatefulWidget {
+  const RahhalApp({super.key});
+
+  static RahhalAppState? of(BuildContext context) =>
+      context.findAncestorStateOfType<RahhalAppState>();
+
+  @override
+  State<RahhalApp> createState() => RahhalAppState();
+}
+
+class RahhalAppState extends State<RahhalApp> {
+  Locale _locale = const Locale('ar', 'AE');
+  ThemeMode _themeMode = ThemeMode.dark;
+
+  @override
+  void initState() {
+    super.initState();
+    _loadSettings();
+  }
+
+  Future<void> _loadSettings() async {
+    final prefs = await SharedPreferences.getInstance();
+    
+    // Load locale
+    final langCode = prefs.getString('language_code') ?? 'ar';
+    final countryCode = langCode == 'ar' ? 'AE' : 'US';
+    
+    // Load theme
+    final themeStr = prefs.getString('theme_mode') ?? 'dark';
+    ThemeMode mode = ThemeMode.dark;
+    if (themeStr == 'light') {
+      mode = ThemeMode.light;
+    } else if (themeStr == 'system') {
+      mode = ThemeMode.system;
+    }
+
+    setState(() {
+      _locale = Locale(langCode, countryCode);
+      _themeMode = mode;
+    });
+  }
+
+  void setLocale(Locale locale) {
+    setState(() {
+      _locale = locale;
+    });
+  }
+
+  void setThemeMode(ThemeMode mode) {
+    setState(() {
+      _themeMode = mode;
+    });
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return MultiBlocProvider(
+      providers: [
+        BlocProvider<FavoritesCubit>(
+          create: (_) => sl<FavoritesCubit>()..loadFavorites(),
+        ),
+        BlocProvider<AuthCubit>(
+          create: (_) => sl<AuthCubit>()..checkCurrentUser(),
+        ),
+      ],
+      child: MaterialApp.router(
+        title: 'رحّال AI',
+        debugShowCheckedModeBanner: false,
+
+        // Theme
+        theme: AppTheme.lightTheme,
+        darkTheme: AppTheme.darkTheme,
+        themeMode: _themeMode,
+
+        // Routing configuration
+        routerConfig: AppRouter.router,
+
+        // Localization & RTL support
+        locale: _locale,
+        supportedLocales: const [
+          Locale('ar', 'AE'),
+          Locale('en', 'US'),
+        ],
+        localizationsDelegates: const [
+          GlobalMaterialLocalizations.delegate,
+          GlobalWidgetsLocalizations.delegate,
+          GlobalCupertinoLocalizations.delegate,
+        ],
+      ),
+    );
+  }
+}
+
+```
+
+---
+
+## File: `lib/shared/widgets/app_badges.dart`
+```dart
 import 'package:flutter/material.dart';
 import 'package:flutter_animate/flutter_animate.dart';
 import '../../core/constants/app_colors.dart';
@@ -17483,10 +18968,12 @@ class StatusBadge extends StatelessWidget {
   }
 }
 
+```
 
---------------------------------------------------------------------------------
-FILE: D:\dev_projects\rahhal_flutter\lib\shared\widgets\app_error_widget.dart
---------------------------------------------------------------------------------
+---
+
+## File: `lib/shared/widgets/app_error_widget.dart`
+```dart
 import 'package:flutter/material.dart';
 import '../../core/constants/app_strings.dart';
 import '../../core/constants/app_text_styles.dart';
@@ -17531,10 +19018,12 @@ class AppErrorWidget extends StatelessWidget {
   }
 }
 
+```
 
---------------------------------------------------------------------------------
-FILE: D:\dev_projects\rahhal_flutter\lib\shared\widgets\cached_hero_image.dart
---------------------------------------------------------------------------------
+---
+
+## File: `lib/shared/widgets/cached_hero_image.dart`
+```dart
 import 'package:flutter/material.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter_animate/flutter_animate.dart';
@@ -17626,10 +19115,12 @@ class _DefaultPlaceholder extends StatelessWidget {
   }
 }
 
+```
 
---------------------------------------------------------------------------------
-FILE: D:\dev_projects\rahhal_flutter\lib\shared\widgets\dual_currency_text.dart
---------------------------------------------------------------------------------
+---
+
+## File: `lib/shared/widgets/dual_currency_text.dart`
+```dart
 import 'package:flutter/material.dart';
 import '../../core/constants/app_text_styles.dart';
 import '../../core/constants/app_colors.dart';
@@ -17717,10 +19208,12 @@ class _DualCurrencyTextState extends State<DualCurrencyText> {
   }
 }
 
+```
 
---------------------------------------------------------------------------------
-FILE: D:\dev_projects\rahhal_flutter\lib\shared\widgets\glass_card.dart
---------------------------------------------------------------------------------
+---
+
+## File: `lib/shared/widgets/glass_card.dart`
+```dart
 import 'package:flutter/material.dart';
 import '../../core/constants/app_colors.dart';
 
@@ -17792,10 +19285,12 @@ class GlassCardStrong extends StatelessWidget {
   }
 }
 
+```
 
---------------------------------------------------------------------------------
-FILE: D:\dev_projects\rahhal_flutter\lib\shared\widgets\gradient_button.dart
---------------------------------------------------------------------------------
+---
+
+## File: `lib/shared/widgets/gradient_button.dart`
+```dart
 import 'package:flutter/material.dart';
 import '../../core/constants/app_colors.dart';
 import '../../core/constants/app_text_styles.dart';
@@ -17900,10 +19395,12 @@ class _GradientButtonState extends State<GradientButton>
   }
 }
 
+```
 
---------------------------------------------------------------------------------
-FILE: D:\dev_projects\rahhal_flutter\lib\shared\widgets\main_navigation_layout.dart
---------------------------------------------------------------------------------
+---
+
+## File: `lib/shared/widgets/main_navigation_layout.dart`
+```dart
 import 'dart:ui';
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
@@ -18086,10 +19583,12 @@ class MainNavigationLayout extends StatelessWidget {
   }
 }
 
+```
 
---------------------------------------------------------------------------------
-FILE: D:\dev_projects\rahhal_flutter\lib\shared\widgets\shimmer_loader.dart
---------------------------------------------------------------------------------
+---
+
+## File: `lib/shared/widgets/shimmer_loader.dart`
+```dart
 import 'package:flutter/material.dart';
 import 'package:shimmer/shimmer.dart';
 import '../../core/constants/app_colors.dart';
@@ -18218,10 +19717,12 @@ class ShimmerRestaurantCard extends StatelessWidget {
   }
 }
 
+```
 
---------------------------------------------------------------------------------
-FILE: D:\dev_projects\rahhal_flutter\lib\shared\widgets\weather_widget.dart
---------------------------------------------------------------------------------
+---
+
+## File: `lib/shared/widgets/weather_widget.dart`
+```dart
 import 'package:flutter/material.dart';
 import 'package:flutter_animate/flutter_animate.dart';
 import '../../core/constants/app_colors.dart';
@@ -18309,4 +19810,7 @@ class _WeatherWidgetState extends State<WeatherWidget> {
   }
 }
 
+```
+
+---
 

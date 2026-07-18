@@ -349,10 +349,23 @@ class AppStrings {
   // Duration Formatter Helper
   String durationFormat(int hours, int minutes) {
     if (hours == 0) return _t('$minutes دقيقة', '$minutes mins');
+    
+    final String arHours = hours == 1
+        ? 'ساعة'
+        : hours == 2
+            ? 'ساعتان'
+            : hours <= 10
+                ? '$hours ساعات'
+                : '$hours ساعة';
+                
+    final String enHours = hours == 1 ? '1 hour' : '$hours hours';
+    final hourText = _t(arHours, enHours);
+
     if (minutes == 0) {
-      return hours == 1 ? _t('ساعة', '1 hour') : _t('$hours ساعات', '$hours hours');
+      return hourText;
     }
-    return _t('$hours ساعة و$minutes دقيقة', '$hours hr $minutes mins');
+    
+    return _t('$hourText و$minutes دقيقة', '$hourText $minutes mins');
   }
 
   // Budget Tier Name Helper

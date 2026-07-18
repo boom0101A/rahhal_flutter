@@ -69,30 +69,32 @@ class LocationService {
       String countryName = '';
       String? countryCode;
 
-      // 1. Try native geocoding plugin first
-      try {
-        List<Placemark> placemarks = await placemarkFromCoordinates(
-          position.latitude,
-          position.longitude,
-        );
+      // 1. Try native geocoding plugin first (Mobile only — geocoding is unsupported on Web)
+      if (!kIsWeb) {
+        try {
+          List<Placemark> placemarks = await placemarkFromCoordinates(
+            position.latitude,
+            position.longitude,
+          );
 
-        if (placemarks.isNotEmpty) {
-          final place = placemarks.first;
-          cityName = _firstNonEmpty([
-            place.locality,
-            place.subAdministrativeArea,
-            place.administrativeArea,
-            place.subLocality,
-            place.name,
-          ]);
-          countryName = (place.country ?? '').trim();
-          countryCode = place.isoCountryCode;
+          if (placemarks.isNotEmpty) {
+            final place = placemarks.first;
+            cityName = _firstNonEmpty([
+              place.locality,
+              place.subAdministrativeArea,
+              place.administrativeArea,
+              place.subLocality,
+              place.name,
+            ]);
+            countryName = (place.country ?? '').trim();
+            countryCode = place.isoCountryCode;
+          }
+        } catch (e) {
+          debugPrint('Native reverse geocoding error: $e');
         }
-      } catch (e) {
-        debugPrint('Native reverse geocoding error: $e');
       }
 
-      // 2. If city or country is empty, fallback to free BigDataCloud Reverse Geocoding API
+      // 2. For Web OR if geocoding gave no result, fallback to free BigDataCloud Reverse Geocoding API
       if (cityName.isEmpty || countryName.isEmpty) {
         final fallbackResult = await _fallbackApiGeocode(position.latitude, position.longitude);
         if (fallbackResult != null) {

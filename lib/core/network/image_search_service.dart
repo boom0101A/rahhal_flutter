@@ -1,29 +1,26 @@
 import 'package:dio/dio.dart';
 import 'package:flutter/foundation.dart';
-import '../config/app_config.dart';
 import 'dio_client.dart';
 
 class ImageSearchService {
-  // استخدم general بدلاً من anthropic — لا يحتاج token header ولا AI error handling
-  final Dio _dio = DioClient.general;
+  final Dio _dio;
+  ImageSearchService() : _dio = DioClient.anthropic; // Use the proxy Dio
 
   /// Searches for a high-quality landscape image matching [query].
-  /// Calls our Next.js backend proxy endpoint to keep the Unsplash access key secure.
+  /// Route THROUGH the proxy server — server holds the keys
   Future<String?> searchPhoto(String query) async {
     if (query.trim().isEmpty) return null;
     try {
       final response = await _dio.get(
-        '${AppConfig.proxyBaseUrl}/api/photos',
+        '/api/photos',
         queryParameters: {'query': query},
       );
-      
-      if (response.data != null && response.data['url'] != null) {
-        return response.data['url'] as String;
-      }
-      return null;
+      return response.data['url'] as String?;
     } catch (e) {
-      debugPrint('ImageSearchService: $e');
-      return null; // فشل الصورة لا يجب أن يوقف الرحلة
+      debugPrint('[ImageSearch] Failed: $e');
+      // Deterministic Picsum fallback (no key needed)
+      final seed = query.hashCode.abs() % 1000;
+      return 'https://picsum.photos/seed/$seed/800/600';
     }
   }
 }

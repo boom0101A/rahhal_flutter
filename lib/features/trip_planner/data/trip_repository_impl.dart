@@ -7,6 +7,7 @@ import '../../../../core/database/database_helper.dart';
 import '../../../../core/errors/failures.dart';
 import '../../../../core/errors/exceptions.dart' hide DatabaseException;
 import '../../../../core/network/ai_service.dart';
+import '../../../../core/config/app_config.dart';
 import '../domain/entities/trip_entity.dart';
 import '../domain/entities/stop_entity.dart';
 import '../domain/repositories/trip_repository.dart';
@@ -39,8 +40,16 @@ class TripRepositoryImpl implements TripRepository {
     required List<String> travelStyles,
     required int travelersCount,
     DateTime? startDate,
+    double? userLat,
+    double? userLng,
+    String? countryCode,
   }) async {
     try {
+      // Wake up server first if it may be sleeping (Render free tier)
+      if (AppConfig.kServerMayNeedWarmup) {
+        await _aiService.warmupServer();
+      }
+
       // Call AI service
       final response = await _aiService.generateTripPlan(
         destination: destination,
@@ -49,6 +58,9 @@ class TripRepositoryImpl implements TripRepository {
         travelStyles: travelStyles,
         travelersCount: travelersCount,
         startDate: startDate,
+        userLat: userLat,
+        userLng: userLng,
+        countryCode: countryCode,
       );
 
       // Fetch hero image URL from search service
@@ -112,7 +124,7 @@ class TripRepositoryImpl implements TripRepository {
       // 1. Pre-fetch images for all stops and restaurants in parallel OUTSIDE the DB transaction
       final Map<String, String?> stopImageMap = {};
       final Map<String, String?> restaurantImageMap = {};
-      final List<Future<void>> imageFetchTasks = [];
+      final List<Future<void> Function()> imageTasks = [];
 
       // Tasks for stops
       for (final dayPlan in planResponse.days) {
@@ -121,13 +133,14 @@ class TripRepositoryImpl implements TripRepository {
               ? stop.imageSearchQuery!
               : '${stop.nameEn.isNotEmpty ? stop.nameEn : stop.name} ${trip.destination}';
           final key = '${dayPlan.dayNumber}_${stop.orderIndex}_${stop.name}';
-          imageFetchTasks.add(
-            sl<ImageSearchService>().searchPhoto(query).then((url) {
+          imageTasks.add(() async {
+            try {
+              final url = await sl<ImageSearchService>().searchPhoto(query);
               stopImageMap[key] = url;
-            }).catchError((_) {
+            } catch (_) {
               stopImageMap[key] = null;
-            }),
-          );
+            }
+          });
         }
 
         final rec = dayPlan.recommendedRestaurant;
@@ -136,13 +149,14 @@ class TripRepositoryImpl implements TripRepository {
               ? rec.imageSearchQuery!
               : '${rec.name} restaurant ${trip.destination}';
           final key = rec.name.trim().toLowerCase();
-          imageFetchTasks.add(
-            sl<ImageSearchService>().searchPhoto(query).then((url) {
+          imageTasks.add(() async {
+            try {
+              final url = await sl<ImageSearchService>().searchPhoto(query);
               restaurantImageMap[key] = url;
-            }).catchError((_) {
+            } catch (_) {
               restaurantImageMap[key] = null;
-            }),
-          );
+            }
+          });
         }
       }
 
@@ -153,21 +167,35 @@ class TripRepositoryImpl implements TripRepository {
           final query = (r.imageSearchQuery != null && r.imageSearchQuery!.isNotEmpty)
               ? r.imageSearchQuery!
               : '${r.name} restaurant ${trip.destination}';
-          imageFetchTasks.add(
-            sl<ImageSearchService>().searchPhoto(query).then((url) {
+          imageTasks.add(() async {
+            try {
+              final url = await sl<ImageSearchService>().searchPhoto(query);
               restaurantImageMap[key] = url;
-            }).catchError((_) {
+            } catch (_) {
               restaurantImageMap[key] = null;
-            }),
-          );
+            }
+          });
         }
       }
 
-      // Wait for all image searches to complete (timeout 5s max)
-      try {
-        await Future.wait(imageFetchTasks).timeout(const Duration(seconds: 5));
-      } catch (e) {
-        debugPrint('⚠️ TripRepository: Photo pre-fetching timed out or partially failed: $e');
+      // Execute in batches of 5 concurrent requests to prevent network & API quota overflow
+      const batchSize = 5;
+      for (int i = 0; i < imageTasks.length; i += batchSize) {
+        final batch = imageTasks.skip(i).take(batchSize).map((task) => task()).toList();
+        try {
+          await Future.wait(
+            batch,
+            eagerError: false,
+          ).timeout(
+            const Duration(seconds: 4),
+            onTimeout: () {
+              debugPrint('⚠️ TripRepository: Batch image prefetch timeout after 4s — proceeding');
+              return [];
+            },
+          );
+        } catch (e) {
+          debugPrint('⚠️ TripRepository: Batch image prefetch error (non-critical): $e');
+        }
       }
 
       // 2. Perform fast DB operations inside transaction
@@ -223,6 +251,8 @@ class TripRepositoryImpl implements TripRepository {
               'booking_required': stop.bookingRequired ? 1 : 0,
               'booking_url': stop.bookingUrl,
               'image_url': stopImageUrl,
+              'coords_verified': stop.coordsVerified ? 1 : 0,
+              'place_id': stop.placeId,
             });
           }
 
@@ -313,7 +343,9 @@ class TripRepositoryImpl implements TripRepository {
         }
       });
 
-      unawaited(_syncService.syncTripToCloud(trip.id));
+      _syncService.syncTripToCloud(trip.id).catchError((e) {
+        debugPrint('[TripRepo] Cloud sync failed (non-critical): $e');
+      });
 
       return const Right(null);
     } on DatabaseException catch (e) {
@@ -395,7 +427,9 @@ class TripRepositoryImpl implements TripRepository {
         whereArgs: [tripId],
       );
       // Trigger cloud sync in the background
-      unawaited(_syncService.syncTripToCloud(tripId));
+      _syncService.syncTripToCloud(tripId).catchError((e) {
+        debugPrint('[TripRepo] Cloud sync failed (non-critical): $e');
+      });
       return const Right(null);
     } catch (e) {
       return Left(DatabaseFailure(e.toString()));
@@ -407,7 +441,9 @@ class TripRepositoryImpl implements TripRepository {
     try {
       await _dbHelper.delete('trips', where: 'id = ?', whereArgs: [tripId]);
       // Trigger cloud deletion in the background
-      unawaited(_syncService.deleteTripFromCloud(tripId));
+      _syncService.deleteTripFromCloud(tripId).catchError((e) {
+        debugPrint('[TripRepo] Cloud delete failed (non-critical): $e');
+      });
       return const Right(null);
     } catch (e) {
       return Left(DatabaseFailure(e.toString()));

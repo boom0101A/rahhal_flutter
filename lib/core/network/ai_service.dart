@@ -266,6 +266,29 @@ class AITravelService {
     return AIException(message: e.toString());
   }
 
+  // ─── Server Warmup ──────────────────────────────────────────────────────────
+
+  /// Sends a lightweight GET /health to wake up the server if it's sleeping.
+  /// Returns true if server is awake, false if it couldn't be reached.
+  /// This is called BEFORE the actual trip generation to avoid timeout on the
+  /// heavy AI endpoint.
+  Future<bool> warmupServer() async {
+    try {
+      final response = await _dio.get(
+        '/health',
+        options: Options(
+          // Give the server up to 90s to wake up from cold start
+          receiveTimeout: const Duration(seconds: 90),
+        ),
+      );
+      debugPrint('[AITravelService] Server warmup OK: ${response.statusCode}');
+      return true;
+    } catch (e) {
+      debugPrint('[AITravelService] Server warmup failed: $e');
+      return false;
+    }
+  }
+
   // ─── Public API ─────────────────────────────────────────────────────────────
 
   /// Generates a complete trip plan using Claude AI.
@@ -276,6 +299,9 @@ class AITravelService {
     required List<String> travelStyles,
     required int travelersCount,
     DateTime? startDate,
+    double? userLat,
+    double? userLng,
+    String? countryCode,
   }) async {
     try {
       final response = await _dio.post(
@@ -287,6 +313,9 @@ class AITravelService {
           'travelStyles': travelStyles,
           'travelersCount': travelersCount,
           'startDate': startDate?.toIso8601String().split('T').first,
+          'userLat': userLat,
+          'userLng': userLng,
+          'countryCode': countryCode,
         },
       );
 
@@ -296,13 +325,17 @@ class AITravelService {
       final classified = _classifyError(e);
       debugPrint('[AITravelService] generateTripPlan failed: $classified');
 
-      // ─── Seamless Fallback: Ensure 100% Uptime for User ─────────────────────
-      // If server is unreachable or asleep, generate a smart city-aware plan
-      try {
-        debugPrint('[AITravelService] Server unreachable → activating smart city fallback');
-        return _generateMockTripResponse(
-            destination, durationDays, budgetTier, travelersCount);
-      } catch (_) {
+      if (AppConfig.kUseMockFallback) {
+        // ─── Seamless Fallback: Ensure 100% Uptime for User ─────────────────────
+        try {
+          debugPrint('[AITravelService] Server unreachable → activating smart city fallback');
+          return _generateMockTripResponse(
+              destination, durationDays, budgetTier, travelersCount);
+        } catch (_) {
+          throw classified;
+        }
+      } else {
+        // We want to see the REAL error in development instead of a silent yellow banner!
         throw classified;
       }
     }

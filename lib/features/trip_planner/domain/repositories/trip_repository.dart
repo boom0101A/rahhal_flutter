@@ -13,6 +13,9 @@ abstract class TripRepository {
     required List<String> travelStyles,
     required int travelersCount,
     DateTime? startDate,
+    double? userLat,
+    double? userLng,
+    String? countryCode,
   });
 
   /// Get all trips for the current user.

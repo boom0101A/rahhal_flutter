@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
+import 'package:flutter/foundation.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:flutter_map/flutter_map.dart';
 import 'package:latlong2/latlong.dart' hide Path;
@@ -57,14 +58,12 @@ class _MapView extends StatefulWidget {
 
 class _MapViewState extends State<_MapView> with WidgetsBindingObserver {
   late final MapController _mapController;
-  final LocationService _locationService = sl<LocationService>();
 
-  double? _userLat;
-  double? _userLng;
   LatLng? _userLocation;
-  bool _isLocatingUser = false;
   bool _fetchingLocation = false;
-  StreamSubscription<ServiceStatus>? _serviceStatusSub;
+  bool _isLocatingUser = false;
+  bool _mapReady = false;
+
   StreamSubscription<Position>? _positionSub;
 
   @override
@@ -73,46 +72,46 @@ class _MapViewState extends State<_MapView> with WidgetsBindingObserver {
     _mapController = MapController();
     WidgetsBinding.instance.addObserver(this);
 
-    // Initial check from Cubit state if available
+    // Use location from Cubit state immediately if available
     if (widget.state.userLocation != null) {
       _userLocation = widget.state.userLocation;
-      _userLat = widget.state.userLocation!.latitude;
-      _userLng = widget.state.userLocation!.longitude;
     }
 
-    _fetchUserLocation();
-    _listenToLocationUpdates();
+    // Start location fetch after first frame
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _fetchUserLocation();
+      _startLocationStream();
+    });
   }
 
   @override
-  void didChangeAppLifecycleState(AppLifecycleState lifecycleState) {
-    if (lifecycleState == AppLifecycleState.resumed) {
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.resumed) {
       _fetchUserLocation();
     }
   }
 
-  void _listenToLocationUpdates() {
-    _serviceStatusSub = Geolocator.getServiceStatusStream().listen((status) {
-      if (status == ServiceStatus.enabled) {
-        _fetchUserLocation();
-      }
-    });
+  void _startLocationStream() {
+    if (kIsWeb) return;
 
     Geolocator.checkPermission().then((permission) {
-      if (permission == LocationPermission.always || permission == LocationPermission.whileInUse) {
+      if (permission == LocationPermission.always ||
+          permission == LocationPermission.whileInUse) {
         _positionSub = Geolocator.getPositionStream(
           locationSettings: const LocationSettings(
-            accuracy: LocationAccuracy.high,
-            distanceFilter: 10,
+            accuracy: LocationAccuracy.medium,
+            distanceFilter: 20,
           ),
         ).listen((pos) {
           if (mounted) {
-            setState(() {
-              _userLat = pos.latitude;
-              _userLng = pos.longitude;
-              _userLocation = LatLng(pos.latitude, pos.longitude);
-            });
+            final newLocation = LatLng(pos.latitude, pos.longitude);
+            setState(() => _userLocation = newLocation);
+            if (_mapReady && _userLocation == null) {
+              _mapController.move(newLocation, 14.0);
+            }
           }
+        }, onError: (e) {
+          debugPrint('[MapTab] Position stream error: $e');
         });
       }
     });
@@ -121,14 +120,61 @@ class _MapViewState extends State<_MapView> with WidgetsBindingObserver {
   Future<void> _fetchUserLocation() async {
     if (_fetchingLocation) return;
     _fetchingLocation = true;
+
     try {
-      final loc = await _locationService.getCurrentLocation();
-      if (loc != null && mounted) {
-        setState(() {
-          _userLat = loc.latitude;
-          _userLng = loc.longitude;
-          _userLocation = LatLng(loc.latitude, loc.longitude);
-        });
+      LatLng? position;
+
+      if (kIsWeb) {
+        final permission = await Geolocator.checkPermission();
+        if (permission == LocationPermission.denied) {
+          final granted = await Geolocator.requestPermission();
+          if (granted == LocationPermission.denied ||
+              granted == LocationPermission.deniedForever) {
+            _fetchingLocation = false;
+            return;
+          }
+        }
+        if (permission == LocationPermission.deniedForever) {
+          _fetchingLocation = false;
+          return;
+        }
+        try {
+          final pos = await Geolocator.getCurrentPosition(
+            locationSettings: const LocationSettings(
+              accuracy: LocationAccuracy.medium,
+              timeLimit: Duration(seconds: 10),
+            ),
+          );
+          position = LatLng(pos.latitude, pos.longitude);
+        } catch (e) {
+          debugPrint('[MapTab] Web GPS error: $e');
+        }
+      } else {
+        try {
+          final loc = await sl<LocationService>().getCurrentLocation();
+          if (loc != null) {
+            position = LatLng(loc.latitude, loc.longitude);
+          }
+        } catch (e) {
+          debugPrint('[MapTab] Mobile LocationService error: $e');
+          try {
+            final pos = await Geolocator.getCurrentPosition(
+              locationSettings: const LocationSettings(
+                accuracy: LocationAccuracy.medium,
+                timeLimit: Duration(seconds: 8),
+              ),
+            );
+            position = LatLng(pos.latitude, pos.longitude);
+          } catch (_) {}
+        }
+      }
+
+      if (position != null && mounted) {
+        setState(() => _userLocation = position);
+
+        if (_mapReady && widget.state.stops.isEmpty) {
+          _mapController.move(position!, 14.0);
+        }
       }
     } finally {
       _fetchingLocation = false;
@@ -166,30 +212,17 @@ class _MapViewState extends State<_MapView> with WidgetsBindingObserver {
       );
 
       if (mounted) {
-        _mapController.move(
-          LatLng(position.latitude, position.longitude),
-          15.0,
-        );
+        final newLoc = LatLng(position.latitude, position.longitude);
         setState(() {
-          _userLat = position.latitude;
-          _userLng = position.longitude;
-          _userLocation = LatLng(position.latitude, position.longitude);
+          _userLocation = newLoc;
           _isLocatingUser = false;
         });
+        _mapController.move(newLoc, 15.0);
       }
     } catch (e) {
-      debugPrint('Map location error: $e');
+      debugPrint('[MapTab] _goToMyLocation error: $e');
       if (mounted) setState(() => _isLocatingUser = false);
     }
-  }
-
-  @override
-  void dispose() {
-    WidgetsBinding.instance.removeObserver(this);
-    _serviceStatusSub?.cancel();
-    _positionSub?.cancel();
-    _mapController.dispose();
-    super.dispose();
   }
 
   LatLng _center() {
@@ -198,13 +231,7 @@ class _MapViewState extends State<_MapView> with WidgetsBindingObserver {
         : widget.state.stops;
 
     if (stops.isEmpty) {
-      if (_userLocation != null) {
-        return _userLocation!;
-      }
-      if (_userLat != null && _userLng != null) {
-        return LatLng(_userLat!, _userLng!);
-      }
-      return const LatLng(25.0, 45.0);
+      return _userLocation ?? const LatLng(25.0, 45.0);
     }
 
     final avgLat =
@@ -221,38 +248,36 @@ class _MapViewState extends State<_MapView> with WidgetsBindingObserver {
 
     return Stack(
       children: [
-        // Map
         FlutterMap(
           mapController: _mapController,
           options: MapOptions(
             initialCenter: _center(),
             initialZoom: 13,
+            onMapReady: () {
+              setState(() => _mapReady = true);
+              if (_userLocation != null && widget.state.stops.isEmpty) {
+                _mapController.move(_userLocation!, 14.0);
+              }
+            },
             onTap: (_, __) => context.read<MapCubit>().clearSelection(),
           ),
           children: [
-            // OSM tiles
-            TileLayer(
-              urlTemplate: 'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
-              userAgentPackageName: 'com.rahhalai.rahhal_flutter',
-              maxZoom: 19,
-            ),
+            _buildTileLayer(),
 
-            // User Location Pulse Circle Layer
-            if (_userLocation != null || (_userLat != null && _userLng != null))
+            if (_userLocation != null)
               CircleLayer(
                 circles: [
                   CircleMarker(
-                    point: _userLocation ?? LatLng(_userLat!, _userLng!),
+                    point: _userLocation!,
                     radius: 35,
                     useRadiusInMeter: false,
                     color: const Color(0x222196F3),
-                    borderColor: const Color(0x662196F3),
-                    borderStrokeWidth: 1.5,
+                    borderColor: const Color(0x882196F3),
+                    borderStrokeWidth: 2,
                   ),
                 ],
               ),
 
-            // Route polyline
             if (stops.length > 1)
               PolylineLayer(
                 polylines: [
@@ -266,19 +291,15 @@ class _MapViewState extends State<_MapView> with WidgetsBindingObserver {
                 ],
               ),
 
-            // Stop Markers & User Location Marker
             MarkerLayer(
               markers: [
-                // User Location Blue Dot Marker
-                if (_userLocation != null || (_userLat != null && _userLng != null))
+                if (_userLocation != null)
                   Marker(
-                    point: _userLocation ?? LatLng(_userLat!, _userLng!),
-                    width: 36,
-                    height: 36,
+                    point: _userLocation!,
+                    width: 40,
+                    height: 40,
                     child: _buildUserLocationMarker(),
                   ),
-
-                // Trip Stop Markers
                 ...stops.asMap().entries.map((entry) {
                   final i = entry.key;
                   final stop = entry.value;
@@ -288,7 +309,8 @@ class _MapViewState extends State<_MapView> with WidgetsBindingObserver {
                     width: isSelected ? 48 : 36,
                     height: isSelected ? 64 : 52,
                     child: GestureDetector(
-                      onTap: () => context.read<MapCubit>().selectStop(stop.id),
+                      onTap: () =>
+                          context.read<MapCubit>().selectStop(stop.id),
                       child: _buildMarker(i + 1, stop, isSelected),
                     ),
                   );
@@ -298,7 +320,6 @@ class _MapViewState extends State<_MapView> with WidgetsBindingObserver {
           ],
         ),
 
-        // Selected stop bottom sheet
         if (selectedStop != null)
           Positioned(
             bottom: 16,
@@ -310,7 +331,6 @@ class _MapViewState extends State<_MapView> with WidgetsBindingObserver {
             ).animate().slideY(begin: 1, end: 0, duration: 300.ms),
           ),
 
-        // Floating Action Button: My Location Button
         Positioned(
           bottom: selectedStop != null ? 140 : 20,
           left: 16,
@@ -341,7 +361,6 @@ class _MapViewState extends State<_MapView> with WidgetsBindingObserver {
           ),
         ),
 
-        // Stops count badge
         Positioned(
           top: 16,
           right: 16,
@@ -355,6 +374,31 @@ class _MapViewState extends State<_MapView> with WidgetsBindingObserver {
         ),
       ],
     );
+  }
+
+  Widget _buildTileLayer() {
+    if (kIsWeb) {
+      return TileLayer(
+        urlTemplate:
+            'https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png',
+        subdomains: const ['a', 'b', 'c', 'd'],
+        userAgentPackageName: 'com.rahhalai.rahhal_flutter',
+        maxZoom: 19,
+      );
+    }
+    return TileLayer(
+      urlTemplate: 'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
+      userAgentPackageName: 'com.rahhalai.rahhal_flutter',
+      maxZoom: 19,
+    );
+  }
+
+  @override
+  void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
+    _positionSub?.cancel();
+    _mapController.dispose();
+    super.dispose();
   }
 
   Widget _buildUserLocationMarker() {

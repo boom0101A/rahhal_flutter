@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_animate/flutter_animate.dart';
 import 'package:go_router/go_router.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'package:firebase_core/firebase_core.dart';
 import '../../../../core/constants/app_colors.dart';
 import '../../../../core/constants/app_text_styles.dart';
 import '../../../../core/di/injection.dart';
@@ -27,11 +28,35 @@ class _SplashScreenState extends State<SplashScreen> {
 
     final prefs = await SharedPreferences.getInstance();
     if (!mounted) return;
+    
+    // Check if Firebase was initialized successfully
+    bool isFirebaseAvailable = true;
+    try {
+      isFirebaseAvailable = Firebase.apps.isNotEmpty;
+    } catch (_) {
+      isFirebaseAvailable = false;
+    }
+
+    if (!isFirebaseAvailable && mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text(
+            'تعذّر الاتصال بالخدمات السحابية. التطبيق يعمل في وضع محلي.',
+            style: TextStyle(color: Colors.white),
+          ),
+          backgroundColor: Colors.orange,
+          duration: Duration(seconds: 4),
+        ),
+      );
+    }
+
     final hasSeenOnboarding = prefs.getBool('has_seen_onboarding') ?? false;
     final authRepo = sl<AuthRepository>();
 
     if (!hasSeenOnboarding) {
       context.go('/onboarding');
+    } else if (!isFirebaseAvailable) {
+      context.go('/home');
     } else if (authRepo.isAuthenticated) {
       context.go('/home');
     } else {
