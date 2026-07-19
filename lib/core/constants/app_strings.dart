@@ -114,6 +114,26 @@ class AppStrings {
   String get generatingStep3 => _t('إنشاء الجدول اليومي', 'Creating daily itinerary');
   String get generatingStep4 => _t('اختيار المطاعم والأنشطة', 'Selecting restaurants and activities');
   String get generatingStep5 => _t('إضافة نصائح الذكاء الاصطناعي', 'Adding smart AI tips');
+  List<String> get travelFacts => _t(
+        [
+          'أكثر من 90% من قرارات السفر تتأثر بالصور — لهذا نبحث عن صور حقيقية لكل مكان في رحلتك.',
+          'رحّال AI يتحقق من إحداثيات كل مكان عبر خرائط Google لضمان دقتها.',
+          'أفضل وقت لحجز الفنادق عادة قبل الرحلة بـ 3-4 أسابيع.',
+          'المشي أفضل وسيلة لاكتشاف روح أي مدينة جديدة — نرتب لك محطات قريبة من بعضها.',
+          'خذ صورة لجواز سفرك وتذاكرك واحفظها في قسم "الوثائق" داخل التطبيق.',
+          'تناول الطعام كما يفعل السكان المحليون غالبًا أوفر وألذ من المطاعم السياحية.',
+          'نحاول دائمًا اقتراح مطعم واحد على الأقل قريب من كل نشاط رئيسي في يومك.',
+        ],
+        [
+          'Over 90% of travel decisions are influenced by photos — that\'s why we search for real photos of every place in your trip.',
+          'Rahhal AI verifies every location\'s coordinates against Google Maps for accuracy.',
+          'The best time to book hotels is usually 3-4 weeks before your trip.',
+          'Walking is the best way to discover a new city\'s soul — we place stops close to each other.',
+          'Snap a photo of your passport and tickets and save them in the "Documents" section.',
+          'Eating where locals eat is often cheaper and tastier than tourist restaurants.',
+          'We always try to suggest at least one nearby restaurant for each major activity in your day.',
+        ],
+      );
   String get errorTitle => _t('خطأ', 'Error');
 
   // Dashboard Tabs

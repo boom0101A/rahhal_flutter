@@ -42,6 +42,9 @@ class _GeneratingScreenBodyState extends State<_GeneratingScreenBody>
   Timer? _slowWarningTimer;
   TripPlannerState? _pendingSuccessState; // hold success state until animation done
 
+  int _factIndex = 0;
+  Timer? _factTimer;
+
   List<String> _steps(BuildContext context) {
     final strings = AppStrings.of(context);
     return [
@@ -62,8 +65,18 @@ class _GeneratingScreenBodyState extends State<_GeneratingScreenBody>
     )..repeat();
     _animateSteps();
     _startSlowTimer();
+    _startFactRotation();
     // Trigger generation after the frame is built so BlocProvider is ready
     WidgetsBinding.instance.addPostFrameCallback((_) => _startGeneration());
+  }
+
+  void _startFactRotation() {
+    _factTimer?.cancel();
+    _factTimer = Timer.periodic(const Duration(seconds: 5), (_) {
+      if (!mounted) return;
+      final facts = AppStrings.of(context).travelFacts;
+      setState(() => _factIndex = (_factIndex + 1) % facts.length);
+    });
   }
 
   void _startSlowTimer() {
@@ -78,6 +91,7 @@ class _GeneratingScreenBodyState extends State<_GeneratingScreenBody>
   @override
   void dispose() {
     _slowWarningTimer?.cancel();
+    _factTimer?.cancel();
     _rotationCtrl.dispose();
     super.dispose();
   }
@@ -375,6 +389,12 @@ class _GeneratingScreenBodyState extends State<_GeneratingScreenBody>
                           // Progress dots
                           _buildProgressDots(),
 
+                          const SizedBox(height: 20),
+
+                          // Rotating "did you know" travel facts — gives the
+                          // wait a purpose instead of just spinning.
+                          _buildTravelFact(context),
+
                           const SizedBox(height: 12),
 
                           // ✅ Cancel button INSIDE scroll — not Positioned
@@ -539,6 +559,45 @@ class _GeneratingScreenBodyState extends State<_GeneratingScreenBody>
             )
             .then()
             .scaleXY(begin: 1.0, end: 0.5, duration: 600.ms),
+      ),
+    );
+  }
+
+  Widget _buildTravelFact(BuildContext context) {
+    final facts = AppStrings.of(context).travelFacts;
+    final fact = facts[_factIndex % facts.length];
+
+    return Container(
+      constraints: const BoxConstraints(maxWidth: 320),
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+      decoration: BoxDecoration(
+        color: AppColors.adaptiveGlass(context),
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(color: AppColors.adaptiveGlassBorder(context)),
+      ),
+      child: AnimatedSwitcher(
+        duration: const Duration(milliseconds: 400),
+        transitionBuilder: (child, animation) => FadeTransition(
+          opacity: animation,
+          child: SizeTransition(sizeFactor: animation, child: child),
+        ),
+        child: Row(
+          key: ValueKey(_factIndex),
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const Text('💡', style: TextStyle(fontSize: 16)),
+            const SizedBox(width: 10),
+            Expanded(
+              child: Text(
+                fact,
+                style: AppTextStyles.bodySmall.copyWith(
+                  color: AppColors.adaptiveTextSecondary(context),
+                ),
+                textAlign: TextAlign.start,
+              ),
+            ),
+          ],
+        ),
       ),
     );
   }
