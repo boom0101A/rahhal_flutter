@@ -600,8 +600,13 @@ ${countryCode ? `- Country: ${countryCode}` : ''}`;
   const messages = [{ role: 'user', content: userPrompt }];
 
   try {
-    const estimatedTokens = Math.max(6000, durationDays * 1400);
-    const MAX_TOKENS = Math.min(estimatedTokens, 12000);
+    // Arabic output consumes noticeably more tokens per character than
+    // English (BPE tokenizers aren't Arabic-optimized), and richer trips
+    // (more days, more travel styles, luxury tier with extra restaurants)
+    // need proportionally more. The models in use support up to 65536
+    // output tokens, so this stays well within budget even at the cap.
+    const estimatedTokens = Math.max(8000, durationDays * 3000);
+    const MAX_TOKENS = Math.min(estimatedTokens, 40000);
 
     async function requestAndParse(extraInstruction) {
       const msgs = extraInstruction
