@@ -268,12 +268,15 @@ async function callAI(systemPrompt, messages, maxTokens = 4000) {
 
 // ─── Google Places API: verify a place and return real coordinates ────────────
 //
-// Strategy:
+// Strategy (uses Places API (New) — the legacy Places API text search /
+// details endpoints return REQUEST_DENIED for projects that only enabled
+// the new API):
 //   1. Check in-memory cache (24hr TTL) to avoid redundant API calls.
-//   2. Call Places Text Search API with "name_en + city".
-//   3. If found, call Place Details to get rating, place_id, and formatted address.
-//   4. Return verified data; caller merges it into the Claude response.
-//   5. If no GOOGLE_PLACES_API_KEY is set, skip gracefully (log a warning).
+//   2. Call places:searchText with "name_en + city", requesting rating/phone/
+//      website fields directly via the field mask (single call, no separate
+//      Details request needed).
+//   3. Return verified data; caller merges it into the AI response.
+//   4. If no GOOGLE_PLACES_API_KEY is set, skip gracefully (log a warning).
 async function verifyPlaceWithGoogle(nameEn, cityEn, userLat, userLng) {
   const placesKey = process.env.GOOGLE_PLACES_API_KEY;
   if (!placesKey || placesKey === 'your_google_places_api_key_here') {
@@ -293,27 +296,35 @@ async function verifyPlaceWithGoogle(nameEn, cityEn, userLat, userLng) {
   }
 
   try {
-    // Step 1: Text Search
-    const params = {
-      query: `${nameEn} ${cityEn}`,
-      key: placesKey,
-      language: 'en',
+    const body = {
+      textQuery: `${nameEn} ${cityEn}`,
+      languageCode: 'en',
     };
 
     if (userLat && userLng) {
-      params.location = `${userLat},${userLng}`;
-      params.radius = 50000; // 50km radius bias
+      body.locationBias = {
+        circle: {
+          center: { latitude: parseFloat(userLat), longitude: parseFloat(userLng) },
+          radius: 50000, // 50km radius bias
+        },
+      };
     }
 
-    const searchRes = await axios.get(
-      'https://maps.googleapis.com/maps/api/place/textsearch/json',
+    const searchRes = await axios.post(
+      'https://places.googleapis.com/v1/places:searchText',
+      body,
       {
-        params,
+        headers: {
+          'Content-Type': 'application/json',
+          'X-Goog-Api-Key': placesKey,
+          'X-Goog-FieldMask':
+            'places.id,places.displayName,places.location,places.formattedAddress,places.rating,places.nationalPhoneNumber,places.websiteUri',
+        },
         timeout: 6000,
       }
     );
 
-    const results = searchRes.data.results;
+    const results = searchRes.data.places;
     if (!results || results.length === 0) {
       placesCache.set(cacheKey, { data: null, timestamp: now });
       console.warn(`[PLACES] Not found: "${nameEn}" in ${cityEn}`);
@@ -321,46 +332,22 @@ async function verifyPlaceWithGoogle(nameEn, cityEn, userLat, userLng) {
     }
 
     const top = results[0];
-    const placeId = top.place_id;
-    const lat = top.geometry.location.lat;
-    const lng = top.geometry.location.lng;
-    const formattedAddress = top.formatted_address || top.vicinity || '';
-    const textSearchRating = top.rating || null;
-
-    // Step 2: Place Details for richer data
-    let rating = textSearchRating;
-    let phoneNumber = null;
-    let website = null;
-    try {
-      const detailsRes = await axios.get(
-        'https://maps.googleapis.com/maps/api/place/details/json',
-        {
-          params: {
-            place_id: placeId,
-            fields: 'rating,user_ratings_total,formatted_phone_number,website',
-            key: placesKey,
-            language: 'en',
-          },
-          timeout: 5000,
-        }
-      );
-      const d = detailsRes.data.result;
-      if (d) {
-        rating = d.rating || textSearchRating;
-        phoneNumber = d.formatted_phone_number || null;
-        website = d.website || null;
-      }
-    } catch (detailsErr) {
-      console.warn(`[PLACES] Details failed for place_id ${placeId}:`, detailsErr.message);
-    }
-
-    const verified = { lat, lng, address: formattedAddress, placeId, rating, phoneNumber, website };
+    const verified = {
+      lat: top.location.latitude,
+      lng: top.location.longitude,
+      address: top.formattedAddress || '',
+      placeId: top.id,
+      rating: top.rating || null,
+      phoneNumber: top.nationalPhoneNumber || null,
+      website: top.websiteUri || null,
+    };
     placesCache.set(cacheKey, { data: verified, timestamp: now });
-    console.log(`[PLACES] Verified: "${nameEn}" → lat=${lat}, lng=${lng}, placeId=${placeId}`);
+    console.log(`[PLACES] Verified: "${nameEn}" → lat=${verified.lat}, lng=${verified.lng}, placeId=${verified.placeId}`);
     return verified;
 
   } catch (err) {
-    console.error(`[PLACES] Text Search error for "${nameEn}":`, err.message);
+    const apiError = err.response?.data?.error;
+    console.error(`[PLACES] Text Search error for "${nameEn}":`, apiError?.message || err.message);
     placesCache.set(cacheKey, { data: null, timestamp: now });
     return null;
   }
