@@ -2,21 +2,15 @@ rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
     
-    // المستخدمون يقرؤون ويكتبون بياناتهم فقط
+    // المستخدمون يقرؤون ويكتبون بياناتهم فقط (يشمل كل ما تحتهم: trips, وغيرها)
     match /users/{userId} {
       allow read, write: if request.auth != null && request.auth.uid == userId;
+
+      match /{subCollection=**} {
+        allow read, write: if request.auth != null && request.auth.uid == userId;
+      }
     }
-    
-    // الرحلات: المالك فقط
-    match /trips/{tripId} {
-      allow read, write: if request.auth != null && 
-        resource.data.userId == request.auth.uid;
-      allow create: if request.auth != null;
-    }
-    
-    // باقي المجموعات للمستخدمين المسجّلين
-    match /{document=**} {
-      allow read, write: if request.auth != null;
-    }
+
+    // أي مسار آخر غير متوقّع: مرفوض افتراضياً (لا يوجد catch-all مفتوح)
   }
 }

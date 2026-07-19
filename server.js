@@ -154,7 +154,7 @@ app.get('/api/status', (req, res) => {
 // Helper function to call Google Gemini API using official SDK & REST API fallback
 // Supports both legacy AIzaSy... and new AQ.... key formats
 async function callGemini(systemPrompt, messages, maxTokens = 4000, apiKey) {
-  const modelsToTry = ['gemini-1.5-flash', 'gemini-2.0-flash', 'gemini-1.5-pro'];
+  const modelsToTry = ['gemini-flash-latest', 'gemini-flash-lite-latest'];
   let lastError = null;
 
   // ─── Attempt 1: Official Google Generative AI SDK ─────────────────────────
@@ -195,7 +195,7 @@ async function callGemini(systemPrompt, messages, maxTokens = 4000, apiKey) {
     const userMessage = messages[messages.length - 1]?.content || '';
     const fullPrompt = systemPrompt ? `${systemPrompt}\n\n${userMessage}` : userMessage;
 
-    const restUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${apiKey}`;
+    const restUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-flash-latest:generateContent?key=${apiKey}`;
     const response = await axios.post(
       restUrl,
       {
@@ -248,7 +248,7 @@ async function callAI(systemPrompt, messages, maxTokens = 4000) {
       return await callGemini(systemPrompt, messages, maxTokens, geminiKey);
     } catch (e) {
       console.warn('[AI Engine] GEMINI_API_KEY failed:', e.message);
-      throw e;
+      // Fall through to GOOGLE_PLACES_API_KEY fallback below instead of failing immediately
     }
   }
 
@@ -696,10 +696,10 @@ ${countryCode ? `- Country: ${countryCode}` : ''}`;
   } catch (error) {
     console.error('[API ERROR] generate-trip:', error.message);
     if (error.message === 'missing-api-key') {
-      return res.status(401).json({ error: 'Anthropic API key not configured.' });
+      return res.status(401).json({ error: 'GEMINI_API_KEY not configured.' });
     }
     if (error.message === 'invalid-api-key') {
-      return res.status(403).json({ error: 'Invalid Anthropic API key.' });
+      return res.status(403).json({ error: 'Invalid GEMINI_API_KEY.' });
     }
     if (error.message === 'rate-limit') {
       return res.status(429).json({ error: 'Rate limit exceeded. Try again in a moment.' });
@@ -935,11 +935,11 @@ RULES:
 
 The traveler can ask you ANYTHING about their trip — answer helpfully and specifically.`;
 
-  // Map client history format to Anthropic format
+  // Map client history format to Gemini format
   const mappedMessages = [];
   if (conversationHistory && Array.isArray(conversationHistory)) {
     conversationHistory.forEach((msg) => {
-      // Anthropic role must be either 'user' or 'assistant'
+      // role must be either 'user' or 'assistant'
       const role = (msg.role === 'model' || msg.role === 'ai' || msg.role === 'bot') ? 'assistant' : 'user';
       mappedMessages.push({
         role: role,
@@ -960,10 +960,10 @@ The traveler can ask you ANYTHING about their trip — answer helpfully and spec
   } catch (error) {
     console.error('[API ERROR] chat failed:', error.message);
     if (error.message === 'missing-api-key') {
-      return res.status(401).json({ error: 'Anthropic API key is not configured in backend .env file.' });
+      return res.status(401).json({ error: 'GEMINI_API_KEY is not configured in backend .env file.' });
     }
     if (error.message === 'invalid-api-key') {
-      return res.status(403).json({ error: 'The provided Anthropic API key is invalid or unauthorized.' });
+      return res.status(403).json({ error: 'The provided GEMINI_API_KEY is invalid or unauthorized.' });
     }
     if (error.message === 'rate-limit') {
       return res.status(429).json({ error: 'API rate limit exceeded. Please try again in a few moments.' });

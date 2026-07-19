@@ -90,8 +90,14 @@ class DatabaseHelper {
               await txn.execute(stmt);
               debugPrint('[DB] Applied migration v$v: $stmt');
             } catch (e) {
-              debugPrint('[DB] Migration v$v statement skipped (may already exist): $e');
-              // Continue — don't crash on "column already exists" errors
+              final msg = e.toString().toLowerCase();
+              final isBenign = msg.contains('duplicate column') ||
+                  msg.contains('already exists');
+              if (!isBenign) {
+                debugPrint('[DB] Migration v$v FAILED: $stmt — $e');
+                rethrow;
+              }
+              debugPrint('[DB] Migration v$v statement skipped (already applied): $e');
             }
           }
         }
