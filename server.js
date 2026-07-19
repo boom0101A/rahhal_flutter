@@ -626,9 +626,15 @@ ${countryCode ? `- Country: ${countryCode}` : ''}`;
       try {
         parsed = JSON.parse(cleanJson);
       } catch (parseErr) {
-        const repaired = cleanJson.replace(/,\s*}/g, '}').replace(/,\s*]/g, ']');
-        parsed = JSON.parse(repaired);
-        console.log('[TRIP] JSON repaired successfully');
+        try {
+          const repaired = cleanJson.replace(/,\s*}/g, '}').replace(/,\s*]/g, ']');
+          parsed = JSON.parse(repaired);
+          console.log('[TRIP] JSON repaired successfully');
+        } catch (repairErr) {
+          // Both the raw parse and the trailing-comma repair failed —
+          // normalize to the same error the caller already knows how to handle.
+          throw new Error('malformed-response');
+        }
       }
 
       if (!Array.isArray(parsed.days) || parsed.days.length !== Number(durationDays)) {
@@ -638,13 +644,24 @@ ${countryCode ? `- Country: ${countryCode}` : ''}`;
     }
 
     let parsedData;
-    try {
-      parsedData = await requestAndParse();
-    } catch (firstError) {
-      console.warn('[TRIP] first attempt failed, retrying once:', firstError.message);
-      parsedData = await requestAndParse(
-        `IMPORTANT REMINDER: your previous reply was truncated or incomplete. Return ALL ${durationDays} days as a single complete, valid, non-truncated JSON object. Keep descriptions concise if needed to fit within the token limit, but NEVER omit a day.`
-      );
+    let lastError;
+    const maxAttempts = 3; // 1 initial + 2 retries
+    for (let attempt = 0; attempt < maxAttempts; attempt++) {
+      try {
+        const extraInstruction = attempt > 0
+          ? `IMPORTANT REMINDER: your previous reply was truncated, incomplete, or had invalid JSON syntax. Return ALL ${durationDays} days as a single complete, valid, non-truncated JSON object with correct JSON syntax (no trailing commas, properly escaped quotes inside strings). Keep descriptions concise if needed to fit within the token limit, but NEVER omit a day.`
+          : undefined;
+        parsedData = await requestAndParse(extraInstruction);
+        lastError = null;
+        break;
+      } catch (err) {
+        lastError = err;
+        console.warn(`[TRIP] attempt ${attempt + 1}/${maxAttempts} failed:`, err.message);
+      }
+    }
+    if (lastError) {
+      // Whatever the underlying cause, surface it as the friendly, already-handled error.
+      throw new Error('malformed-response');
     }
 
     // Deduplicate
