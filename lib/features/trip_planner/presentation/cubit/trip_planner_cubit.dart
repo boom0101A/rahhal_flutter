@@ -37,6 +37,7 @@ class TripPlannerCubit extends Cubit<TripPlannerState> {
       countryCode: countryCode,
     );
 
+    if (isClosed) return;
     result.fold(
       (failure) => emit(TripPlannerError(failure.message)),
       (trip) => emit(TripPlannerSuccess(trip)),

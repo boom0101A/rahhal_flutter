@@ -234,8 +234,10 @@ class _GeneratingScreenBodyState extends State<_GeneratingScreenBody>
                 physics: const BouncingScrollPhysics(),
                 slivers: [
                   SliverFillRemaining(
-                    // ✅ hasScrollBody: false makes it fill screen but also scroll if needed
-                    hasScrollBody: false,
+                    // hasScrollBody: true lets the column scroll instead of
+                    // overflowing when content is taller than the viewport
+                    // (e.g. narrow/short windows, or the slow-warning banner expanding).
+                    hasScrollBody: true,
                     child: Padding(
                       padding: const EdgeInsets.fromLTRB(20, 20, 20, 80),
                       child: Column(
