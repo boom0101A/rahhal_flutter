@@ -549,5 +549,7 @@ class AppStrings {
   String get favoritesRestaurants => _t('المطاعم المميزة', 'Favorite Restaurants');
   String get favoriteAdded => _t('تمت الإضافة إلى المفضلة', 'Added to favorites');
   String get favoriteRemoved => _t('تمت الإزالة من المفضلة', 'Removed from favorites');
+  String get addToFavorites => _t('إضافة إلى المفضلة', 'Add to favorites');
+  String get removeFromFavorites => _t('إزالة من المفضلة', 'Remove from favorites');
   String get myTripsTab => _t('رحلاتي', 'My Trips');
 }

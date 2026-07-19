@@ -15,6 +15,7 @@ import '../../../trip_planner/domain/entities/stop_entity.dart';
 import '../../../favorites/presentation/cubit/favorites_cubit.dart';
 import '../../domain/entities/day_entity.dart';
 import '../../../../../core/constants/app_strings.dart';
+import '../../../../../core/utils/haptics.dart';
 import '../../../../../shared/widgets/app_error_widget.dart';
 import '../../../../../core/services/map_launcher_service.dart';
 
@@ -363,9 +364,13 @@ class _StopTimelineItem extends StatelessWidget {
                                       color: isFav ? AppColors.error : AppColors.adaptiveTextSecondary(context),
                                       size: 20,
                                     ),
+                                    tooltip: isFav
+                                        ? AppStrings.of(context).removeFromFavorites
+                                        : AppStrings.of(context).addToFavorites,
                                     padding: EdgeInsets.zero,
                                     constraints: const BoxConstraints(),
                                     onPressed: () {
+                                      Haptics.toggle();
                                       context.read<FavoritesCubit>().toggleFavorite(
                                         'stop',
                                         stop.id,

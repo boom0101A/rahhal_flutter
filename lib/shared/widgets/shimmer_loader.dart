@@ -125,3 +125,22 @@ class ShimmerRestaurantCard extends StatelessWidget {
     );
   }
 }
+
+/// Shimmer skeleton for the budget tab (summary card + a few expense rows).
+class ShimmerBudgetView extends StatelessWidget {
+  const ShimmerBudgetView({super.key});
+
+  @override
+  Widget build(BuildContext context) {
+    return ListView(
+      padding: const EdgeInsets.all(16),
+      children: [
+        const ShimmerBox(height: 140, borderRadius: BorderRadius.all(Radius.circular(20))),
+        const SizedBox(height: 20),
+        const ShimmerBox(width: 140, height: 18),
+        const SizedBox(height: 12),
+        ...List.generate(4, (_) => const ShimmerStopCard()),
+      ],
+    );
+  }
+}

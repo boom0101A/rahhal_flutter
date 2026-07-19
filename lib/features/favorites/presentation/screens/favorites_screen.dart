@@ -5,8 +5,10 @@ import 'package:go_router/go_router.dart';
 import '../../../../core/constants/app_colors.dart';
 import '../../../../core/constants/app_text_styles.dart';
 import '../../../../core/constants/app_strings.dart';
+import '../../../../core/utils/haptics.dart';
 import '../../../../shared/widgets/app_error_widget.dart';
 import '../../../../shared/widgets/glass_card.dart';
+import '../../../../shared/widgets/shimmer_loader.dart';
 import '../cubit/favorites_cubit.dart';
 import '../../domain/entities/favorite_item.dart';
 
@@ -52,8 +54,9 @@ class _FavoritesScreenState extends State<FavoritesScreen> {
       body: BlocBuilder<FavoritesCubit, FavoritesState>(
         builder: (context, state) {
           if (state is FavoritesLoading) {
-            return const Center(
-              child: CircularProgressIndicator(color: AppColors.accentAmber),
+            return ListView(
+              padding: const EdgeInsets.all(20),
+              children: List.generate(4, (_) => const ShimmerStopCard()),
             );
           }
           if (state is FavoritesError) {
@@ -65,29 +68,37 @@ class _FavoritesScreenState extends State<FavoritesScreen> {
           if (state is FavoritesLoaded) {
             final items = state.items;
             if (items.isEmpty) {
-              return Center(
-                child: Padding(
+              return RefreshIndicator(
+                color: AppColors.accentAmber,
+                backgroundColor: AppColors.adaptiveBgCard(context),
+                onRefresh: () => context.read<FavoritesCubit>().loadFavorites(),
+                child: ListView(
+                  physics: const AlwaysScrollableScrollPhysics(),
                   padding: const EdgeInsets.all(32),
-                  child: Column(
-                    mainAxisAlignment: MainAxisAlignment.center,
-                    children: [
-                      const Text('❤️', style: TextStyle(fontSize: 72))
-                          .animate()
-                          .scale(duration: 600.ms, curve: Curves.easeOutBack),
-                      const SizedBox(height: 20),
-                      Text(
-                        strings.favoritesEmpty,
-                        style: AppTextStyles.headlineMedium,
-                        textAlign: TextAlign.center,
+                  children: [
+                    Center(
+                      child: Column(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: [
+                          const Text('❤️', style: TextStyle(fontSize: 72))
+                              .animate()
+                              .scale(duration: 600.ms, curve: Curves.easeOutBack),
+                          const SizedBox(height: 20),
+                          Text(
+                            strings.favoritesEmpty,
+                            style: AppTextStyles.headlineMedium,
+                            textAlign: TextAlign.center,
+                          ),
+                          const SizedBox(height: 8),
+                          Text(
+                            strings.favoritesEmptySubtitle,
+                            style: AppTextStyles.bodyMedium,
+                            textAlign: TextAlign.center,
+                          ),
+                        ],
                       ),
-                      const SizedBox(height: 8),
-                      Text(
-                        strings.favoritesEmptySubtitle,
-                        style: AppTextStyles.bodyMedium,
-                        textAlign: TextAlign.center,
-                      ),
-                    ],
-                  ),
+                    ),
+                  ],
                 ),
               );
             }
@@ -95,25 +106,30 @@ class _FavoritesScreenState extends State<FavoritesScreen> {
             final stops = items.where((i) => i.favorite.itemType == 'stop').toList();
             final restaurants = items.where((i) => i.favorite.itemType == 'restaurant').toList();
 
-            return ListView(
-              padding: const EdgeInsets.all(20),
-              children: [
-                if (stops.isNotEmpty) ...[
-                  Padding(
-                    padding: const EdgeInsets.symmetric(vertical: 12),
-                    child: Text(strings.favoritesStops, style: AppTextStyles.headlineSmall),
-                  ),
-                  ...stops.map((item) => _buildFavoriteStopCard(context, item)),
+            return RefreshIndicator(
+              color: AppColors.accentAmber,
+              backgroundColor: AppColors.adaptiveBgCard(context),
+              onRefresh: () => context.read<FavoritesCubit>().loadFavorites(),
+              child: ListView(
+                padding: const EdgeInsets.all(20),
+                children: [
+                  if (stops.isNotEmpty) ...[
+                    Padding(
+                      padding: const EdgeInsets.symmetric(vertical: 12),
+                      child: Text(strings.favoritesStops, style: AppTextStyles.headlineSmall),
+                    ),
+                    ...stops.map((item) => _buildFavoriteStopCard(context, item)),
+                  ],
+                  if (restaurants.isNotEmpty) ...[
+                    const SizedBox(height: 16),
+                    Padding(
+                      padding: const EdgeInsets.symmetric(vertical: 12),
+                      child: Text(strings.favoritesRestaurants, style: AppTextStyles.headlineSmall),
+                    ),
+                    ...restaurants.map((item) => _buildFavoriteRestaurantCard(context, item)),
+                  ],
                 ],
-                if (restaurants.isNotEmpty) ...[
-                  const SizedBox(height: 16),
-                  Padding(
-                    padding: const EdgeInsets.symmetric(vertical: 12),
-                    child: Text(strings.favoritesRestaurants, style: AppTextStyles.headlineSmall),
-                  ),
-                  ...restaurants.map((item) => _buildFavoriteRestaurantCard(context, item)),
-                ],
-              ],
+              ),
             );
           }
           return const SizedBox.shrink();
@@ -125,6 +141,7 @@ class _FavoritesScreenState extends State<FavoritesScreen> {
   Widget _buildFavoriteStopCard(BuildContext context, FavoriteItem item) {
     final stop = item.stop!;
     final isDark = Theme.of(context).brightness == Brightness.dark;
+    final strings = AppStrings.of(context);
 
     return Container(
       margin: const EdgeInsets.only(bottom: 12),
@@ -178,7 +195,9 @@ class _FavoritesScreenState extends State<FavoritesScreen> {
               ),
               IconButton(
                 icon: const Icon(Icons.favorite_rounded, color: AppColors.error),
+                tooltip: strings.removeFromFavorites,
                 onPressed: () {
+                  Haptics.toggle();
                   context.read<FavoritesCubit>().toggleFavorite('stop', stop.id);
                 },
               ),
@@ -192,6 +211,7 @@ class _FavoritesScreenState extends State<FavoritesScreen> {
   Widget _buildFavoriteRestaurantCard(BuildContext context, FavoriteItem item) {
     final rest = item.restaurant!;
     final isDark = Theme.of(context).brightness == Brightness.dark;
+    final strings = AppStrings.of(context);
 
     return Container(
       margin: const EdgeInsets.only(bottom: 12),
@@ -240,7 +260,9 @@ class _FavoritesScreenState extends State<FavoritesScreen> {
             ),
             IconButton(
               icon: const Icon(Icons.favorite_rounded, color: AppColors.error),
+              tooltip: strings.removeFromFavorites,
               onPressed: () {
+                Haptics.toggle();
                 context.read<FavoritesCubit>().toggleFavorite('restaurant', rest.id);
               },
             ),

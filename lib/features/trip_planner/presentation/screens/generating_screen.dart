@@ -8,6 +8,7 @@ import '../../../../core/constants/app_text_styles.dart';
 import '../../../../core/constants/app_strings.dart';
 import '../../../../core/config/app_config.dart';
 import '../../../../core/di/injection.dart';
+import '../../../../core/utils/haptics.dart';
 import '../cubit/trip_planner_cubit.dart';
 
 class GeneratingScreen extends StatelessWidget {
@@ -117,6 +118,7 @@ class _GeneratingScreenBodyState extends State<_GeneratingScreenBody>
     if (state is TripPlannerSuccess) {
       _aiCompleted = true;
       _slowWarningTimer?.cancel();
+      Haptics.success();
       final allStepsShown = _currentStep >= 4;
       if (allStepsShown) {
         _navigateToSuccess(state);
@@ -125,6 +127,7 @@ class _GeneratingScreenBodyState extends State<_GeneratingScreenBody>
       }
     } else if (state is TripPlannerError) {
       _slowWarningTimer?.cancel();
+      Haptics.warning();
       // show error dialog immediately regardless of animation
       _showErrorDialog(state.message);
     }

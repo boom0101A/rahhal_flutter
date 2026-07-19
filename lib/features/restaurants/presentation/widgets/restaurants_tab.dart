@@ -4,6 +4,7 @@ import 'package:flutter_animate/flutter_animate.dart';
 import '../../../../../core/constants/app_colors.dart';
 import '../../../../../core/constants/app_text_styles.dart';
 import '../../../../../core/constants/app_strings.dart';
+import '../../../../../core/utils/haptics.dart';
 import '../../../../../core/constants/filter_constants.dart';
 import '../../../../../shared/widgets/glass_card.dart';
 import '../../../../../shared/widgets/cached_hero_image.dart';
@@ -218,9 +219,13 @@ class _RestaurantCard extends StatelessWidget {
                             color: isFav ? AppColors.error : AppColors.textSecondary,
                             size: 20,
                           ),
+                          tooltip: isFav
+                              ? AppStrings.of(context).removeFromFavorites
+                              : AppStrings.of(context).addToFavorites,
                           padding: EdgeInsets.zero,
                           constraints: const BoxConstraints(),
                           onPressed: () {
+                            Haptics.toggle();
                             context.read<FavoritesCubit>().toggleFavorite(
                               'restaurant',
                               restaurant.id,

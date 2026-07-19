@@ -8,6 +8,8 @@ import '../../../../../core/constants/app_text_styles.dart';
 import '../../../../../shared/widgets/glass_card.dart';
 import '../../../../../shared/widgets/gradient_button.dart';
 import '../../../../../shared/widgets/app_error_widget.dart';
+import '../../../../../shared/widgets/shimmer_loader.dart';
+import '../../../../../core/utils/haptics.dart';
 import '../../../../../shared/widgets/dual_currency_text.dart';
 import '../../../itinerary/domain/entities/day_entity.dart';
 import '../../domain/entities/expense_entity.dart';
@@ -32,9 +34,7 @@ class _BudgetTabState extends State<BudgetTab> {
     return BlocBuilder<BudgetCubit, BudgetState>(
       builder: (context, state) {
         if (state is BudgetLoading) {
-          return const Center(
-            child: CircularProgressIndicator(color: AppColors.accentAmber),
-          );
+          return const ShimmerBudgetView();
         }
         if (state is BudgetError) {
           return AppErrorWidget(
@@ -54,9 +54,7 @@ class _BudgetTabState extends State<BudgetTab> {
             ],
           );
         }
-        return const Center(
-          child: CircularProgressIndicator(color: AppColors.accentAmber),
-        );
+        return const ShimmerBudgetView();
       },
     );
   }
@@ -600,6 +598,7 @@ class _BudgetTabState extends State<BudgetTab> {
                   ),
                 ),
                 IconButton(
+                  tooltip: AppStrings.of(context).delete,
                   onPressed: () => _confirmDeleteExpense(context, exp),
                   icon: const Icon(Icons.delete_outline_rounded,
                       color: AppColors.textSecondary, size: 18),
@@ -629,6 +628,7 @@ class _BudgetTabState extends State<BudgetTab> {
           ),
           TextButton(
             onPressed: () {
+              Haptics.warning();
               context.read<BudgetCubit>().deleteExpense(widget.tripId, exp.id);
               Navigator.pop(ctx);
             },

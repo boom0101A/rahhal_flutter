@@ -4,6 +4,7 @@ import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:url_launcher/url_launcher.dart';
 import 'package:go_router/go_router.dart';
 import '../../../favorites/presentation/cubit/favorites_cubit.dart';
+import '../../../../core/utils/haptics.dart';
 import 'package:flutter_map/flutter_map.dart';
 import 'package:latlong2/latlong.dart' hide Path;
 import '../../../../core/constants/app_colors.dart';
@@ -110,7 +111,11 @@ class _StopDetailScreenState extends State<StopDetailScreen> {
                           isFav ? Icons.favorite_rounded : Icons.favorite_outline_rounded,
                           color: isFav ? AppColors.error : Colors.white,
                         ),
+                        tooltip: isFav
+                            ? AppStrings.of(context).removeFromFavorites
+                            : AppStrings.of(context).addToFavorites,
                         onPressed: () {
+                          Haptics.toggle();
                           context.read<FavoritesCubit>().toggleFavorite(
                             'stop',
                             _stop!.id,

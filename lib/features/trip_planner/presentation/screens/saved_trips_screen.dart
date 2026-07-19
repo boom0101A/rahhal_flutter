@@ -13,6 +13,7 @@ import '../../../../shared/widgets/app_error_widget.dart';
 import '../../../../shared/widgets/cached_hero_image.dart';
 import '../../../../shared/widgets/glass_card.dart';
 import '../../../../core/services/location_service.dart';
+import '../../../../core/utils/haptics.dart';
 import '../cubit/saved_trips_cubit.dart';
 import '../../domain/entities/trip_entity.dart';
 
@@ -389,6 +390,7 @@ class _TripCard extends StatelessWidget {
                   ),
                   // Delete
                   IconButton(
+                    tooltip: AppStrings.of(context).delete,
                     onPressed: () => _confirmDelete(context),
                     icon: const Icon(Icons.delete_outline_rounded,
                         color: AppColors.error, size: 20),
@@ -437,6 +439,7 @@ class _TripCard extends StatelessWidget {
           ),
           TextButton(
             onPressed: () {
+              Haptics.warning();
               Navigator.pop(ctx);
               onDelete();
             },
