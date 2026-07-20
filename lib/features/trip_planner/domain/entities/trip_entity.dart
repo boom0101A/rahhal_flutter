@@ -101,13 +101,8 @@ class TripEntity extends Equatable {
     );
   }
 
-  String get displayImageUrl {
-    if (heroImageUrl != null && heroImageUrl!.trim().isNotEmpty) {
-      return heroImageUrl!;
-    }
-    final seed = (destination + id).hashCode.abs() % 1000;
-    return 'https://picsum.photos/seed/$seed/800/600';
-  }
+  /// Empty when we have no real photo — see [RestaurantEntity.displayImageUrl].
+  String get displayImageUrl => heroImageUrl?.trim() ?? '';
 
   String displayDestination(BuildContext context) {
     final lang = AppStrings.of(context).languageCode;

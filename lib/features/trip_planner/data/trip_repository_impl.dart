@@ -227,10 +227,10 @@ class TripRepositoryImpl implements TripRepository {
             final hasValidCoords = stop.latitude.abs() > 0.001 && stop.longitude.abs() > 0.001;
             final key = '${dayPlan.dayNumber}_${stop.orderIndex}_${stop.name}';
             final fetchedUrl = stopImageMap[key];
-            final fallbackSeed = (stop.name + trip.destination).hashCode.abs() % 1000;
-            final stopImageUrl = (fetchedUrl != null && fetchedUrl.isNotEmpty)
-                ? fetchedUrl
-                : 'https://picsum.photos/seed/$fallbackSeed/800/600';
+            // Null, not a random picsum photo — the UI renders a placeholder
+            // tile rather than an unrelated image captioned as this place.
+            final stopImageUrl =
+                (fetchedUrl != null && fetchedUrl.isNotEmpty) ? fetchedUrl : null;
 
             await txn.insert('stops', {
               'id': _uuid.v4(),
@@ -261,10 +261,8 @@ class TripRepositoryImpl implements TripRepository {
           if (rec != null) {
             final key = rec.name.trim().toLowerCase();
             final fetchedUrl = restaurantImageMap[key];
-            final fallbackSeed = (rec.name + trip.destination).hashCode.abs() % 1000;
-            final recImageUrl = (fetchedUrl != null && fetchedUrl.isNotEmpty)
-                ? fetchedUrl
-                : 'https://picsum.photos/seed/$fallbackSeed/800/600';
+            final recImageUrl =
+                (fetchedUrl != null && fetchedUrl.isNotEmpty) ? fetchedUrl : null;
 
             restaurantsToInsert[key] = {
               'id': _uuid.v4(),
@@ -295,10 +293,8 @@ class TripRepositoryImpl implements TripRepository {
           final key = r.name.trim().toLowerCase();
           if (!restaurantsToInsert.containsKey(key)) {
             final fetchedUrl = restaurantImageMap[key];
-            final fallbackSeed = (r.name + trip.destination).hashCode.abs() % 1000;
-            final rImageUrl = (fetchedUrl != null && fetchedUrl.isNotEmpty)
-                ? fetchedUrl
-                : 'https://picsum.photos/seed/$fallbackSeed/800/600';
+            final rImageUrl =
+                (fetchedUrl != null && fetchedUrl.isNotEmpty) ? fetchedUrl : null;
 
             restaurantsToInsert[key] = {
               'id': _uuid.v4(),

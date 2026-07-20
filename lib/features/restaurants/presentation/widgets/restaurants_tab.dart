@@ -173,6 +173,7 @@ class _RestaurantCard extends StatelessWidget {
                 url: restaurant.displayImageUrl,
                 height: 72,
                 fit: BoxFit.cover,
+                placeholderEmoji: '🍽️',
               ),
             ),
           ),
