@@ -46,6 +46,11 @@ if (process.env.FIREBASE_SERVICE_ACCOUNT) {
 // TTL: 24 hours — reduces Places API costs significantly
 const placesCache = new Map();
 const PLACES_CACHE_TTL_MS = 24 * 60 * 60 * 1000; // 24 hours
+// Max distance (km) a Places text-search match may be from the destination
+// center before it's rejected as "wrong city/governorate". Generous enough
+// to cover a metro area, tight enough to catch a same-named place resolved
+// to a different city entirely.
+const PLACES_MAX_DISTANCE_KM = 100;
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -277,13 +282,13 @@ async function callAI(systemPrompt, messages, maxTokens = 4000) {
 //      Details request needed).
 //   3. Return verified data; caller merges it into the AI response.
 //   4. If no GOOGLE_PLACES_API_KEY is set, skip gracefully (log a warning).
-async function verifyPlaceWithGoogle(nameEn, cityEn, userLat, userLng) {
+async function verifyPlaceWithGoogle(nameEn, cityEn, centerLat, centerLng) {
   const placesKey = process.env.GOOGLE_PLACES_API_KEY;
   if (!placesKey || placesKey === 'your_google_places_api_key_here') {
     return null; // Places API not configured — skip gracefully
   }
 
-  const cacheKey = `${nameEn.toLowerCase().trim()}|${cityEn.toLowerCase().trim()}${userLat && userLng ? `|${userLat.toFixed(2)},${userLng.toFixed(2)}` : ''}`;
+  const cacheKey = `${nameEn.toLowerCase().trim()}|${cityEn.toLowerCase().trim()}${centerLat && centerLng ? `|${centerLat.toFixed(2)},${centerLng.toFixed(2)}` : ''}`;
   const now = Date.now();
 
   // Return cached result if still fresh
@@ -301,10 +306,10 @@ async function verifyPlaceWithGoogle(nameEn, cityEn, userLat, userLng) {
       languageCode: 'en',
     };
 
-    if (userLat && userLng) {
+    if (centerLat && centerLng) {
       body.locationBias = {
         circle: {
-          center: { latitude: parseFloat(userLat), longitude: parseFloat(userLng) },
+          center: { latitude: parseFloat(centerLat), longitude: parseFloat(centerLng) },
           radius: 50000, // 50km radius bias
         },
       };
@@ -332,6 +337,25 @@ async function verifyPlaceWithGoogle(nameEn, cityEn, userLat, userLng) {
     }
 
     const top = results[0];
+
+    // locationBias is a SOFT hint — Google can still return a same-named
+    // place in a completely different city/governorate (or country) as the
+    // top result, especially for generic names or chains. Reject it rather
+    // than silently overwriting the AI's coordinates with a wrong location.
+    if (centerLat && centerLng) {
+      const distKm = haversineDistance(
+        parseFloat(centerLat), parseFloat(centerLng),
+        top.location.latitude, top.location.longitude
+      );
+      if (distKm > PLACES_MAX_DISTANCE_KM) {
+        console.warn(
+          `[PLACES] Rejected "${nameEn}" — match is ${distKm.toFixed(0)}km from ${cityEn}, likely wrong city/governorate`
+        );
+        placesCache.set(cacheKey, { data: null, timestamp: now });
+        return null;
+      }
+    }
+
     const verified = {
       lat: top.location.latitude,
       lng: top.location.longitude,
@@ -362,6 +386,28 @@ async function verifyAllPlacesInTrip(tripData, destinationEn, userLat, userLng) 
   if (!placesKey || placesKey === 'your_google_places_api_key_here') {
     console.warn('[PLACES] GOOGLE_PLACES_API_KEY not set — skipping place verification.');
     return tripData; // Return as-is
+  }
+
+  // Center point used to bias Places text search AND to reject matches that
+  // land in the wrong city/governorate. Prefer the user's real GPS; when
+  // that's unavailable (destination typed manually, not "use my location"),
+  // fall back to the centroid of the AI's own stop coordinates — still a
+  // useful sanity anchor even though those coordinates aren't yet verified.
+  let centerLat = userLat ? parseFloat(userLat) : null;
+  let centerLng = userLng ? parseFloat(userLng) : null;
+  if ((!centerLat || !centerLng) && Array.isArray(tripData.days)) {
+    const coords = [];
+    for (const day of tripData.days) {
+      for (const stop of day.stops || []) {
+        const lat = parseFloat(stop.latitude);
+        const lng = parseFloat(stop.longitude);
+        if (!isNaN(lat) && !isNaN(lng)) coords.push([lat, lng]);
+      }
+    }
+    if (coords.length > 0) {
+      centerLat = coords.reduce((sum, c) => sum + c[0], 0) / coords.length;
+      centerLng = coords.reduce((sum, c) => sum + c[1], 0) / coords.length;
+    }
   }
 
   // Collect all items to verify: { ref to stop/restaurant, nameEn }
@@ -395,7 +441,7 @@ async function verifyAllPlacesInTrip(tripData, destinationEn, userLat, userLng) 
     const batch = tasks.slice(i, i + CONCURRENCY);
     await Promise.all(
       batch.map(async ({ item, nameEn }) => {
-        const verified = await verifyPlaceWithGoogle(nameEn, destinationEn, userLat, userLng);
+        const verified = await verifyPlaceWithGoogle(nameEn, destinationEn, centerLat, centerLng);
         if (verified) {
           // Overwrite Claude's hallucinated coordinates with real Google data
           item.latitude  = verified.lat;
@@ -494,12 +540,13 @@ Each day MUST have a distinct theme and explore a DIFFERENT part of the city:
 - Day 4: Modern attractions/Viewpoints
 - Day 5+: Repeat themes with completely different places
 
-RULE 4 — RESTAURANT VARIETY:
+RULE 4 — RESTAURANT VARIETY & LOCATION:
 Each day's recommended_restaurant must be a DIFFERENT restaurant.
 all_restaurants list must contain UNIQUE restaurants (not repeating recommended_restaurant).
+EVERY restaurant (recommended_restaurant AND all_restaurants) MUST be physically located inside ${destination} itself — the same city/governorate as the trip destination. Do NOT suggest a restaurant from a different city, even if it shares a name with a well-known chain that also has a branch elsewhere.
 
 RULE 5 — ACCURATE COORDINATES:
-Every latitude/longitude must be the actual GPS coordinates of that specific real place. Google Maps-verifiable coordinates only.
+Every latitude/longitude must be the actual GPS coordinates of that specific real place, located within ${destination}. Google Maps-verifiable coordinates only.
 ${hasGPS ? `All coordinates MUST be within 50km of lat=${parseFloat(userLat).toFixed(4)}, lng=${parseFloat(userLng).toFixed(4)}.` : ''}
 
 ${gpsContext}
@@ -645,6 +692,34 @@ ${countryCode ? `- Country: ${countryCode}` : ''}`;
       if (!Array.isArray(parsed.days) || parsed.days.length !== Number(durationDays)) {
         throw new Error('incomplete-itinerary');
       }
+
+      // The model occasionally ignores the requested destination and
+      // generates a trip for a different, more "famous" city instead
+      // (observed live: asked for "كربلاء", got a full Cairo itinerary).
+      // Since every downstream piece — stops, restaurants, Places
+      // verification — inherits this, catch it here and force a retry
+      // rather than silently returning a trip for the wrong place.
+      const normalizeCityName = (str) => (str || '')
+        .toString()
+        .trim()
+        .toLowerCase()
+        .replace(/[ً-ٰٟ]/g, '') // strip Arabic diacritics
+        .replace(/[^\p{L}\p{N}]/gu, ''); // strip spaces/punctuation
+
+      const requestedNorm = normalizeCityName(destination);
+      const returnedArNorm = normalizeCityName(parsed.destination);
+      const returnedEnNorm = normalizeCityName(parsed.destination_en);
+      const destinationMatches = requestedNorm && (
+        (returnedArNorm && (returnedArNorm.includes(requestedNorm) || requestedNorm.includes(returnedArNorm))) ||
+        (returnedEnNorm && (returnedEnNorm.includes(requestedNorm) || requestedNorm.includes(returnedEnNorm)))
+      );
+      if (!destinationMatches) {
+        console.warn(
+          `[TRIP] Destination mismatch: requested "${destination}", AI returned "${parsed.destination}" / "${parsed.destination_en}"`
+        );
+        throw new Error('wrong-destination');
+      }
+
       return parsed;
     }
 
@@ -653,9 +728,11 @@ ${countryCode ? `- Country: ${countryCode}` : ''}`;
     const maxAttempts = 3; // 1 initial + 2 retries
     for (let attempt = 0; attempt < maxAttempts; attempt++) {
       try {
-        const extraInstruction = attempt > 0
-          ? `IMPORTANT REMINDER: your previous reply was truncated, incomplete, or had invalid JSON syntax. Return ALL ${durationDays} days as a single complete, valid, non-truncated JSON object with correct JSON syntax (no trailing commas, properly escaped quotes inside strings). Keep descriptions concise if needed to fit within the token limit, but NEVER omit a day.`
-          : undefined;
+        const extraInstruction = attempt === 0
+          ? undefined
+          : lastError && lastError.message === 'wrong-destination'
+            ? `IMPORTANT: your previous reply generated a trip for the WRONG destination. You MUST generate this itinerary specifically for "${destination}" — do NOT substitute a different, more famous city. Every stop, restaurant, and coordinate must be a real place located inside "${destination}".`
+            : `IMPORTANT REMINDER: your previous reply was truncated, incomplete, or had invalid JSON syntax. Return ALL ${durationDays} days as a single complete, valid, non-truncated JSON object with correct JSON syntax (no trailing commas, properly escaped quotes inside strings). Keep descriptions concise if needed to fit within the token limit, but NEVER omit a day.`;
         parsedData = await requestAndParse(extraInstruction);
         lastError = null;
         break;
