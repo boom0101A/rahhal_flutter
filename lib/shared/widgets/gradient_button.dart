@@ -65,7 +65,7 @@ class _GradientButtonState extends State<GradientButton>
             padding: widget.padding ?? const EdgeInsets.symmetric(horizontal: 24),
             decoration: BoxDecoration(
               gradient: disabled ? null : AppColors.amberGradient,
-              color: disabled ? AppColors.textSecondary.withValues(alpha: 0.2) : null,
+              color: disabled ? AppColors.adaptiveTextSecondary(context).withValues(alpha: 0.2) : null,
               borderRadius: BorderRadius.circular(50),
               boxShadow: widget.isLoading || disabled ? null : AppColors.amberGlow,
             ),

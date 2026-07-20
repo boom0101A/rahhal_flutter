@@ -66,7 +66,7 @@ class _WeatherBannerState extends State<WeatherBanner> {
       height: 90,
       margin: const EdgeInsets.only(bottom: 16),
       decoration: BoxDecoration(
-        color: AppColors.bgCard.withValues(alpha: 0.5),
+        color: AppColors.adaptiveBgCard(context).withValues(alpha: 0.5),
         borderRadius: BorderRadius.circular(16),
       ),
     );

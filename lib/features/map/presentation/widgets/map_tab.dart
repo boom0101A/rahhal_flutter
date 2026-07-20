@@ -441,7 +441,7 @@ class _MapViewState extends State<_MapView> with WidgetsBindingObserver {
           height: isSelected ? 44 : 32,
           decoration: BoxDecoration(
             shape: BoxShape.circle,
-            color: isSelected ? AppColors.accentAmber : AppColors.bgCard,
+            color: isSelected ? AppColors.accentAmber : AppColors.adaptiveBgCard(context),
             border: Border.all(
               color: AppColors.accentAmber,
               width: isSelected ? 3 : 2,
@@ -466,7 +466,7 @@ class _MapViewState extends State<_MapView> with WidgetsBindingObserver {
         CustomPaint(
           size: const Size(10, 6),
           painter: _TrianglePainter(
-            color: isSelected ? AppColors.accentAmber : AppColors.bgCard,
+            color: isSelected ? AppColors.accentAmber : AppColors.adaptiveBgCard(context),
           ),
         ),
       ],
@@ -530,8 +530,8 @@ class _StopBottomCard extends StatelessWidget {
                 ),
                 IconButton(
                   onPressed: onClose,
-                  icon: const Icon(Icons.close_rounded,
-                      color: AppColors.textSecondary, size: 20),
+                  icon: Icon(Icons.close_rounded,
+                      color: AppColors.adaptiveTextSecondary(context), size: 20),
                 ),
               ],
             ),

@@ -281,12 +281,12 @@ class _SettingsScreenState extends State<SettingsScreen> {
                   padding: const EdgeInsets.all(20),
                   decoration: BoxDecoration(
                     color: Theme.of(context).brightness == Brightness.dark
-                        ? AppColors.bgCard
+                        ? AppColors.adaptiveBgCard(context)
                         : Colors.white,
                     borderRadius: BorderRadius.circular(20),
                     border: Border.all(
                       color: Theme.of(context).brightness == Brightness.dark
-                          ? AppColors.border
+                          ? AppColors.adaptiveBorder(context)
                           : const Color(0x1F000000),
                     ),
                     boxShadow: Theme.of(context).brightness == Brightness.light

@@ -137,11 +137,11 @@ class ItineraryTab extends StatelessWidget {
           child: ListView.builder(
             scrollDirection: Axis.horizontal,
             itemCount: 5,
-            itemBuilder: (_, __) => Container(
+            itemBuilder: (ctx, __) => Container(
               margin: const EdgeInsetsDirectional.only(start: 8),
               width: 70,
               decoration: BoxDecoration(
-                color: AppColors.bgCard,
+                color: AppColors.adaptiveBgCard(ctx),
                 borderRadius: BorderRadius.circular(12),
               ),
             ),
