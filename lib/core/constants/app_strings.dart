@@ -95,6 +95,7 @@ class AppStrings {
   String get locationPermissionDenied => _t('تعذر الوصول إلى موقعك. يرجى تفعيل إذن الموقع في الإعدادات.', 'Unable to access location. Please grant permission in settings.');
   String get discoverCurrentCityButton => _t('استكشف مدينتي الحالية', 'Explore My Current City');
   String get openInMaps => _t('افتح في الخرائط 📍', 'Open in Maps 📍');
+  String get mapsOpenFailed => _t('تعذر فتح خرائط Google', 'Could not open Google Maps');
   String get orderUber => _t('اطلب Uber 🚗', 'Order Uber 🚗');
   String get orderCareem => _t('اطلب Careem 🚕', 'Order Careem 🚕');
 

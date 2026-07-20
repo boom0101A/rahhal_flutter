@@ -144,7 +144,7 @@ class _BudgetTabState extends State<BudgetTab> {
             children: [
               Text(
                 strings.budgetDistribution,
-                style: AppTextStyles.titleMedium.copyWith(color: AppColors.textSecondary),
+                style: AppTextStyles.titleMedium.copyWith(color: AppColors.adaptiveTextSecondary(context)),
               ),
               const SizedBox(height: 16),
               Row(
@@ -347,7 +347,7 @@ class _BudgetTabState extends State<BudgetTab> {
       'transport': AppColors.chart3,
       'activities': AppColors.chart4,
       'shopping': AppColors.chart5,
-      'other': AppColors.textSecondary,
+      'other': AppColors.adaptiveTextSecondary(context),
     };
 
     // Calculate actual mapping
@@ -524,7 +524,7 @@ class _BudgetTabState extends State<BudgetTab> {
       'transport' => AppColors.chart3,
       'activities' => AppColors.chart4,
       'shopping' => AppColors.chart5,
-      _ => AppColors.textSecondary,
+      _ => AppColors.adaptiveTextSecondary(context),
     };
 
     return Padding(
@@ -570,9 +570,9 @@ class _BudgetTabState extends State<BudgetTab> {
                       Container(
                         width: 3,
                         height: 3,
-                        decoration: const BoxDecoration(
+                        decoration: BoxDecoration(
                           shape: BoxShape.circle,
-                          color: AppColors.textSecondary,
+                          color: AppColors.adaptiveTextSecondary(context),
                         ),
                       ),
                       const SizedBox(width: 8),
@@ -600,8 +600,8 @@ class _BudgetTabState extends State<BudgetTab> {
                 IconButton(
                   tooltip: AppStrings.of(context).delete,
                   onPressed: () => _confirmDeleteExpense(context, exp),
-                  icon: const Icon(Icons.delete_outline_rounded,
-                      color: AppColors.textSecondary, size: 18),
+                  icon: Icon(Icons.delete_outline_rounded,
+                      color: AppColors.adaptiveTextSecondary(context), size: 18),
                   padding: EdgeInsets.zero,
                   constraints: const BoxConstraints(),
                 ),
@@ -618,13 +618,13 @@ class _BudgetTabState extends State<BudgetTab> {
     showDialog(
       context: context,
       builder: (ctx) => AlertDialog(
-        backgroundColor: AppColors.bgPopover,
+        backgroundColor: AppColors.adaptiveBgPopover(context),
         title: Text(strings.delete, style: AppTextStyles.headlineMedium),
         content: Text(strings.expenseDeleteConfirm, style: AppTextStyles.bodyMedium),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(ctx),
-            child: Text(strings.cancel, style: const TextStyle(color: AppColors.textSecondary)),
+            child: Text(strings.cancel, style: TextStyle(color: AppColors.adaptiveTextSecondary(context))),
           ),
           TextButton(
             onPressed: () {
@@ -730,8 +730,8 @@ class _AddExpenseBottomSheetState extends State<_AddExpenseBottomSheet> {
     };
 
     return Container(
-      decoration: const BoxDecoration(
-        color: AppColors.bgPopover,
+      decoration: BoxDecoration(
+        color: AppColors.adaptiveBgPopover(context),
         borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
       ),
       padding: EdgeInsets.fromLTRB(20, 20, 20, MediaQuery.of(context).viewInsets.bottom + 24),
@@ -765,7 +765,7 @@ class _AddExpenseBottomSheetState extends State<_AddExpenseBottomSheet> {
                   ),
                   IconButton(
                     onPressed: () => Navigator.pop(context),
-                    icon: const Icon(Icons.close_rounded, color: AppColors.textSecondary),
+                    icon: Icon(Icons.close_rounded, color: AppColors.adaptiveTextSecondary(context)),
                   ),
                 ],
               ),
@@ -783,7 +783,7 @@ class _AddExpenseBottomSheetState extends State<_AddExpenseBottomSheet> {
                   prefixText: isArabic ? null : '\$ ',
                   suffixText: isArabic ? ' دولار' : null,
                   hintText: strings.expenseAmountHint,
-                  hintStyle: AppTextStyles.bodyMedium.copyWith(color: AppColors.textSecondary.withValues(alpha: 0.4)),
+                  hintStyle: AppTextStyles.bodyMedium.copyWith(color: AppColors.adaptiveTextSecondary(context).withValues(alpha: 0.4)),
                   contentPadding: const EdgeInsets.symmetric(vertical: 16),
                 ),
                 validator: (val) {
@@ -824,10 +824,10 @@ class _AddExpenseBottomSheetState extends State<_AddExpenseBottomSheet> {
                       }
                     },
                     selectedColor: AppColors.accentAmber,
-                    backgroundColor: AppColors.glass,
+                    backgroundColor: AppColors.adaptiveGlass(context),
                     checkmarkColor: AppColors.bgPrimary,
                     labelStyle: AppTextStyles.labelSmall.copyWith(
-                      color: isSelected ? AppColors.bgPrimary : AppColors.textPrimary,
+                      color: isSelected ? AppColors.bgPrimary : AppColors.adaptiveTextPrimary(context),
                       fontWeight: FontWeight.bold,
                     ),
                   );
@@ -839,7 +839,7 @@ class _AddExpenseBottomSheetState extends State<_AddExpenseBottomSheet> {
               Text(strings.expenseDay, style: AppTextStyles.titleSmall),
               const SizedBox(height: 10),
               DropdownButtonFormField<String?>(
-                dropdownColor: AppColors.bgPopover,
+                dropdownColor: AppColors.adaptiveBgPopover(context),
                 initialValue: _selectedDayId,
                 items: [
                   DropdownMenuItem<String?>(

@@ -53,7 +53,7 @@ class _DocumentsScreenState extends State<DocumentsScreen> {
       'visa' => AppColors.accentTurquoise,
       'ticket' => const Color(0xFF9B7FD4),
       'booking' => const Color(0xFF4CAF50),
-      _ => AppColors.textSecondary,
+      _ => AppColors.adaptiveTextSecondary(context),
     };
   }
 
@@ -110,21 +110,21 @@ class _DocumentsScreenState extends State<DocumentsScreen> {
                                 .animate()
                                 .scale(duration: 600.ms, curve: Curves.easeOutBack),
                             const SizedBox(height: 20),
-                            const Text(
+                            Text(
                               'لا توجد مستندات بعد',
                               style: TextStyle(
                                 fontSize: 20,
                                 fontWeight: FontWeight.bold,
-                                color: AppColors.textPrimary,
+                                color: AppColors.adaptiveTextPrimary(context),
                               ),
                               textAlign: TextAlign.center,
                             ),
                             const SizedBox(height: 8),
-                            const Text(
+                            Text(
                               'احفظ جوازات سفرك، التأشيرات، وتذاكر الطيران للوصول السريع إليها أثناء السفر.',
                               style: TextStyle(
                                 fontSize: 14,
-                                color: AppColors.textSecondary,
+                                color: AppColors.adaptiveTextSecondary(context),
                               ),
                               textAlign: TextAlign.center,
                             ),
@@ -204,7 +204,7 @@ class _DocumentsScreenState extends State<DocumentsScreen> {
                       Text(
                         doc.title,
                         style: AppTextStyles.titleMedium.copyWith(
-                          color: isDark ? AppColors.textPrimary : const Color(0xFF0D1B2A),
+                          color: isDark ? AppColors.adaptiveTextPrimary(context) : const Color(0xFF0D1B2A),
                           fontWeight: FontWeight.bold,
                         ),
                         maxLines: 1,
@@ -214,7 +214,7 @@ class _DocumentsScreenState extends State<DocumentsScreen> {
                       Text(
                         _getDocTypeLabel(context, doc.docType),
                         style: AppTextStyles.bodySmall.copyWith(
-                          color: AppColors.textSecondary,
+                          color: AppColors.adaptiveTextSecondary(context),
                         ),
                       ),
                     ],
@@ -228,12 +228,12 @@ class _DocumentsScreenState extends State<DocumentsScreen> {
             ),
             if (doc.notes != null && doc.notes!.isNotEmpty) ...[
               const SizedBox(height: 12),
-              const Divider(color: AppColors.border, height: 1),
+              Divider(color: AppColors.adaptiveBorder(context), height: 1),
               const SizedBox(height: 8),
               Text(
                 doc.notes!,
                 style: AppTextStyles.bodyMedium.copyWith(
-                  color: isDark ? AppColors.textSecondary : const Color(0xFF4B5563),
+                  color: isDark ? AppColors.adaptiveTextSecondary(context) : const Color(0xFF4B5563),
                 ),
               ),
             ],
@@ -244,14 +244,14 @@ class _DocumentsScreenState extends State<DocumentsScreen> {
                   Icon(
                     Icons.event_busy_rounded,
                     size: 14,
-                    color: isExpired ? AppColors.error : AppColors.textSecondary,
+                    color: isExpired ? AppColors.error : AppColors.adaptiveTextSecondary(context),
                   ),
                   const SizedBox(width: 4),
                   Text(
                     'تاريخ الانتهاء: ${DateFormat('yyyy/MM/dd').format(doc.expiryDate!)}',
                     style: TextStyle(
                       fontSize: 12,
-                      color: isExpired ? AppColors.error : AppColors.textSecondary,
+                      color: isExpired ? AppColors.error : AppColors.adaptiveTextSecondary(context),
                       fontWeight: isExpired ? FontWeight.bold : FontWeight.normal,
                     ),
                   ),
@@ -281,7 +281,7 @@ class _DocumentsScreenState extends State<DocumentsScreen> {
                   width: double.infinity,
                   decoration: BoxDecoration(
                     borderRadius: BorderRadius.circular(12),
-                    border: Border.all(color: AppColors.border),
+                    border: Border.all(color: AppColors.adaptiveBorder(context)),
                   ),
                   child: ClipRRect(
                     borderRadius: BorderRadius.circular(12),
@@ -290,8 +290,8 @@ class _DocumentsScreenState extends State<DocumentsScreen> {
                       fit: doc.docType == 'ticket' ? BoxFit.contain : BoxFit.cover,
                       errorBuilder: (ctx, e, s) => Container(
                         color: Colors.black12,
-                        child: const Center(
-                          child: Icon(Icons.broken_image_rounded, color: AppColors.textSecondary),
+                        child: Center(
+                          child: Icon(Icons.broken_image_rounded, color: AppColors.adaptiveTextSecondary(ctx)),
                         ),
                       ),
                     ),
@@ -357,7 +357,7 @@ class _DocumentsScreenState extends State<DocumentsScreen> {
     showDialog(
       context: context,
       builder: (ctx) => AlertDialog(
-        backgroundColor: AppColors.bgCard,
+        backgroundColor: AppColors.adaptiveBgCard(context),
         title: const Text('حذف المستند', style: TextStyle(fontWeight: FontWeight.bold)),
         content: Text('هل أنت متأكد من رغبتك في حذف "${doc.title}"؟'),
         actions: [
@@ -388,7 +388,7 @@ class _DocumentsScreenState extends State<DocumentsScreen> {
     showModalBottomSheet(
       context: context,
       isScrollControlled: true,
-      backgroundColor: AppColors.bgCard,
+      backgroundColor: AppColors.adaptiveBgCard(context),
       shape: const RoundedRectangleBorder(
         borderRadius: BorderRadius.only(
           topLeft: Radius.circular(24),

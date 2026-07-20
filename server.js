@@ -531,6 +531,25 @@ async function verifyPlaceWithGoogle(nameEn, cityEn, centerLat, centerLng) {
   }
 }
 
+// Centroid of every stop coordinate in a trip. Used as a search/verify center
+// when the user gave no GPS — the stops aren't verified yet, but their average
+// still pins the right city well enough to reject cross-country mismatches.
+function tripStopCentroid(tripData) {
+  const coords = [];
+  for (const day of tripData.days || []) {
+    for (const stop of day.stops || []) {
+      const lat = parseFloat(stop.latitude);
+      const lng = parseFloat(stop.longitude);
+      if (!isNaN(lat) && !isNaN(lng)) coords.push([lat, lng]);
+    }
+  }
+  if (!coords.length) return null;
+  return {
+    lat: coords.reduce((sum, c) => sum + c[0], 0) / coords.length,
+    lng: coords.reduce((sum, c) => sum + c[1], 0) / coords.length,
+  };
+}
+
 // ─── Verify ALL stops & restaurants in a parsed Claude trip response ──────────
 //
 // Runs Google Places verification in parallel (with concurrency cap of 5)
@@ -549,18 +568,11 @@ async function verifyAllPlacesInTrip(tripData, destinationEn, userLat, userLng) 
   // useful sanity anchor even though those coordinates aren't yet verified.
   let centerLat = userLat ? parseFloat(userLat) : null;
   let centerLng = userLng ? parseFloat(userLng) : null;
-  if ((!centerLat || !centerLng) && Array.isArray(tripData.days)) {
-    const coords = [];
-    for (const day of tripData.days) {
-      for (const stop of day.stops || []) {
-        const lat = parseFloat(stop.latitude);
-        const lng = parseFloat(stop.longitude);
-        if (!isNaN(lat) && !isNaN(lng)) coords.push([lat, lng]);
-      }
-    }
-    if (coords.length > 0) {
-      centerLat = coords.reduce((sum, c) => sum + c[0], 0) / coords.length;
-      centerLng = coords.reduce((sum, c) => sum + c[1], 0) / coords.length;
+  if (!centerLat || !centerLng) {
+    const centroid = tripStopCentroid(tripData);
+    if (centroid) {
+      centerLat = centroid.lat;
+      centerLng = centroid.lng;
     }
   }
 
@@ -628,6 +640,218 @@ async function verifyAllPlacesInTrip(tripData, destinationEn, userLat, userLng) 
   }).length;
   console.log(`[PLACES] Verification done: ${tasks.length} places processed for "${destinationEn}"`);
 
+  return tripData;
+}
+
+// ─── Real restaurants, sourced from Google Places (not from the LLM) ─────────
+//
+// Attractions survive LLM generation because they're famous enough to exist in
+// Places under the name the model guessed. Restaurants don't — the model
+// invents plausible-sounding names, verifyPlaceWithGoogle can't find them, and
+// we used to keep the invented name with `coords_verified: false`. That is the
+// root cause of "the stops are right but the restaurants are wrong".
+//
+// So we stop asking the LLM for restaurants at all and pull the real ones
+// straight out of Places. Bonus: this is CHEAPER than the old path — two
+// searchText calls total instead of one per invented restaurant.
+
+// Places priceLevel enum → rough USD per person, used for the budget tab.
+const PRICE_LEVEL_USD = {
+  PRICE_LEVEL_FREE: 0,
+  PRICE_LEVEL_INEXPENSIVE: 8,
+  PRICE_LEVEL_MODERATE: 20,
+  PRICE_LEVEL_EXPENSIVE: 45,
+  PRICE_LEVEL_VERY_EXPENSIVE: 90,
+};
+
+// Countries where restaurants are halal by default unless stated otherwise.
+const HALAL_DEFAULT_COUNTRIES = new Set([
+  'SA', 'AE', 'QA', 'KW', 'BH', 'OM', 'IQ', 'JO', 'EG', 'MA', 'TN', 'DZ',
+  'TR', 'MY', 'ID', 'PK', 'LY', 'SD', 'YE', 'SY', 'LB', 'PS', 'BN', 'MV',
+]);
+
+// Place types we accept as "somewhere you eat".
+const FOOD_PLACE_TYPES = new Set([
+  'restaurant', 'cafe', 'bakery', 'meal_takeaway', 'meal_delivery',
+  'coffee_shop', 'breakfast_restaurant', 'brunch_restaurant',
+  'fine_dining_restaurant', 'fast_food_restaurant', 'steak_house',
+  'seafood_restaurant', 'middle_eastern_restaurant', 'turkish_restaurant',
+  'lebanese_restaurant', 'italian_restaurant', 'japanese_restaurant',
+  'indian_restaurant', 'chinese_restaurant', 'american_restaurant',
+  'pizza_restaurant', 'sandwich_shop', 'dessert_shop', 'ice_cream_shop',
+]);
+
+const RESTAURANT_FIELD_MASK = [
+  'places.id',
+  'places.displayName',
+  'places.location',
+  'places.formattedAddress',
+  'places.rating',
+  'places.userRatingCount',
+  'places.priceLevel',
+  'places.primaryTypeDisplayName',
+  'places.types',
+  'places.websiteUri',
+  'places.regularOpeningHours.weekdayDescriptions',
+  'places.editorialSummary',
+].join(',');
+
+async function searchRestaurantsInLanguage(cityEn, centerLat, centerLng, languageCode) {
+  const placesKey = process.env.GOOGLE_PLACES_API_KEY;
+  const body = {
+    textQuery: `best restaurants in ${cityEn}`,
+    includedType: 'restaurant',
+    languageCode,
+    maxResultCount: 20,
+  };
+  if (centerLat && centerLng) {
+    body.locationBias = {
+      circle: {
+        center: { latitude: parseFloat(centerLat), longitude: parseFloat(centerLng) },
+        radius: 30000,
+      },
+    };
+  }
+
+  const res = await axios.post(
+    'https://places.googleapis.com/v1/places:searchText',
+    body,
+    {
+      headers: {
+        'Content-Type': 'application/json',
+        'X-Goog-Api-Key': placesKey,
+        'X-Goog-FieldMask': RESTAURANT_FIELD_MASK,
+      },
+      timeout: 10000,
+    }
+  );
+  return res.data?.places || [];
+}
+
+// Returns an array of app-shaped restaurant objects, or [] when Places is
+// unconfigured / returns nothing usable (caller then keeps the LLM's list).
+async function fetchRealRestaurants(cityEn, centerLat, centerLng, countryCode, limit) {
+  const placesKey = process.env.GOOGLE_PLACES_API_KEY;
+  if (!placesKey || placesKey === 'your_google_places_api_key_here') {
+    console.warn('[RESTAURANTS] Places not configured — keeping AI-generated restaurants.');
+    return [];
+  }
+
+  const cacheKey = `__restaurants__|${cityEn.toLowerCase().trim()}|${limit}`;
+  const now = Date.now();
+  if (placesCache.has(cacheKey)) {
+    const cached = placesCache.get(cacheKey);
+    if (now - cached.timestamp < PLACES_CACHE_TTL_MS) return cached.data;
+    placesCache.delete(cacheKey);
+  }
+
+  let arPlaces = [];
+  let enPlaces = [];
+  try {
+    // Arabic names are what the UI shows; English names are what the image
+    // search and the Google Maps deep link work best with. One call each.
+    [arPlaces, enPlaces] = await Promise.all([
+      searchRestaurantsInLanguage(cityEn, centerLat, centerLng, 'ar'),
+      searchRestaurantsInLanguage(cityEn, centerLat, centerLng, 'en'),
+    ]);
+  } catch (err) {
+    const apiError = err.response?.data?.error;
+    console.error('[RESTAURANTS] Places search failed:', apiError?.message || err.message);
+    return [];
+  }
+
+  const enById = new Map(enPlaces.map((p) => [p.id, p]));
+  const halalByDefault = HALAL_DEFAULT_COUNTRIES.has((countryCode || '').toUpperCase());
+
+  const candidates = arPlaces
+    .filter((p) => {
+      if (!p.location || !p.displayName?.text) return false;
+      // `includedType` is a soft filter — Riyadh's top hit for this query is a
+      // scenic viewpoint, not a restaurant. Require the real type tag.
+      if (!(p.types || []).some((t) => FOOD_PLACE_TYPES.has(t))) return false;
+      // Thin listings are usually closed or mis-tagged — skip them.
+      if ((p.userRatingCount || 0) < 20) return false;
+      if ((p.rating || 0) < 3.8) return false;
+      if (centerLat && centerLng) {
+        const distKm = haversineDistance(
+          parseFloat(centerLat), parseFloat(centerLng),
+          p.location.latitude, p.location.longitude
+        );
+        if (distKm > PLACES_MAX_DISTANCE_KM) return false;
+      }
+      return true;
+    })
+    // Rank by rating weighted with review volume so a lone 5.0 with 21 reviews
+    // doesn't outrank a 4.6 with 8000.
+    .sort((a, b) =>
+      (b.rating * Math.log10(b.userRatingCount + 10)) -
+      (a.rating * Math.log10(a.userRatingCount + 10))
+    )
+    .slice(0, limit);
+
+  const mapped = candidates.map((p) => {
+    // The en/ar searches don't return identical result sets, so this misses
+    // fairly often — every use below falls back to the Arabic record.
+    const en = enById.get(p.id);
+    const cuisine = p.primaryTypeDisplayName?.text || en?.primaryTypeDisplayName?.text || '';
+    // Image search only works with Latin text. When we have no English name,
+    // describe the cuisine in English from the type tags instead of sending
+    // Arabic through and getting unrelated photos back.
+    const cuisineEn = (p.types || []).find((t) => FOOD_PLACE_TYPES.has(t)) || 'restaurant';
+    const imageQuery = en?.displayName?.text
+      ? `${en.displayName.text} restaurant food`
+      : `${cuisineEn.replace(/_/g, ' ')} ${cityEn} food`;
+    const editorial = p.editorialSummary?.text;
+    // Latin digits throughout — the app renders ratings as Latin everywhere
+    // else, and 'ar-EG' grouping would mix ٣٬١٧٣ with a Latin "4.1".
+    const ratingText =
+      `تقييم ${p.rating} من ${p.userRatingCount.toLocaleString('en-US')} زائر على خرائط Google`;
+
+    return {
+      name: p.displayName.text,
+      name_en: en?.displayName?.text || p.displayName.text,
+      cuisine_type: cuisine,
+      halal_certified: halalByDefault,
+      rating: p.rating,
+      price_per_person_usd: PRICE_LEVEL_USD[p.priceLevel] ?? 20,
+      address: p.formattedAddress || '',
+      latitude: p.location.latitude,
+      longitude: p.location.longitude,
+      opening_hours: (p.regularOpeningHours?.weekdayDescriptions || []).join(' • '),
+      ai_description: editorial ? `${editorial} — ${ratingText}.` : `${ratingText}.`,
+      image_search_query: imageQuery,
+      booking_url: p.websiteUri || null,
+      place_id: p.id,
+      coords_verified: true,
+    };
+  });
+
+  placesCache.set(cacheKey, { data: mapped, timestamp: now });
+  console.log(`[RESTAURANTS] ${mapped.length} real restaurants sourced for "${cityEn}"`);
+  return mapped;
+}
+
+// Swap the LLM's restaurants for the real ones. Each day gets its own
+// recommended restaurant (no repeats), and the rest fill all_restaurants.
+function applyRealRestaurants(tripData, realRestaurants) {
+  if (!realRestaurants.length) return tripData;
+
+  const dayCount = Array.isArray(tripData.days) ? tripData.days.length : 0;
+  // Highest-ranked go to the per-day recommendations.
+  const recommended = realRestaurants.slice(0, dayCount);
+  const rest = realRestaurants.slice(dayCount);
+
+  for (let i = 0; i < dayCount; i++) {
+    if (recommended[i]) {
+      tripData.days[i].recommended_restaurant = { ...recommended[i] };
+    } else {
+      delete tripData.days[i].recommended_restaurant;
+    }
+  }
+
+  // Keep the recommended ones in the full list too — the app dedupes by name
+  // and flags them with is_recommended, so the Restaurants tab shows everything.
+  tripData.all_restaurants = rest.length ? rest : realRestaurants;
   return tripData;
 }
 
@@ -1014,6 +1238,20 @@ ${countryCode ? `- Country: ${countryCode}` : ''}`;
     const centerLat = userLat || (resolved && resolved.lat) || null;
     const centerLng = userLng || (resolved && resolved.lng) || null;
     parsedData = await verifyAllPlacesInTrip(parsedData, destinationEn, centerLat, centerLng);
+
+    // Replace the model's invented restaurants with real, currently-open ones
+    // from Places. Runs AFTER verification so the stop centroid is available as
+    // a search center when the user gave no GPS. No-ops if Places is off.
+    const restaurantLimit = Math.min(20, Math.max(8, (parseInt(durationDays, 10) || 3) * 3));
+    const restaurantCentroid = tripStopCentroid(parsedData);
+    const realRestaurants = await fetchRealRestaurants(
+      destinationEn,
+      centerLat || restaurantCentroid?.lat,
+      centerLng || restaurantCentroid?.lng,
+      (resolved && resolved.countryCode) || countryCode,
+      restaurantLimit
+    );
+    parsedData = applyRealRestaurants(parsedData, realRestaurants);
 
     return res.status(200).json(parsedData);
   } catch (error) {

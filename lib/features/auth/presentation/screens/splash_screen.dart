@@ -179,7 +179,7 @@ class _SplashScreenState extends State<SplashScreen> {
             shape: BoxShape.circle,
             color: i == 0
                 ? AppColors.accentAmber
-                : AppColors.textSecondary.withValues(alpha: 0.3),
+                : AppColors.adaptiveTextSecondary(context).withValues(alpha: 0.3),
           ),
         )
             .animate(onPlay: (c) => c.repeat())

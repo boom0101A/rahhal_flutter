@@ -77,7 +77,7 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
                     child: Text(
                       strings.onboardingSkip,
                       style: AppTextStyles.bodyMedium.copyWith(
-                        color: AppColors.textSecondary,
+                        color: AppColors.adaptiveTextSecondary(context),
                       ),
                     ),
                   ),
@@ -108,7 +108,7 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
                         borderRadius: BorderRadius.circular(4),
                         color: _currentPage == i
                             ? AppColors.accentAmber
-                            : AppColors.textSecondary.withValues(alpha: 0.3),
+                            : AppColors.adaptiveTextSecondary(context).withValues(alpha: 0.3),
                       ),
                     ),
                   ),
@@ -181,8 +181,8 @@ class _OnboardingPageWidget extends StatelessWidget {
             height: 140,
             decoration: BoxDecoration(
               shape: BoxShape.circle,
-              color: AppColors.bgCard,
-              border: Border.all(color: AppColors.border, width: 1),
+              color: AppColors.adaptiveBgCard(context),
+              border: Border.all(color: AppColors.adaptiveBorder(context), width: 1),
               boxShadow: AppColors.amberGlow,
             ),
             child: Center(

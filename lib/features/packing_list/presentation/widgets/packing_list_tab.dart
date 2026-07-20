@@ -363,8 +363,8 @@ class _AddPackingItemBottomSheetState extends State<_AddPackingItemBottomSheet> 
     final categories = ['clothing', 'toiletries', 'electronics', 'documents', 'other'];
 
     return Container(
-      decoration: const BoxDecoration(
-        color: AppColors.bgPopover,
+      decoration: BoxDecoration(
+        color: AppColors.adaptiveBgPopover(context),
         borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
       ),
       padding: EdgeInsets.fromLTRB(20, 20, 20, MediaQuery.of(context).viewInsets.bottom + 24),
@@ -395,7 +395,7 @@ class _AddPackingItemBottomSheetState extends State<_AddPackingItemBottomSheet> 
                   ),
                   IconButton(
                     onPressed: () => Navigator.pop(context),
-                    icon: const Icon(Icons.close_rounded, color: AppColors.textSecondary),
+                    icon: Icon(Icons.close_rounded, color: AppColors.adaptiveTextSecondary(context)),
                   ),
                 ],
               ),

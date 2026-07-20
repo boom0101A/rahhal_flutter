@@ -339,7 +339,7 @@ class _ChatScreenState extends State<ChatScreen> {
                 shape: BoxShape.circle,
                 gradient: isTyping ? null : AppColors.amberGradient,
                 color: isTyping
-                    ? AppColors.textSecondary.withValues(alpha: 0.3)
+                    ? AppColors.adaptiveTextSecondary(context).withValues(alpha: 0.3)
                     : null,
                 boxShadow: isTyping ? null : AppColors.amberGlow,
               ),
@@ -456,13 +456,13 @@ class _TypingIndicator extends StatelessWidget {
           Container(
             padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 14),
             decoration: BoxDecoration(
-              color: AppColors.glass,
+              color: AppColors.adaptiveGlass(context),
               borderRadius: const BorderRadius.only(
                 topLeft: Radius.circular(20),
                 topRight: Radius.circular(20),
                 bottomRight: Radius.circular(20),
               ),
-              border: Border.all(color: AppColors.border),
+              border: Border.all(color: AppColors.adaptiveBorder(context)),
             ),
             child: Row(
               mainAxisSize: MainAxisSize.min,
@@ -515,8 +515,8 @@ class _SuggestionChip extends StatelessWidget {
             Expanded(
               child: Text(text, style: AppTextStyles.bodyMedium),
             ),
-            const Icon(Icons.chevron_left_rounded,
-                color: AppColors.textSecondary, size: 18),
+            Icon(Icons.chevron_left_rounded,
+                color: AppColors.adaptiveTextSecondary(context), size: 18),
           ],
         ),
       ),

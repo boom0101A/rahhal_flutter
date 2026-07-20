@@ -8,6 +8,7 @@ class MapLauncherService {
     String? city,
     double? lat,
     double? lon,
+    String? placeId,
   }) async {
     try {
       final query = [
@@ -16,7 +17,13 @@ class MapLauncherService {
       ].join(', ');
 
       final String googleMapsUrl;
-      if (lat != null && lon != null && lat != 0.0 && lon != 0.0) {
+      if (placeId != null && placeId.trim().isNotEmpty) {
+        // A Places ID resolves to the exact business listing — no ambiguity
+        // between branches of the same chain, unlike a name or coordinate.
+        googleMapsUrl =
+            'https://www.google.com/maps/search/?api=1&query=${Uri.encodeComponent(query)}'
+            '&query_place_id=${Uri.encodeComponent(placeId.trim())}';
+      } else if (lat != null && lon != null && lat != 0.0 && lon != 0.0) {
         googleMapsUrl = 'https://www.google.com/maps/search/?api=1&query=$lat,$lon';
       } else {
         googleMapsUrl = 'https://www.google.com/maps/search/?api=1&query=${Uri.encodeComponent(query)}';
