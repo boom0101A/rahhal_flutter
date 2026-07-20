@@ -12,13 +12,17 @@ console.log('══════════════════════�
 console.log('🚀 Rahhal AI Backend — Environment Check');
 console.log('═══════════════════════════════════════════');
 
-if (!GEMINI_KEY || GEMINI_KEY === 'your_gemini_api_key_here') {
-  console.error('❌ GEMINI_API_KEY: NOT SET');
-  console.error('⚠️  WARNING: No Gemini AI API key found!');
-  console.error('   All trip generation will fail with "missing-api-key" error.');
-  console.error('   Add GEMINI_API_KEY to your .env file.');
+if (process.env.GROQ_API_KEY &&
+    process.env.GROQ_API_KEY !== 'your_groq_api_key_here') {
+  console.log('✅ GROQ_API_KEY: Set (primary AI engine — Groq)');
 } else {
-  console.log('✅ GEMINI_API_KEY: Set (Google Gemini AI active)');
+  console.log('⚠️  GROQ_API_KEY: Not set (will use Gemini instead)');
+}
+
+if (!GEMINI_KEY || GEMINI_KEY === 'your_gemini_api_key_here') {
+  console.error('❌ GEMINI_API_KEY: NOT SET (Gemini fallback unavailable)');
+} else {
+  console.log('✅ GEMINI_API_KEY: Set (Gemini fallback active)');
 }
 
 if (process.env.GOOGLE_PLACES_API_KEY &&
@@ -51,6 +55,81 @@ const PLACES_CACHE_TTL_MS = 24 * 60 * 60 * 1000; // 24 hours
 // to cover a metro area, tight enough to catch a same-named place resolved
 // to a different city entirely.
 const PLACES_MAX_DISTANCE_KM = 100;
+
+// Arabic → English city dictionary. The trip model (gpt-oss) can't reliably
+// read an Arabic city name buried inside the big trip prompt and either asks
+// "which city?" or drifts to a famous one — so we resolve the destination to
+// English first. This zero-cost lookup covers the common cases (all Iraqi
+// governorate capitals + major MENA/world cities) without spending any Google
+// Places quota; Places is only used as a fallback for names not listed here.
+const AR_CITY_DICTIONARY = {
+  // Iraq — governorate capitals & notable cities
+  'بغداد': { en: 'Baghdad', country: 'Iraq', code: 'IQ' },
+  'البصرة': { en: 'Basra', country: 'Iraq', code: 'IQ' },
+  'بصرة': { en: 'Basra', country: 'Iraq', code: 'IQ' },
+  'الموصل': { en: 'Mosul', country: 'Iraq', code: 'IQ' },
+  'موصل': { en: 'Mosul', country: 'Iraq', code: 'IQ' },
+  'أربيل': { en: 'Erbil', country: 'Iraq', code: 'IQ' },
+  'اربيل': { en: 'Erbil', country: 'Iraq', code: 'IQ' },
+  'كركوك': { en: 'Kirkuk', country: 'Iraq', code: 'IQ' },
+  'النجف': { en: 'Najaf', country: 'Iraq', code: 'IQ' },
+  'نجف': { en: 'Najaf', country: 'Iraq', code: 'IQ' },
+  'كربلاء': { en: 'Karbala', country: 'Iraq', code: 'IQ' },
+  'الحلة': { en: 'Hillah', country: 'Iraq', code: 'IQ' },
+  'الرمادي': { en: 'Ramadi', country: 'Iraq', code: 'IQ' },
+  'الناصرية': { en: 'Nasiriyah', country: 'Iraq', code: 'IQ' },
+  'العمارة': { en: 'Amarah', country: 'Iraq', code: 'IQ' },
+  'الديوانية': { en: 'Diwaniyah', country: 'Iraq', code: 'IQ' },
+  'الكوت': { en: 'Kut', country: 'Iraq', code: 'IQ' },
+  'السماوة': { en: 'Samawah', country: 'Iraq', code: 'IQ' },
+  'بعقوبة': { en: 'Baqubah', country: 'Iraq', code: 'IQ' },
+  'تكريت': { en: 'Tikrit', country: 'Iraq', code: 'IQ' },
+  'الفلوجة': { en: 'Fallujah', country: 'Iraq', code: 'IQ' },
+  'دهوك': { en: 'Duhok', country: 'Iraq', code: 'IQ' },
+  'السليمانية': { en: 'Sulaymaniyah', country: 'Iraq', code: 'IQ' },
+  'سامراء': { en: 'Samarra', country: 'Iraq', code: 'IQ' },
+  // Major MENA / world cities
+  'القاهرة': { en: 'Cairo', country: 'Egypt', code: 'EG' },
+  'الإسكندرية': { en: 'Alexandria', country: 'Egypt', code: 'EG' },
+  'إسطنبول': { en: 'Istanbul', country: 'Turkey', code: 'TR' },
+  'اسطنبول': { en: 'Istanbul', country: 'Turkey', code: 'TR' },
+  'أنقرة': { en: 'Ankara', country: 'Turkey', code: 'TR' },
+  'دبي': { en: 'Dubai', country: 'United Arab Emirates', code: 'AE' },
+  'أبوظبي': { en: 'Abu Dhabi', country: 'United Arab Emirates', code: 'AE' },
+  'الرياض': { en: 'Riyadh', country: 'Saudi Arabia', code: 'SA' },
+  'جدة': { en: 'Jeddah', country: 'Saudi Arabia', code: 'SA' },
+  'مكة': { en: 'Mecca', country: 'Saudi Arabia', code: 'SA' },
+  'المدينة': { en: 'Medina', country: 'Saudi Arabia', code: 'SA' },
+  'الدوحة': { en: 'Doha', country: 'Qatar', code: 'QA' },
+  'الكويت': { en: 'Kuwait City', country: 'Kuwait', code: 'KW' },
+  'المنامة': { en: 'Manama', country: 'Bahrain', code: 'BH' },
+  'مسقط': { en: 'Muscat', country: 'Oman', code: 'OM' },
+  'عمّان': { en: 'Amman', country: 'Jordan', code: 'JO' },
+  'عمان': { en: 'Amman', country: 'Jordan', code: 'JO' },
+  'بيروت': { en: 'Beirut', country: 'Lebanon', code: 'LB' },
+  'دمشق': { en: 'Damascus', country: 'Syria', code: 'SY' },
+  'الدار البيضاء': { en: 'Casablanca', country: 'Morocco', code: 'MA' },
+  'مراكش': { en: 'Marrakesh', country: 'Morocco', code: 'MA' },
+  'تونس': { en: 'Tunis', country: 'Tunisia', code: 'TN' },
+  'طرابلس': { en: 'Tripoli', country: 'Libya', code: 'LY' },
+  'باريس': { en: 'Paris', country: 'France', code: 'FR' },
+  'لندن': { en: 'London', country: 'United Kingdom', code: 'GB' },
+  'روما': { en: 'Rome', country: 'Italy', code: 'IT' },
+  'طوكيو': { en: 'Tokyo', country: 'Japan', code: 'JP' },
+};
+
+// Look up a destination in the static dictionary. Matches the whole string
+// first, then tries each known Arabic name as a substring (handles inputs
+// like "كربلاء، العراق" or "مدينة النجف").
+function lookupCityDictionary(rawDestination) {
+  if (!rawDestination) return null;
+  const q = rawDestination.trim();
+  if (AR_CITY_DICTIONARY[q]) return AR_CITY_DICTIONARY[q];
+  for (const [ar, info] of Object.entries(AR_CITY_DICTIONARY)) {
+    if (q.includes(ar)) return info;
+  }
+  return null;
+}
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -144,13 +223,15 @@ app.get('/health', (req, res) => {
 app.get('/api/status', (req, res) => {
   const hasGeminiKey = !!(process.env.GEMINI_API_KEY &&
     process.env.GEMINI_API_KEY !== 'your_gemini_api_key_here');
+  const hasGroqKey = !!(process.env.GROQ_API_KEY &&
+    process.env.GROQ_API_KEY !== 'your_groq_api_key_here');
   const hasPlacesKey = !!(process.env.GOOGLE_PLACES_API_KEY &&
     process.env.GOOGLE_PLACES_API_KEY !== 'your_google_places_api_key_here');
 
   res.json({
     status: 'ok',
-    ai_engine: hasGeminiKey ? 'gemini' : 'none',
-    ai_ready: hasGeminiKey,
+    ai_engine: hasGroqKey ? 'groq' : (hasGeminiKey ? 'gemini' : 'none'),
+    ai_ready: hasGroqKey || hasGeminiKey,
     places_verification: hasPlacesKey,
     timestamp: new Date().toISOString(),
   });
@@ -243,9 +324,82 @@ async function callGemini(systemPrompt, messages, maxTokens = 4000, apiKey) {
   throw new Error(`gemini-error: ${errMsg}`);
 }
 
-// Unified AI Engine Call: Uses Google Gemini as the sole AI engine
+// Helper: call Groq (OpenAI-compatible).
+// Groq's free tier is far more generous than Gemini's (~1000 requests/day,
+// no credit card). We use openai/gpt-oss-120b rather than llama-3.3-70b —
+// the Llama model can't reliably read Arabic city names (it mistook
+// "كربلاء" for Paris and returned Dubai trips), whereas the gpt-oss models
+// understand the Arabic destination and return clean JSON. We use the 20b
+// (not 120b) because both share the free tier's 8000 tokens-per-minute cap,
+// and 20b returns cleaner, non-truncated output for our prompt size.
+const GROQ_MODEL = process.env.GROQ_MODEL || 'openai/gpt-oss-20b';
+async function callGroq(systemPrompt, messages, maxTokens = 4000, apiKey) {
+  // Groq's free tier caps tokens-per-minute at 8000 for the gpt-oss models,
+  // and (prompt + max_tokens) counts against it. The trip system prompt is
+  // ~1600 tokens, so keep the output budget low enough that a single request
+  // stays under the limit.
+  const outputBudget = Math.max(1024, Math.min(maxTokens, 6000));
+
+  const chatMessages = [];
+  if (systemPrompt) chatMessages.push({ role: 'system', content: systemPrompt });
+  for (const m of messages) {
+    chatMessages.push({
+      role: m.role === 'assistant' || m.role === 'model' ? 'assistant' : 'user',
+      content: m.content,
+    });
+  }
+
+  try {
+    console.log(`[GROQ] Calling ${GROQ_MODEL} (output budget ${outputBudget} tokens)...`);
+    const response = await axios.post(
+      'https://api.groq.com/openai/v1/chat/completions',
+      {
+        model: GROQ_MODEL,
+        messages: chatMessages,
+        temperature: 0.7,
+        max_tokens: outputBudget,
+      },
+      {
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${apiKey}`,
+        },
+        timeout: 60000,
+      }
+    );
+
+    const text = response.data?.choices?.[0]?.message?.content;
+    if (text && text.length > 0) {
+      console.log(`[GROQ] ✅ Success! Response length: ${text.length}`);
+      return text;
+    }
+    throw new Error('empty-response');
+  } catch (err) {
+    const status = err.response?.status || 0;
+    const errMsg = err.response?.data?.error?.message || err.response?.data?.message || err.message || '';
+    console.warn(`[GROQ] ${GROQ_MODEL} error (${status}): ${errMsg}`);
+    if (status === 401 || status === 403) throw new Error('invalid-api-key');
+    if (status === 429) throw new Error('rate-limit');
+    throw new Error(`groq-error: ${errMsg}`);
+  }
+}
+
+// Unified AI Engine Call: prefers Groq (generous free tier), falls back
+// to Google Gemini so the app keeps working if either provider is down.
 async function callAI(systemPrompt, messages, maxTokens = 4000) {
-  // 1. Try primary Gemini key
+  // 1. Try Groq first if configured (much larger free daily quota).
+  const groqKey = process.env.GROQ_API_KEY;
+  if (groqKey && groqKey !== 'your_groq_api_key_here' && groqKey.length > 10) {
+    try {
+      console.log('[AI Engine] Using Groq...');
+      return await callGroq(systemPrompt, messages, maxTokens, groqKey);
+    } catch (e) {
+      console.warn('[AI Engine] GROQ_API_KEY failed:', e.message);
+      // Fall through to Gemini below instead of failing immediately.
+    }
+  }
+
+  // 2. Try primary Gemini key
   const geminiKey = process.env.GEMINI_API_KEY;
   if (geminiKey && geminiKey !== 'your_gemini_api_key_here' && geminiKey.length > 10) {
     try {
@@ -478,6 +632,68 @@ async function verifyAllPlacesInTrip(tripData, destinationEn, userLat, userLng) 
 }
 
 // ─── POST /api/generate-trip ────────────────────────────────────────────────
+// Resolve a possibly-Arabic destination string to a canonical English city
+// name + country using Google Places (New). Doing this here — rather than
+// asking the LLM — is both more reliable (Google knows Arabic place names)
+// and frees the whole Groq token-per-minute budget for the actual trip
+// generation. Bonus: it returns real coordinates we can use to bias/verify
+// the Places lookups later. Returns null if Places isn't configured or the
+// destination can't be resolved.
+async function resolveDestinationEN(rawDestination) {
+  // 1. Zero-cost static dictionary first (covers the common destinations
+  //    without spending any Google Places quota).
+  const dict = lookupCityDictionary(rawDestination);
+  if (dict) {
+    return { cityEn: dict.en, country: dict.country, countryCode: dict.code, lat: null, lng: null };
+  }
+
+  // 2. Fall back to Google Places for names not in the dictionary.
+  const placesKey = process.env.GOOGLE_PLACES_API_KEY;
+  if (!placesKey || placesKey === 'your_google_places_api_key_here') return null;
+  try {
+    const res = await axios.post(
+      'https://places.googleapis.com/v1/places:searchText',
+      { textQuery: rawDestination, languageCode: 'en' },
+      {
+        headers: {
+          'Content-Type': 'application/json',
+          'X-Goog-Api-Key': placesKey,
+          'X-Goog-FieldMask': 'places.displayName,places.formattedAddress,places.location,places.addressComponents',
+        },
+        timeout: 8000,
+      }
+    );
+    const p = res.data?.places?.[0];
+    const cityEn = p?.displayName?.text?.trim();
+    if (!cityEn) return null;
+
+    let country = '';
+    let countryCode = '';
+    for (const comp of (p.addressComponents || [])) {
+      if ((comp.types || []).includes('country')) {
+        country = comp.longText || comp.shortText || '';
+        countryCode = comp.shortText || '';
+        break;
+      }
+    }
+    if (!country && p.formattedAddress) {
+      const parts = p.formattedAddress.split(',');
+      country = parts[parts.length - 1].trim();
+    }
+
+    return {
+      cityEn,
+      country,
+      countryCode,
+      lat: p.location?.latitude ?? null,
+      lng: p.location?.longitude ?? null,
+    };
+  } catch (err) {
+    console.warn('[RESOLVE] Places resolution failed:', err.response?.data?.error?.message || err.message);
+    return null;
+  }
+}
+
 app.post('/api/generate-trip', async (req, res) => {
   const {
     destination,
@@ -494,6 +710,16 @@ app.post('/api/generate-trip', async (req, res) => {
   if (!destination || !durationDays || !budgetTier) {
     return res.status(400).json({ error: 'Missing required parameters' });
   }
+
+  // Resolve the (possibly Arabic) destination to a canonical English city so
+  // the model can't quietly swap it for a more famous one.
+  const resolved = await resolveDestinationEN(destination);
+  if (resolved) {
+    console.log(`[RESOLVE] "${destination}" -> ${resolved.cityEn}, ${resolved.country}`);
+  }
+  const resolvedDirective = resolved
+    ? `\nAUTHORITATIVE DESTINATION: The user's destination "${destination}" refers to the city "${resolved.cityEn}" in ${resolved.country}. You MUST build the ENTIRE itinerary for "${resolved.cityEn}, ${resolved.country}" and nothing else. NEVER substitute a different or more famous city. Every stop and restaurant must be a real place physically located in ${resolved.cityEn}. Set destination_en to "${resolved.cityEn}".\n`
+    : '';
 
   // ── Build GPS context string for the AI ─────────────────────────────────
   // When GPS is available, this dramatically improves location accuracy
@@ -519,7 +745,7 @@ This means:
     : '';
 
   const systemPrompt = `You are a professional travel planner expert in creating highly detailed, realistic, and personalized trip itineraries.
-
+${resolvedDirective}
 ABSOLUTE RULES — NEVER VIOLATE THESE:
 
 RULE 1 — NO REPETITION:
@@ -706,13 +932,19 @@ ${countryCode ? `- Country: ${countryCode}` : ''}`;
         .replace(/[ً-ٰٟ]/g, '') // strip Arabic diacritics
         .replace(/[^\p{L}\p{N}]/gu, ''); // strip spaces/punctuation
 
-      const requestedNorm = normalizeCityName(destination);
       const returnedArNorm = normalizeCityName(parsed.destination);
       const returnedEnNorm = normalizeCityName(parsed.destination_en);
-      const destinationMatches = requestedNorm && (
-        (returnedArNorm && (returnedArNorm.includes(requestedNorm) || requestedNorm.includes(returnedArNorm))) ||
-        (returnedEnNorm && (returnedEnNorm.includes(requestedNorm) || requestedNorm.includes(returnedEnNorm)))
-      );
+      // Prefer matching against the resolved English city (reliable, same
+      // script as destination_en); fall back to the raw (possibly Arabic)
+      // destination when resolution wasn't available.
+      const requestedNorm = normalizeCityName(resolved ? resolved.cityEn : destination);
+      const rawRequestedNorm = normalizeCityName(destination);
+      const matchesOne = (a, b) => a && b && (a.includes(b) || b.includes(a));
+      const destinationMatches = (requestedNorm && (
+        matchesOne(returnedEnNorm, requestedNorm) || matchesOne(returnedArNorm, requestedNorm)
+      )) || (rawRequestedNorm && (
+        matchesOne(returnedArNorm, rawRequestedNorm) || matchesOne(returnedEnNorm, rawRequestedNorm)
+      ));
       if (!destinationMatches) {
         console.warn(
           `[TRIP] Destination mismatch: requested "${destination}", AI returned "${parsed.destination}" / "${parsed.destination_en}"`
@@ -775,8 +1007,13 @@ ${countryCode ? `- Country: ${countryCode}` : ''}`;
     }
 
     // Google Places verification (uses English city name)
-    const destinationEn = parsedData.destination_en || destination;
-    parsedData = await verifyAllPlacesInTrip(parsedData, destinationEn, userLat, userLng);
+    // Prefer the resolved English city name for Places lookups, and fall back
+    // to the resolved city's real coordinates as the search/verify center when
+    // the user gave no GPS — both make the "wrong city" rejection far tighter.
+    const destinationEn = (resolved && resolved.cityEn) || parsedData.destination_en || destination;
+    const centerLat = userLat || (resolved && resolved.lat) || null;
+    const centerLng = userLng || (resolved && resolved.lng) || null;
+    parsedData = await verifyAllPlacesInTrip(parsedData, destinationEn, centerLat, centerLng);
 
     return res.status(200).json(parsedData);
   } catch (error) {
