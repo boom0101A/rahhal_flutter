@@ -5,6 +5,7 @@ import '../../../../../core/constants/app_colors.dart';
 import '../../../../../core/constants/app_text_styles.dart';
 import '../../../../../core/constants/app_strings.dart';
 import '../../../../../core/utils/haptics.dart';
+import '../../../../../core/services/map_launcher_service.dart';
 import '../../../../../core/constants/filter_constants.dart';
 import '../../../../../shared/widgets/glass_card.dart';
 import '../../../../../shared/widgets/cached_hero_image.dart';
@@ -86,11 +87,11 @@ class RestaurantsTab extends StatelessWidget {
                   padding:
                       const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
                   decoration: BoxDecoration(
-                    color: isActive ? AppColors.accentAmber : AppColors.glass,
+                    color: isActive ? AppColors.accentAmber : AppColors.adaptiveGlass(context),
                     borderRadius: BorderRadius.circular(50),
                     border: Border.all(
                       color:
-                          isActive ? AppColors.accentAmber : AppColors.border,
+                          isActive ? AppColors.accentAmber : AppColors.adaptiveBorder(context),
                     ),
                   ),
                   child: Text(
@@ -98,7 +99,7 @@ class RestaurantsTab extends StatelessWidget {
                     style: AppTextStyles.chip.copyWith(
                       color: isActive
                           ? AppColors.bgPrimary
-                          : AppColors.textSecondary,
+                          : AppColors.adaptiveTextSecondary(context),
                     ),
                   ),
                 ),
@@ -216,7 +217,7 @@ class _RestaurantCard extends StatelessWidget {
                         return IconButton(
                           icon: Icon(
                             isFav ? Icons.favorite_rounded : Icons.favorite_outline_rounded,
-                            color: isFav ? AppColors.error : AppColors.textSecondary,
+                            color: isFav ? AppColors.error : AppColors.adaptiveTextSecondary(context),
                             size: 20,
                           ),
                           tooltip: isFav
@@ -289,8 +290,8 @@ class _RestaurantCard extends StatelessWidget {
                       ),
                     ),
                     const SizedBox(width: 12),
-                    const Icon(Icons.attach_money_rounded,
-                        color: AppColors.textSecondary, size: 14),
+                    Icon(Icons.attach_money_rounded,
+                        color: AppColors.adaptiveTextSecondary(context), size: 14),
                     Text(
                       '~\$${restaurant.pricePerPerson.toStringAsFixed(0)}/${AppStrings.of(context).perPerson}',
                       style: AppTextStyles.labelSmall,
@@ -303,11 +304,16 @@ class _RestaurantCard extends StatelessWidget {
                   Text(
                     restaurant.aiDescription!,
                     style: AppTextStyles.bodySmall.copyWith(
-                      color: AppColors.textSecondary,
+                      color: AppColors.adaptiveTextSecondary(context),
                     ),
                     maxLines: 2,
                     overflow: TextOverflow.ellipsis,
                   ),
+                ],
+                // Location → Google Maps
+                if (restaurant.hasLocation) ...[
+                  const SizedBox(height: 8),
+                  _MapLocationButton(restaurant: restaurant),
                 ],
               ],
             ),
@@ -321,5 +327,70 @@ class _RestaurantCard extends StatelessWidget {
           duration: 400.ms,
         )
         .slideY(begin: 0.05, end: 0);
+  }
+}
+
+/// Opens the restaurant's real location in Google Maps. Prefers the Places ID
+/// (exact listing) over coordinates, and shows the street address inline so the
+/// user can tell where the place is without leaving the app.
+class _MapLocationButton extends StatelessWidget {
+  final RestaurantEntity restaurant;
+
+  const _MapLocationButton({required this.restaurant});
+
+  Future<void> _openMaps(BuildContext context) async {
+    Haptics.tap();
+    final messenger = ScaffoldMessenger.of(context);
+    final failureMessage = AppStrings.of(context).mapsOpenFailed;
+
+    final launched = await MapLauncherService.openInGoogleMaps(
+      placeName: restaurant.nameEn?.isNotEmpty == true
+          ? restaurant.nameEn!
+          : restaurant.name,
+      lat: restaurant.latitude,
+      lon: restaurant.longitude,
+      placeId: restaurant.placeId,
+    );
+
+    if (!launched) {
+      messenger.showSnackBar(SnackBar(content: Text(failureMessage)));
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final address = restaurant.address;
+    return InkWell(
+      onTap: () => _openMaps(context),
+      borderRadius: BorderRadius.circular(8),
+      child: Padding(
+        padding: const EdgeInsets.symmetric(vertical: 4),
+        child: Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const Icon(Icons.location_on_rounded,
+                color: AppColors.accentTurquoise, size: 15),
+            const SizedBox(width: 4),
+            Expanded(
+              child: Text(
+                address != null && address.trim().isNotEmpty
+                    ? address
+                    : AppStrings.of(context).openInMaps,
+                style: AppTextStyles.labelSmall.copyWith(
+                  color: AppColors.accentTurquoise,
+                  decoration: TextDecoration.underline,
+                  decorationColor: AppColors.accentTurquoise,
+                ),
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+              ),
+            ),
+            const SizedBox(width: 2),
+            const Icon(Icons.open_in_new_rounded,
+                color: AppColors.accentTurquoise, size: 12),
+          ],
+        ),
+      ),
+    );
   }
 }
