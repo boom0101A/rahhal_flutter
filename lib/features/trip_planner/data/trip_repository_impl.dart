@@ -280,9 +280,12 @@ class TripRepositoryImpl implements TripRepository {
               'address': rec.address,
               'latitude': rec.latitude,
               'longitude': rec.longitude,
+              'opening_hours': rec.openingHours,
               'ai_description': rec.aiDescription,
               'is_recommended': 1,
               'image_url': recImageUrl,
+              'place_id': rec.placeId,
+              'coords_verified': rec.coordsVerified ? 1 : 0,
             };
           }
         }
@@ -311,9 +314,12 @@ class TripRepositoryImpl implements TripRepository {
               'address': r.address,
               'latitude': r.latitude,
               'longitude': r.longitude,
+              'opening_hours': r.openingHours,
               'ai_description': r.aiDescription,
               'is_recommended': 0,
               'image_url': rImageUrl,
+              'place_id': r.placeId,
+              'coords_verified': r.coordsVerified ? 1 : 0,
             };
           }
         }

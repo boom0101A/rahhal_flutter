@@ -20,6 +20,8 @@ class RestaurantEntity extends Equatable {
   final String? imageUrl;
   final String? aiDescription;
   final bool isRecommended;
+  final String? placeId;
+  final bool coordsVerified;
 
   const RestaurantEntity({
     required this.id,
@@ -39,9 +41,17 @@ class RestaurantEntity extends Equatable {
     this.imageUrl,
     this.aiDescription,
     required this.isRecommended,
+    this.placeId,
+    this.coordsVerified = false,
   });
 
   String get ratingLabel => rating.toStringAsFixed(1);
+
+  /// True when we have something good enough to point Google Maps at —
+  /// either a Places ID or real coordinates.
+  bool get hasLocation =>
+      (placeId != null && placeId!.isNotEmpty) ||
+      (latitude != 0.0 && longitude != 0.0);
 
   List<String> get tags {
     final result = <String>[];
