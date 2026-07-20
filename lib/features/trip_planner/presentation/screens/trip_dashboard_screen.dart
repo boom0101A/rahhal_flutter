@@ -348,7 +348,8 @@ class _TripDashboardScreenState extends State<TripDashboardScreen>
       ),
       // Stats row + Tab bar
       bottom: PreferredSize(
-        preferredSize: const Size.fromHeight(100),
+        // Stats row (~52) + tab bar (44 tab + 12 padding).
+        preferredSize: const Size.fromHeight(108),
         child: Column(
           children: [
             if (_trip != null) _buildStatsRow(),
@@ -435,13 +436,23 @@ class _TripDashboardScreenState extends State<TripDashboardScreen>
           dividerColor: Colors.transparent,
           labelColor: AppColors.adaptiveBgPrimary(context),
           unselectedLabelColor: AppColors.adaptiveTextSecondary(context),
-          labelStyle: AppTextStyles.labelSmall.copyWith(
-            fontWeight: FontWeight.w700,
-          ),
+          labelStyle: AppTextStyles.tabLabel,
+          unselectedLabelStyle: AppTextStyles.tabLabel,
+          labelPadding: const EdgeInsets.symmetric(horizontal: 4),
           tabs: _tabs(context)
               .map((t) => Tab(
-                    height: 36,
-                    child: Text(t.$2),
+                    height: 44,
+                    // Arabic tab titles vary a lot in width ("الخريطة" vs
+                    // "حقيبة السفر"); scale down rather than ellipsize so every
+                    // label stays fully readable on narrow phones.
+                    child: FittedBox(
+                      fit: BoxFit.scaleDown,
+                      child: Text(
+                        t.$2,
+                        maxLines: 1,
+                        textAlign: TextAlign.center,
+                      ),
+                    ),
                   ))
               .toList(),
         ),
