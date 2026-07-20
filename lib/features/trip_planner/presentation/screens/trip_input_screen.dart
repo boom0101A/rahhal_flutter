@@ -49,7 +49,7 @@ class _TripInputScreenState extends State<TripInputScreen> {
         });
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text('📍 تم تحديد موقعك: ${locationData.fullLocationDisplay}'),
+            content: Text(AppStrings.of(context).locationDetected(locationData.fullLocationDisplay)),
             backgroundColor: AppColors.accentAmber,
             behavior: SnackBarBehavior.floating,
           ),

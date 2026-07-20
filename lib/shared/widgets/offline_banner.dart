@@ -1,4 +1,5 @@
 import 'package:connectivity_plus/connectivity_plus.dart';
+import '../../core/constants/app_strings.dart';
 import 'package:flutter/material.dart';
 
 /// A banner that appears at the top of the screen when there is no internet connection.
@@ -23,16 +24,16 @@ class OfflineBanner extends StatelessWidget {
               width: double.infinity,
               color: Colors.red.shade700,
               child: isOffline
-                  ? const Center(
+                  ? Center(
                       child: Row(
                         mainAxisAlignment: MainAxisAlignment.center,
                         children: [
-                          Icon(Icons.wifi_off_rounded,
+                          const Icon(Icons.wifi_off_rounded,
                               color: Colors.white, size: 16),
-                          SizedBox(width: 8),
+                          const SizedBox(width: 8),
                           Text(
-                            'لا يوجد اتصال بالإنترنت. يرجى التحقق من الشبكة.',
-                            style: TextStyle(
+                            AppStrings.of(context).offlineMessage,
+                            style: const TextStyle(
                               color: Colors.white,
                               fontSize: 13,
                               fontFamily: 'Inter',

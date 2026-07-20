@@ -195,8 +195,8 @@ class _MapViewState extends State<_MapView> with WidgetsBindingObserver {
         if (mounted) {
           setState(() => _isLocatingUser = false);
           ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(
-              content: Text('تعذّر الوصول للموقع. فعّل الإذن من الإعدادات.'),
+            SnackBar(
+              content: Text(AppStrings.of(context).locationPermissionHint),
               backgroundColor: Colors.red,
             ),
           );
@@ -367,7 +367,7 @@ class _MapViewState extends State<_MapView> with WidgetsBindingObserver {
           child: GlassCardStrong(
             padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
             child: Text(
-              '${stops.length} محطة',
+              AppStrings.of(context).stopsCount(stops.length),
               style: AppTextStyles.labelMedium,
             ),
           ),

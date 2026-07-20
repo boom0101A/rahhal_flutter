@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import '../../../../core/constants/app_strings.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:go_router/go_router.dart';
 import '../../../../core/constants/app_colors.dart';
@@ -26,7 +27,7 @@ class MapFullScreen extends StatelessWidget {
             icon: const Icon(Icons.arrow_back_ios_new_rounded, color: Colors.white, size: 20),
           ),
           title: Text(
-            'مسار الرحلة الكامل',
+            AppStrings.of(context).fullRouteTitle,
             style: AppTextStyles.headlineMedium,
           ),
           centerTitle: true,
