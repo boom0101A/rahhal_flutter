@@ -259,14 +259,13 @@ class _ChatScreenState extends State<ChatScreen> {
         GlassCard(
           padding: const EdgeInsets.all(14),
           child: Text(
-            'يمكنك سؤالي عن أي شيء: أفضل المطاعم، المواصلات، التكاليف، الطقس، '
-            'ساعات الزيارة، أماكن التسوق، الثقافة المحلية، أو أي تساؤل آخر عن رحلتك! 💬',
+            AppStrings.of(context).chatIntroHint,
             style: AppTextStyles.bodyMedium,
             textAlign: TextAlign.center,
           ),
         ),
         const SizedBox(height: 24),
-        Text(AppStrings.of(context).chatSuggestions, style: AppTextStyles.titleSmall),
+        Text(AppStrings.of(context).chatIntroHint, style: AppTextStyles.titleSmall),
         const SizedBox(height: 12),
         ..._suggestions(context).map((s) => _SuggestionChip(
               text: s,

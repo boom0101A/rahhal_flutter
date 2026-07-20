@@ -74,11 +74,11 @@ class _StopDetailScreenState extends State<StopDetailScreen> {
         children: [
           const Text('⚠️', style: TextStyle(fontSize: 48)),
           const SizedBox(height: 16),
-          Text(_errorMessage ?? 'حدث خطأ ما', style: AppTextStyles.bodyMedium),
+          Text(_errorMessage ?? AppStrings.of(context).errorGeneric, style: AppTextStyles.bodyMedium),
           const SizedBox(height: 24),
           ElevatedButton(
             onPressed: () => context.pop(),
-            child: const Text('رجوع'),
+            child: Text(AppStrings.of(context).back),
           ),
         ],
       ),
@@ -384,8 +384,8 @@ class _StopDetailScreenState extends State<StopDetailScreen> {
   Future<void> _openBookingUrl(String? url) async {
     if (url == null || url.trim().isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('لا يوجد رابط حجز متاح لهذا المكان'),
+        SnackBar(
+          content: Text(AppStrings.of(context).bookingNoLink),
           backgroundColor: AppColors.error,
         ),
       );
@@ -396,8 +396,8 @@ class _StopDetailScreenState extends State<StopDetailScreen> {
     if (uri == null) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('رابط الحجز غير صالح'),
+          SnackBar(
+            content: Text(AppStrings.of(context).bookingInvalidLink),
             backgroundColor: AppColors.error,
           ),
         );
@@ -410,9 +410,9 @@ class _StopDetailScreenState extends State<StopDetailScreen> {
       if (!launched && mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text('تعذّر فتح رابط الحجز. انسخ الرابط يدوياً: $url'),
+            content: Text(AppStrings.of(context).bookingOpenFailed(url)),
             action: SnackBarAction(
-              label: 'نسخ',
+              label: AppStrings.of(context).copyAction,
               onPressed: () => Clipboard.setData(ClipboardData(text: url)),
             ),
             duration: const Duration(seconds: 6),
@@ -422,8 +422,8 @@ class _StopDetailScreenState extends State<StopDetailScreen> {
     } catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('خطأ في فتح الرابط'),
+          SnackBar(
+            content: Text(AppStrings.of(context).linkOpenError),
             backgroundColor: AppColors.error,
           ),
         );

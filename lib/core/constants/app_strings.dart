@@ -573,4 +573,119 @@ class AppStrings {
   String get addToFavorites => _t('إضافة إلى المفضلة', 'Add to favorites');
   String get removeFromFavorites => _t('إزالة من المفضلة', 'Remove from favorites');
   String get myTripsTab => _t('رحلاتي', 'My Trips');
+
+  // Trip generation errors
+  String get genErrorServerAsleep => _t(
+      '⏳ السيرفر كان في وضع السكون.\nيرجى الانتظار 30-60 ثانية ثم إعادة المحاولة.',
+      '⏳ The server was asleep.\nPlease wait 30-60 seconds and try again.');
+  String get genErrorApiKey => _t(
+      '🔑 مفتاح API غير صالح أو غير موجود.\nتحقق من ملف .env في السيرفر:\nGEMINI_API_KEY أو ANTHROPIC_API_KEY',
+      '🔑 The API key is invalid or missing.\nCheck the server .env file:\nGEMINI_API_KEY or ANTHROPIC_API_KEY');
+  String get genErrorRateLimit => _t(
+      '⏱ تجاوزت الحد المسموح من الطلبات.\nانتظر دقيقة ثم أعد المحاولة.',
+      '⏱ You have exceeded the request limit.\nWait a minute and try again.');
+  String get genErrorServer => _t(
+      '🛠 خطأ في الخادم.\nيرجى المحاولة مجدداً بعد قليل.',
+      '🛠 Server error.\nPlease try again shortly.');
+  String get genErrorGeneric => _t(
+      '❌ حدث خطأ أثناء توليد الرحلة.\nتحقق من اتصالك بالإنترنت وأعد المحاولة.',
+      '❌ Something went wrong while generating the trip.\nCheck your connection and try again.');
+
+  String get genFirstRunHint => _t('قد يستغرق الأمر حتى دقيقة عند أول استخدام',
+      'This can take up to a minute on first use');
+  String get genServerSlow => _t('الخادم يستغرق وقتاً أطول من المعتاد...',
+      'The server is taking longer than usual...');
+  String get genRetryNow => _t('إعادة المحاولة الآن', 'Retry now');
+  String get genCancelAndBack => _t('إلغاء والعودة', 'Cancel and go back');
+
+  // Generic / shared
+  String get errorGeneric => _t('حدث خطأ ما', 'Something went wrong');
+  String get appTitle => _t('رحّال AI', 'Rahhal AI');
+  String get offlineMessage => _t('لا يوجد اتصال بالإنترنت. يرجى التحقق من الشبكة.',
+      'No internet connection. Please check your network.');
+  String get cloudUnavailable => _t(
+      'تعذّر الاتصال بالخدمات السحابية. التطبيق يعمل في وضع محلي.',
+      'Could not reach cloud services. The app is running in local mode.');
+  String get mockTripWarning => _t(
+      '⚠️ هذه خطة تجريبية (بيانات وهمية) بسبب عدم الاتصال بالسيرفر. يرجى التحقق من تشغيل خادم backend.',
+      '⚠️ This is a sample plan (mock data) because the server is unreachable. Check that the backend is running.');
+
+  // Booking / stop detail
+  String get bookingNoLink =>
+      _t('لا يوجد رابط حجز متاح لهذا المكان', 'No booking link is available for this place');
+  String get bookingInvalidLink => _t('رابط الحجز غير صالح', 'The booking link is invalid');
+  String get copyAction => _t('نسخ', 'Copy');
+  String get linkOpenError => _t('خطأ في فتح الرابط', 'Error opening the link');
+  String bookingOpenFailed(String url) => _t(
+      'تعذّر فتح رابط الحجز. انسخ الرابط يدوياً: $url',
+      'Could not open the booking link. Copy it manually: $url');
+
+  // Map
+  String get locationPermissionHint => _t('تعذّر الوصول للموقع. فعّل الإذن من الإعدادات.',
+      'Could not access your location. Enable the permission in Settings.');
+  String stopsCount(int count) => _t('$count محطة', '$count stops');
+  String get fullRouteTitle => _t('مسار الرحلة الكامل', 'Full trip route');
+  String locationDetected(String location) =>
+      _t('📍 تم تحديد موقعك: $location', '📍 Location detected: $location');
+
+  // Weather
+  String get weatherApproximate =>
+      _t('طقس تقريبي (بيانات محاكاة)', 'Approximate weather (simulated data)');
+  String get weatherSimulatedBadge => _t('محاكاة', 'Simulated');
+
+  // Chat
+  String get chatIntroHint => _t(
+      'يمكنك سؤالي عن أي شيء: أفضل المطاعم، المواصلات، التكاليف، الطقس، ساعات الزيارة، أماكن التسوق، الثقافة المحلية، أو أي تساؤل آخر عن رحلتك! 💬',
+      'Ask me anything: best restaurants, transport, costs, weather, opening hours, shopping, local culture, or any other question about your trip! 💬');
+
+  // Auth
+  String passwordResetSent(String email) => _t(
+      'تم إرسال رابط إعادة تعيين كلمة المرور إلى $email',
+      'A password reset link has been sent to $email');
+
+  // Travel Documents
+  String get documentsTitle => _t('مستندات السفر', 'Travel Documents');
+  String get documentsEmptyTitle => _t('لا توجد مستندات بعد', 'No documents yet');
+  String get documentsEmptySubtitle => _t(
+      'احفظ جوازات سفرك، التأشيرات، وتذاكر الطيران للوصول السريع إليها أثناء السفر.',
+      'Save your passports, visas and flight tickets for quick access while travelling.');
+  String get documentAddNew => _t('إضافة مستند جديد', 'Add new document');
+  String get documentAddTitle => _t('إضافة مستند سفر جديد', 'Add a new travel document');
+  String get documentSave => _t('حفظ المستند', 'Save document');
+  String get documentDeleteTitle => _t('حذف المستند', 'Delete document');
+  String documentDeleteConfirm(String title) => _t(
+      'هل أنت متأكد من رغبتك في حذف "$title"؟',
+      'Are you sure you want to delete "$title"?');
+  String get documentTitleLabel =>
+      _t('عنوان المستند (مثال: جواز سفر أحمد)', 'Document title (e.g. Ahmed\'s passport)');
+  String get documentTitleRequired =>
+      _t('الرجاء إدخال عنوان للمستند', 'Please enter a document title');
+  String get documentTypeLabel => _t('نوع المستند', 'Document type');
+  String get documentNotesLabel =>
+      _t('ملاحظات إضافية (اختياري)', 'Additional notes (optional)');
+  String get documentAttachmentLabel =>
+      _t('صورة المستند / المرفق', 'Document photo / attachment');
+  String get documentExpiryOptional =>
+      _t('تاريخ الانتهاء (اختياري)', 'Expiry date (optional)');
+  String documentExpiryOn(String date) =>
+      _t('تاريخ الانتهاء: $date', 'Expires: $date');
+  String get documentExpired => _t('منتهي', 'Expired');
+  String get documentPickGallery => _t('المعرض', 'Gallery');
+  String get documentPickCamera => _t('الكاميرا', 'Camera');
+  String documentTypeLabelFor(String type) => _t(
+        switch (type) {
+          'passport' => 'جواز سفر / هوية',
+          'visa' => 'تأشيرة دخول',
+          'ticket' => 'تذكرة سفر',
+          'booking' => 'حجز إقامة / سيارة',
+          _ => 'مستند آخر',
+        },
+        switch (type) {
+          'passport' => 'Passport / ID',
+          'visa' => 'Entry visa',
+          'ticket' => 'Travel ticket',
+          'booking' => 'Stay / car booking',
+          _ => 'Other document',
+        },
+      );
 }

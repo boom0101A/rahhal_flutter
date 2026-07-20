@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import '../../../../core/constants/app_strings.dart';
 import '../../../../core/constants/app_colors.dart';
 import '../../../../core/constants/app_text_styles.dart';
 import '../../domain/entities/weather_entity.dart';
@@ -117,7 +118,7 @@ class _WeatherBannerState extends State<WeatherBanner> {
               ),
               if (_forecast!.isMock) ...[
                 Tooltip(
-                  message: 'طقس تقريبي (بيانات محاكاة)',
+                  message: AppStrings.of(context).weatherApproximate,
                   child: Container(
                     padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
                     decoration: BoxDecoration(
@@ -131,7 +132,7 @@ class _WeatherBannerState extends State<WeatherBanner> {
                         const Icon(Icons.info_outline_rounded, size: 11, color: Colors.amber),
                         const SizedBox(width: 3),
                         Text(
-                          'محاكاة',
+                          AppStrings.of(context).weatherSimulatedBadge,
                           style: AppTextStyles.labelSmall.copyWith(
                             color: Colors.amber,
                             fontSize: 9,

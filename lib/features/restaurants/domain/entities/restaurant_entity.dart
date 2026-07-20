@@ -61,13 +61,10 @@ class RestaurantEntity extends Equatable {
     return result;
   }
 
-  String get displayImageUrl {
-    if (imageUrl != null && imageUrl!.trim().isNotEmpty) {
-      return imageUrl!;
-    }
-    final seed = (name + id).hashCode.abs() % 1000;
-    return 'https://picsum.photos/seed/$seed/800/600';
-  }
+  /// Empty when we have no real photo. Callers pass this to [CachedHeroImage],
+  /// which renders its own placeholder tile — deliberately NOT a random stock
+  /// photo, which would show an unrelated image as if it were this restaurant.
+  String get displayImageUrl => imageUrl?.trim() ?? '';
 
   String displayName(BuildContext context) {
     final lang = AppStrings.of(context).languageCode;
@@ -79,7 +76,8 @@ class RestaurantEntity extends Equatable {
 
   @override
   List<Object?> get props => [
-        id, tripId, dayId, name, cuisineType, halalCertified, rating,
-        pricePerPerson, priceTier, isRecommended
+        id, tripId, dayId, name, nameEn, cuisineType, halalCertified, rating,
+        pricePerPerson, priceTier, address, latitude, longitude, openingHours,
+        imageUrl, aiDescription, isRecommended, placeId, coordsVerified,
       ];
 }

@@ -215,7 +215,7 @@ class _AuthScreenState extends State<AuthScreen> {
                                             .sendPasswordResetEmail(email: _emailCtrl.text.trim());
                                         if (!context.mounted) return;
                                         ScaffoldMessenger.of(context).showSnackBar(
-                                          SnackBar(content: Text('تم إرسال رابط إعادة تعيين كلمة المرور إلى ${_emailCtrl.text.trim()}')),
+                                          SnackBar(content: Text(AppStrings.of(context).passwordResetSent(_emailCtrl.text.trim()))),
                                         );
                                       },
                                       child: Text(

@@ -32,6 +32,18 @@ if (process.env.GOOGLE_PLACES_API_KEY &&
   console.log('⚠️  GOOGLE_PLACES_API_KEY: Not set (coordinates unverified)');
 }
 
+// authenticateFirebaseToken is a NO-OP without this, so every /api route is
+// open to anyone who knows the URL — including the ones that spend Groq,
+// Gemini, Places, Unsplash and OpenWeather quota. Say so loudly rather than
+// letting the deployment look protected when it isn't.
+if (process.env.FIREBASE_SERVICE_ACCOUNT) {
+  console.log('✅ FIREBASE_SERVICE_ACCOUNT: Set (API authentication enforced)');
+} else {
+  console.warn('🔓 FIREBASE_SERVICE_ACCOUNT: NOT SET — API AUTH IS DISABLED.');
+  console.warn('   Every /api endpoint is publicly reachable and will burn');
+  console.warn('   your third-party quota. Set it before exposing this server.');
+}
+
 console.log('═══════════════════════════════════════════');
 
 // Conditional Firebase Admin import (only used if FIREBASE_SERVICE_ACCOUNT is set)
@@ -209,6 +221,16 @@ async function authenticateFirebaseToken(req, res, next) {
 app.use('/api/', limiter);
 app.use('/api/generate-trip', tripLimiter, authenticateFirebaseToken);
 app.use('/api/chat', chatLimiter, authenticateFirebaseToken);
+
+// These four spend real third-party quota (Unsplash/Pexels, OpenWeather, the
+// currency feed, Overpass) and were previously reachable by anyone who knew
+// the deployment URL — the generic IP limiter alone let a single client drain
+// the daily allowance. Every app screen that calls them already sits behind
+// the router's auth gate, so a Firebase ID token is always available.
+app.use('/api/photos', authenticateFirebaseToken);
+app.use('/api/weather', authenticateFirebaseToken);
+app.use('/api/currency', authenticateFirebaseToken);
+app.use('/api/nearby-places', authenticateFirebaseToken);
 
 // Health Check Endpoints for cloud hosting services (Render / Railway)
 app.get('/', (req, res) => {
@@ -634,11 +656,10 @@ async function verifyAllPlacesInTrip(tripData, destinationEn, userLat, userLng) 
     );
   }
 
-  const verifiedCount = tasks.filter((_, idx) => {
-    // Re-check by looping tasks after all resolved
-    return true; // just for counting
-  }).length;
-  console.log(`[PLACES] Verification done: ${tasks.length} places processed for "${destinationEn}"`);
+  const verifiedCount = tasks.filter(({ item }) => item.coords_verified).length;
+  console.log(
+    `[PLACES] Verification done: ${verifiedCount}/${tasks.length} places verified for "${destinationEn}"`
+  );
 
   return tripData;
 }
@@ -1317,21 +1338,26 @@ function deduplicateTripPlan(plan) {
                      day.recommended_restaurant.name?.toLowerCase().trim();
         if (rKey) {
           if (seenRestaurants.has(rKey)) {
-            console.warn(`[DEDUP] Repeated restaurant: ${day.recommended_restaurant.name_en || day.recommended_restaurant.name}`);
+            // Previously this only warned and kept the duplicate, so the same
+            // restaurant could headline several days of the same trip.
+            console.warn(`[DEDUP] Removed repeated restaurant: ${day.recommended_restaurant.name_en || day.recommended_restaurant.name}`);
+            delete day.recommended_restaurant;
+          } else {
+            seenRestaurants.add(rKey);
           }
-          seenRestaurants.add(rKey);
         }
       }
     }
   }
 
-  const seenAllRest = new Set();
+  // Share seenRestaurants rather than starting a fresh set: a restaurant that
+  // already headlines a day must not show up again in the general list.
   if (plan.all_restaurants && Array.isArray(plan.all_restaurants)) {
     plan.all_restaurants = plan.all_restaurants.filter(r => {
       const key = r.name_en?.toLowerCase().trim() || r.name?.toLowerCase().trim();
       if (!key) return true;
-      if (seenAllRest.has(key)) return false;
-      seenAllRest.add(key);
+      if (seenRestaurants.has(key)) return false;
+      seenRestaurants.add(key);
       return true;
     });
   }

@@ -60,16 +60,34 @@ class DioClient {
     if (kDebugMode) {
       dio.interceptors.add(LogInterceptor(logPrint: (o) => debugPrint('[DIO] $o')));
     }
+    // The proxy now authenticates /api/photos, /api/weather, /api/currency and
+    // /api/nearby-places, so this client needs the token too. Harmless for the
+    // handful of direct third-party calls that also go through here.
+    dio.interceptors.add(_FirebaseTokenInterceptor());
     dio.interceptors.add(_ErrorInterceptor());
     return dio;
   }
 }
 
 /// Interceptor that attaches the Firebase Auth ID token to headers.
+///
+/// Only ever attaches it to our own proxy. The general-purpose client is also
+/// used for third-party endpoints, and sending a Firebase ID token to someone
+/// else's server would hand them a credential for this user's account.
 class _FirebaseTokenInterceptor extends Interceptor {
+  static bool _isOwnProxy(RequestOptions options) {
+    final target = Uri.tryParse(options.uri.toString());
+    final proxy = Uri.tryParse(AppConfig.proxyBaseUrl);
+    if (target == null || proxy == null) return false;
+    return target.host == proxy.host && target.port == proxy.port;
+  }
+
   @override
   Future<void> onRequest(
       RequestOptions options, RequestInterceptorHandler handler) async {
+    if (!_isOwnProxy(options)) {
+      return super.onRequest(options, handler);
+    }
     try {
       final authRepo = sl<AuthRepository>();
       final token = await authRepo.getIdToken();

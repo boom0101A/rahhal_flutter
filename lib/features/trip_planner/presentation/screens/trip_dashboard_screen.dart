@@ -152,7 +152,7 @@ class _TripDashboardScreenState extends State<TripDashboardScreen>
                       const SizedBox(width: 10),
                       Expanded(
                         child: Text(
-                          '⚠️ هذه خطة تجريبية (بيانات وهمية) بسبب عدم الاتصال بالسيرفر. يرجى التحقق من تشغيل خادم backend (node server.js) للحصول على رحلة حقيقية بالذكاء الاصطناعي.',
+                          AppStrings.of(context).mockTripWarning,
                           style: AppTextStyles.bodySmall.copyWith(
                             color: Colors.orange,
                             fontSize: 12,
@@ -242,7 +242,7 @@ class _TripDashboardScreenState extends State<TripDashboardScreen>
             Hero(
               tag: 'trip_hero_${widget.tripId}',
               child: CachedHeroImage(
-                url: trip?.displayImageUrl ?? 'https://picsum.photos/seed/rahhal/800/600',
+                url: trip?.displayImageUrl ?? '',
                 placeholder: () => _buildHeroGradient(),
               ),
             ),
