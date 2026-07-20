@@ -342,5 +342,14 @@ class AppTheme {
           tileColor: Colors.transparent,
           selectedTileColor: Colors.transparent,
         ),
+
+        // Page transitions — kept identical to darkTheme so navigation
+        // doesn't change feel when the user switches theme mode.
+        pageTransitionsTheme: const PageTransitionsTheme(
+          builders: {
+            TargetPlatform.android: CupertinoPageTransitionsBuilder(),
+            TargetPlatform.iOS: CupertinoPageTransitionsBuilder(),
+          },
+        ),
       );
 }

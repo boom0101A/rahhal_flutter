@@ -19,6 +19,7 @@ import '../../features/trip_planner/domain/entities/trip_entity.dart';
 import '../../shared/widgets/main_navigation_layout.dart';
 import '../../features/auth/domain/repositories/auth_repository.dart';
 import 'auth_notifier.dart';
+import 'page_transitions.dart';
 import '../constants/app_colors.dart';
 import '../constants/app_strings.dart';
 import '../di/injection.dart';
@@ -74,55 +75,74 @@ class AppRouter {
         },
       ),
 
-      ShellRoute(
-        builder: (context, state, child) {
-          return MainNavigationLayout(child: child);
+      // ── Bottom-tab shell ─────────────────────────────────────────────────
+      // StatefulShellRoute.indexedStack keeps each tab's own state (scroll
+      // position, in-progress forms) alive via an IndexedStack, and switches
+      // between them instantly — the same feel as WhatsApp/Instagram tabs —
+      // instead of the previous plain ShellRoute, which rebuilt the
+      // destination from scratch on every tap and animated the switch like
+      // a stack push (wrong direction cues for sibling tabs).
+      StatefulShellRoute.indexedStack(
+        builder: (context, state, navigationShell) {
+          return MainNavigationLayout(navigationShell: navigationShell);
         },
-        routes: [
-          // ── Home (Saved Trips) ────────────────────────────────────────────────
-          GoRoute(
-            path: '/home',
-            name: 'home',
-            builder: (context, state) => const SavedTripsScreen(),
+        branches: [
+          StatefulShellBranch(
+            routes: [
+              GoRoute(
+                path: '/home',
+                name: 'home',
+                builder: (context, state) => const SavedTripsScreen(),
+              ),
+            ],
           ),
-
-          // ── Plan Trip (Input Wizard) ──────────────────────────────────────────
-          GoRoute(
-            path: '/plan',
-            name: 'plan',
-            builder: (context, state) => const TripInputScreen(),
+          StatefulShellBranch(
+            routes: [
+              GoRoute(
+                path: '/plan',
+                name: 'plan',
+                builder: (context, state) => const TripInputScreen(),
+              ),
+            ],
           ),
-
-          // ── Settings ─────────────────────────────────────────────────────────
-          GoRoute(
-            path: '/settings',
-            name: 'settings',
-            builder: (context, state) => const SettingsScreen(),
+          StatefulShellBranch(
+            routes: [
+              GoRoute(
+                path: '/favorites',
+                name: 'favorites',
+                builder: (context, state) => const FavoritesScreen(),
+              ),
+            ],
           ),
-
-          // ── Profile ──────────────────────────────────────────────────────────
-          GoRoute(
-            path: '/profile',
-            name: 'profile',
-            builder: (context, state) => const ProfileScreen(),
-          ),
-
-          // ── Favorites ────────────────────────────────────────────────────────
-          GoRoute(
-            path: '/favorites',
-            name: 'favorites',
-            builder: (context, state) => const FavoritesScreen(),
+          StatefulShellBranch(
+            routes: [
+              GoRoute(
+                path: '/profile',
+                name: 'profile',
+                builder: (context, state) => const ProfileScreen(),
+              ),
+            ],
           ),
         ],
+      ),
+
+      // ── Settings ─────────────────────────────────────────────────────────
+      // Deliberately outside the shell: a full-screen destination with no
+      // bottom nav bar, pushed on the root navigator from Profile/Home.
+      GoRoute(
+        path: '/settings',
+        name: 'settings',
+        pageBuilder: (context, state) =>
+            slideUpPage(state: state, child: const SettingsScreen()),
       ),
 
       // ── Generating Screen ─────────────────────────────────────────────────
       GoRoute(
         path: '/plan/generating',
         name: 'generating',
-        builder: (context, state) {
+        pageBuilder: (context, state) {
           final params = state.extra as Map<String, dynamic>? ?? {};
-          return GeneratingScreen(params: params);
+          return slideUpPage(state: state, child: GeneratingScreen(params: params));
         },
       ),
 
@@ -130,19 +150,22 @@ class AppRouter {
       GoRoute(
         path: '/trip/:tripId',
         name: 'trip',
-        builder: (context, state) {
+        pageBuilder: (context, state) {
           final tripId = state.pathParameters['tripId']!;
           final trip = state.extra as TripEntity?;
-          return TripDashboardScreen(tripId: tripId, trip: trip);
+          return slideUpPage(
+            state: state,
+            child: TripDashboardScreen(tripId: tripId, trip: trip),
+          );
         },
         routes: [
           // ── Map Full Screen ─────────────────────────────────────────────
           GoRoute(
             path: 'map',
             name: 'tripMap',
-            builder: (context, state) {
+            pageBuilder: (context, state) {
               final tripId = state.pathParameters['tripId']!;
-              return MapFullScreen(tripId: tripId);
+              return slideUpPage(state: state, child: MapFullScreen(tripId: tripId));
             },
           ),
 
@@ -152,18 +175,9 @@ class AppRouter {
             name: 'stopDetail',
             pageBuilder: (context, state) {
               final stopId = state.pathParameters['stopId']!;
-              return CustomTransitionPage(
+              return slideUpModalPage(
+                state: state,
                 child: StopDetailScreen(stopId: stopId),
-                transitionsBuilder: (context, animation, secondary, child) {
-                  return SlideTransition(
-                    position: Tween<Offset>(
-                      begin: const Offset(0, 1),
-                      end: Offset.zero,
-                    ).animate(CurvedAnimation(
-                        parent: animation, curve: Curves.easeOutCubic)),
-                    child: child,
-                  );
-                },
               );
             },
           ),
@@ -175,18 +189,9 @@ class AppRouter {
             pageBuilder: (context, state) {
               final tripId = state.pathParameters['tripId']!;
               final trip = state.extra as TripEntity?;
-              return CustomTransitionPage(
+              return slideUpModalPage(
+                state: state,
                 child: ChatScreen(tripId: tripId, trip: trip),
-                transitionsBuilder: (context, animation, secondary, child) {
-                  return SlideTransition(
-                    position: Tween<Offset>(
-                      begin: const Offset(0, 1),
-                      end: Offset.zero,
-                    ).animate(CurvedAnimation(
-                        parent: animation, curve: Curves.easeOutCubic)),
-                    child: child,
-                  );
-                },
               );
             },
           ),
@@ -197,18 +202,9 @@ class AppRouter {
             name: 'tripDocuments',
             pageBuilder: (context, state) {
               final tripId = state.pathParameters['tripId']!;
-              return CustomTransitionPage(
+              return slideUpModalPage(
+                state: state,
                 child: DocumentsScreen(tripId: tripId),
-                transitionsBuilder: (context, animation, secondary, child) {
-                  return SlideTransition(
-                    position: Tween<Offset>(
-                      begin: const Offset(0, 1),
-                      end: Offset.zero,
-                    ).animate(CurvedAnimation(
-                        parent: animation, curve: Curves.easeOutCubic)),
-                    child: child,
-                  );
-                },
               );
             },
           ),

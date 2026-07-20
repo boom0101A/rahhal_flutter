@@ -3,51 +3,38 @@ import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import '../../core/constants/app_colors.dart';
 import '../../core/constants/app_strings.dart';
+import '../../core/utils/haptics.dart';
 
 class MainNavigationLayout extends StatelessWidget {
-  final Widget child;
-  const MainNavigationLayout({super.key, required this.child});
-
-  int _getSelectedIndex(BuildContext context) {
-    final location = GoRouterState.of(context).uri.path;
-    if (location.startsWith('/home')) return 0;
-    if (location.startsWith('/plan')) return 1;
-    if (location.startsWith('/favorites')) return 2;
-    if (location.startsWith('/profile') || location.startsWith('/settings')) return 3;
-    return 0;
-  }
+  final StatefulNavigationShell navigationShell;
+  const MainNavigationLayout({super.key, required this.navigationShell});
 
   void _onItemTapped(BuildContext context, int index) {
-    switch (index) {
-      case 0:
-        context.go('/home');
-        break;
-      case 1:
-        context.go('/plan');
-        break;
-      case 2:
-        context.go('/favorites');
-        break;
-      case 3:
-        context.go('/profile');
-        break;
-    }
+    Haptics.tap();
+    navigationShell.goBranch(
+      index,
+      // Tapping the already-active tab pops it back to its root (e.g.
+      // clears a pushed detail screen), matching standard tab-bar behavior.
+      initialLocation: index == navigationShell.currentIndex,
+    );
   }
 
   @override
   Widget build(BuildContext context) {
-    final selectedIndex = _getSelectedIndex(context);
+    final selectedIndex = navigationShell.currentIndex;
     final isDark = Theme.of(context).brightness == Brightness.dark;
     final strings = AppStrings.of(context);
 
     return Scaffold(
       body: Stack(
         children: [
-          // Content
+          // Content — IndexedStack (inside navigationShell) preserves each
+          // branch's state and switches between them instantly, with no
+          // push/pop transition — the correct feel for sibling tabs.
           Positioned.fill(
             child: Padding(
               padding: const EdgeInsets.only(bottom: 80), // Prevent content overlap
-              child: child,
+              child: navigationShell,
             ),
           ),
           
@@ -158,10 +145,15 @@ class MainNavigationLayout extends StatelessWidget {
                   : Colors.transparent,
               borderRadius: BorderRadius.circular(20),
             ),
-            child: Icon(
-              isSelected ? activeIcon : icon,
-              color: color,
-              size: isCenter ? 26 : 24,
+            child: AnimatedScale(
+              scale: isSelected ? 1.15 : 1.0,
+              duration: const Duration(milliseconds: 350),
+              curve: Curves.easeOutBack,
+              child: Icon(
+                isSelected ? activeIcon : icon,
+                color: color,
+                size: isCenter ? 26 : 24,
+              ),
             ),
           ),
           const SizedBox(height: 2),
