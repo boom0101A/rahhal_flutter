@@ -11,6 +11,8 @@ import '../../../../shared/widgets/glass_card.dart';
 import '../../../../shared/widgets/shimmer_loader.dart';
 import '../cubit/favorites_cubit.dart';
 import '../../domain/entities/favorite_item.dart';
+import '../../../restaurants/presentation/widgets/restaurant_detail_sheet.dart';
+import '../../../restaurants/presentation/widgets/restaurant_map_button.dart';
 
 class FavoritesScreen extends StatefulWidget {
   const FavoritesScreen({super.key});
@@ -215,58 +217,67 @@ class _FavoritesScreenState extends State<FavoritesScreen> {
 
     return Container(
       margin: const EdgeInsets.only(bottom: 12),
-      child: GlassCard(
-        padding: const EdgeInsets.all(12),
-        child: Row(
-          children: [
-            Container(
-              width: 44,
-              height: 44,
-              decoration: BoxDecoration(
-                color: AppColors.accentTurquoise.withValues(alpha: 0.1),
-                borderRadius: BorderRadius.circular(12),
-              ),
-              child: const Center(
-                child: Text('🍴', style: TextStyle(fontSize: 20)),
-              ),
-            ),
-            const SizedBox(width: 12),
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
+      child: GestureDetector(
+        onTap: () => RestaurantDetailSheet.show(context, rest),
+        child: GlassCard(
+          padding: const EdgeInsets.all(12),
+          child: Column(
+            children: [
+              Row(
                 children: [
-                  Text(
-                    rest.name,
-                    style: AppTextStyles.titleMedium.copyWith(
-                      color: isDark ? AppColors.textPrimary : const Color(0xFF0D1B2A),
+                  Container(
+                    width: 44,
+                    height: 44,
+                    decoration: BoxDecoration(
+                      color: AppColors.accentTurquoise.withValues(alpha: 0.1),
+                      borderRadius: BorderRadius.circular(12),
                     ),
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
+                    child: const Center(
+                      child: Text('🍴', style: TextStyle(fontSize: 20)),
+                    ),
                   ),
-                  if (rest.cuisineType != null && rest.cuisineType!.isNotEmpty) ...[
-                    const SizedBox(height: 4),
-                    Text(
-                      rest.cuisineType!,
-                      style: AppTextStyles.bodySmall.copyWith(
-                        fontSize: 10,
-                        color: isDark ? AppColors.textSecondary : const Color(0xFF4B5563),
-                      ),
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          rest.name,
+                          style: AppTextStyles.titleMedium.copyWith(
+                            color: isDark ? AppColors.textPrimary : const Color(0xFF0D1B2A),
+                          ),
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                        if (rest.cuisineType != null && rest.cuisineType!.isNotEmpty) ...[
+                          const SizedBox(height: 4),
+                          Text(
+                            rest.cuisineType!,
+                            style: AppTextStyles.bodySmall.copyWith(
+                              fontSize: 10,
+                              color: isDark ? AppColors.textSecondary : const Color(0xFF4B5563),
+                            ),
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                        ],
+                      ],
                     ),
-                  ],
+                  ),
+                  IconButton(
+                    icon: const Icon(Icons.favorite_rounded, color: AppColors.error),
+                    tooltip: strings.removeFromFavorites,
+                    onPressed: () {
+                      Haptics.toggle();
+                      context.read<FavoritesCubit>().toggleFavorite('restaurant', rest.id);
+                    },
+                  ),
                 ],
               ),
-            ),
-            IconButton(
-              icon: const Icon(Icons.favorite_rounded, color: AppColors.error),
-              tooltip: strings.removeFromFavorites,
-              onPressed: () {
-                Haptics.toggle();
-                context.read<FavoritesCubit>().toggleFavorite('restaurant', rest.id);
-              },
-            ),
-          ],
+              const SizedBox(height: 8),
+              RestaurantMapButton(restaurant: rest),
+            ],
+          ),
         ),
       ),
     ).animate().fadeIn(duration: 350.ms);

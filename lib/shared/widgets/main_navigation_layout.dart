@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import '../../core/constants/app_colors.dart';
 import '../../core/constants/app_strings.dart';
+import '../../core/constants/app_text_styles.dart';
 import '../../core/utils/haptics.dart';
 
 class MainNavigationLayout extends StatelessWidget {
@@ -159,11 +160,10 @@ class MainNavigationLayout extends StatelessWidget {
           const SizedBox(height: 2),
           Text(
             label,
-            style: TextStyle(
+            style: AppTextStyles.labelSmall.copyWith(
               fontSize: 10,
               fontWeight: isSelected ? FontWeight.bold : FontWeight.normal,
               color: color,
-              fontFamily: 'Inter',
             ),
           ),
         ],

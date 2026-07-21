@@ -529,44 +529,18 @@ class AppStrings {
   String get expenseStatusOver => _t('تجاوزت الميزانية بـ', 'over budget by');
   String get expenseAllDays => _t('الكل', 'All');
 
-  // Packing List
-  String get tabPackingList => _t('حقيبة السفر', 'Packing List');
-  String get packingProgress => _t('مكتمل', 'Packed');
-  String get packingEmptyState => _t('حقيبة السفر فارغة. دع الذكاء الاصطناعي يقترح عليك ما تحتاجه!', 'Your bag is empty. Let AI suggest what you need!');
-  String get packingGenerateAI => _t('توليد القائمة بالذكاء الاصطناعي ✨', 'Generate List with AI ✨');
-  String get packingAddItem => _t('إضافة غرض جديد', 'Add Item');
-  String get packingItemNameHint => _t('اسم الغرض (مثال: شاحن، قميص...)', 'Item name (e.g. Charger, Shirt...)');
-  String get packingCategoryClothing => _t('الملابس 👕', 'Clothing 👕');
-  String get packingCategoryToiletries => _t('أدوات العناية 🪥', 'Toiletries 🪥');
-  String get packingCategoryElectronics => _t('الإلكترونيات 🔌', 'Electronics 🔌');
-  String get packingCategoryDocuments => _t('وثائق السفر 📄', 'Documents 📄');
-  String get packingCategoryOther => _t('أخرى 📦', 'Other 📦');
-
-  String packingCategoryLabel(String category) {
-    return _t(
-      switch (category.toLowerCase()) {
-        'clothing' => 'الملابس 👕',
-        'toiletries' => 'أدوات العناية 🪥',
-        'electronics' => 'الإلكترونيات 🔌',
-        'documents' => 'وثائق السفر 📄',
-        _ => 'أخرى 📦',
-      },
-      switch (category.toLowerCase()) {
-        'clothing' => 'Clothing 👕',
-        'toiletries' => 'Toiletries 🪥',
-        'electronics' => 'Electronics 🔌',
-        'documents' => 'Documents 📄',
-        _ => 'Other 📦',
-      }
-    );
-  }
-
   // Favorites
   String get tabFavorites => _t('المفضلة', 'Favorites');
   String get favoritesEmpty => _t('قائمتك المفضلة فارغة حالياً.', 'Your favorites list is empty.');
   String get favoritesEmptySubtitle => _t('اضغط على رمز القلب في أي مكان أو مطعم لحفظه هنا.', 'Tap the heart icon on any stop or restaurant to save it here.');
   String get favoritesStops => _t('الأماكن المميزة', 'Favorite Stops');
   String get favoritesRestaurants => _t('المطاعم المميزة', 'Favorite Restaurants');
+
+  // Restaurant location / maps
+  String get restaurantLocation => _t('موقع المطعم', 'Restaurant location');
+  String get openInGoogleMaps => _t('افتح في خرائط Google', 'Open in Google Maps');
+  String get mapOpenFailed => _t('تعذّر فتح الخريطة', 'Could not open the map');
+  String get restaurantDetails => _t('تفاصيل المطعم', 'Restaurant details');
   String get favoriteAdded => _t('تمت الإضافة إلى المفضلة', 'Added to favorites');
   String get favoriteRemoved => _t('تمت الإزالة من المفضلة', 'Removed from favorites');
   String get addToFavorites => _t('إضافة إلى المفضلة', 'Add to favorites');

@@ -1,5 +1,6 @@
 import 'package:connectivity_plus/connectivity_plus.dart';
 import 'package:flutter/material.dart';
+import '../../core/constants/app_text_styles.dart';
 
 /// A banner that appears at the top of the screen when there is no internet connection.
 class OfflineBanner extends StatelessWidget {
@@ -23,22 +24,32 @@ class OfflineBanner extends StatelessWidget {
               width: double.infinity,
               color: Colors.red.shade700,
               child: isOffline
-                  ? const Center(
-                      child: Row(
-                        mainAxisAlignment: MainAxisAlignment.center,
-                        children: [
-                          Icon(Icons.wifi_off_rounded,
-                              color: Colors.white, size: 16),
-                          SizedBox(width: 8),
-                          Text(
-                            'لا يوجد اتصال بالإنترنت. يرجى التحقق من الشبكة.',
-                            style: TextStyle(
-                              color: Colors.white,
-                              fontSize: 13,
-                              fontFamily: 'Inter',
+                  ? Center(
+                      child: Padding(
+                        padding: const EdgeInsets.symmetric(horizontal: 12),
+                        child: Row(
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            const Icon(Icons.wifi_off_rounded,
+                                color: Colors.white, size: 16),
+                            const SizedBox(width: 8),
+                            // Flexible + ellipsis: the Arabic message is long
+                            // enough to overflow a narrow screen otherwise,
+                            // which paints the yellow/black overflow stripes.
+                            Flexible(
+                              child: Text(
+                                'لا يوجد اتصال بالإنترنت. يرجى التحقق من الشبكة.',
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                                style: AppTextStyles.labelSmall.copyWith(
+                                  color: Colors.white,
+                                  fontSize: 13,
+                                ),
+                              ),
                             ),
-                          ),
-                        ],
+                          ],
+                        ),
                       ),
                     )
                   : null,

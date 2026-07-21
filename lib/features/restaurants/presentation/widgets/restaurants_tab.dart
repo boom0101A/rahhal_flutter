@@ -10,6 +10,7 @@ import '../../../../../shared/widgets/glass_card.dart';
 import '../../../../../shared/widgets/cached_hero_image.dart';
 import '../../../../../shared/widgets/shimmer_loader.dart';
 import '../cubit/restaurants_cubit.dart';
+import 'restaurant_map_button.dart';
 import '../../domain/entities/restaurant_entity.dart';
 import '../../../../../shared/widgets/app_error_widget.dart';
 import '../../../favorites/presentation/cubit/favorites_cubit.dart';
@@ -309,6 +310,8 @@ class _RestaurantCard extends StatelessWidget {
                     overflow: TextOverflow.ellipsis,
                   ),
                 ],
+                const SizedBox(height: 8),
+                RestaurantMapButton(restaurant: restaurant),
               ],
             ),
           ),

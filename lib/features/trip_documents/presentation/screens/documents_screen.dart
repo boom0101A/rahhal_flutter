@@ -80,7 +80,7 @@ class _DocumentsScreenState extends State<DocumentsScreen> {
               ),
               title: const Text(
                 'مستندات السفر',
-                style: TextStyle(fontFamily: 'Inter', fontWeight: FontWeight.bold),
+                style: TextStyle(fontWeight: FontWeight.bold),
               ),
               centerTitle: true,
             ),

@@ -5,6 +5,13 @@ import 'app_colors.dart';
 class AppTextStyles {
   AppTextStyles._();
 
+  /// Inter has no Arabic glyphs, so any Inter-styled text containing Arabic
+  /// silently falls back to a system font with different metrics — which made
+  /// Arabic labels sit off-baseline (descenders clipped) and overflow their
+  /// boxes. Numeric/data styles keep Inter for its tabular look but declare
+  /// Cairo as an explicit fallback so Arabic characters render correctly.
+  static List<String> get _arabicFallback => [GoogleFonts.cairo().fontFamily!];
+
   // Display — Cairo bold for headings
   static TextStyle get displayLarge => GoogleFonts.cairo(
         fontSize: 32,
@@ -81,44 +88,48 @@ class AppTextStyles {
         height: 1.5,
       );
 
-  // Labels — Inter for numbers/data
-  static TextStyle get labelLarge => GoogleFonts.inter(
+  // Labels — Cairo: these carry UI wording (often Arabic), so they must use
+  // an Arabic-capable family rather than Inter.
+  static TextStyle get labelLarge => GoogleFonts.cairo(
         fontSize: 14,
         fontWeight: FontWeight.w600,
+        height: 1.4,
       );
 
-  static TextStyle get labelMedium => GoogleFonts.inter(
+  static TextStyle get labelMedium => GoogleFonts.cairo(
         fontSize: 12,
         fontWeight: FontWeight.w600,
+        height: 1.4,
       );
 
-  // Data / Numbers (always Inter)
-  static TextStyle get labelSmall => GoogleFonts.inter(
+  static TextStyle get labelSmall => GoogleFonts.cairo(
         fontSize: 11,
         fontWeight: FontWeight.w500,
+        height: 1.4,
       );
 
+  // Data / Numbers — Inter for tabular figures, Cairo as Arabic fallback.
   static TextStyle get dataLarge => GoogleFonts.inter(
         fontSize: 24,
         fontWeight: FontWeight.w800,
-      );
+      ).copyWith(fontFamilyFallback: _arabicFallback);
 
   static TextStyle get dataMedium => GoogleFonts.inter(
         fontSize: 18,
         fontWeight: FontWeight.w700,
-      );
+      ).copyWith(fontFamilyFallback: _arabicFallback);
 
   static TextStyle get dataSmall => GoogleFonts.inter(
         fontSize: 14,
         fontWeight: FontWeight.w600,
-      );
+      ).copyWith(fontFamilyFallback: _arabicFallback);
 
   // Amber accented
   static TextStyle get amberBold => GoogleFonts.inter(
         fontSize: 20,
         fontWeight: FontWeight.w800,
         color: AppColors.accentAmber,
-      );
+      ).copyWith(fontFamilyFallback: _arabicFallback);
 
   static TextStyle get amberLabel => GoogleFonts.cairo(
         fontSize: 13,

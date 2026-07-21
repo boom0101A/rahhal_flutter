@@ -21,8 +21,6 @@ import '../../../restaurants/presentation/cubit/restaurants_cubit.dart';
 import '../../../restaurants/presentation/widgets/restaurants_tab.dart';
 import '../../../budget/presentation/cubit/budget_cubit.dart';
 import '../../../budget/presentation/widgets/budget_tab.dart';
-import '../../../packing_list/presentation/cubit/packing_list_cubit.dart';
-import '../../../packing_list/presentation/widgets/packing_list_tab.dart';
 import '../../domain/repositories/trip_repository.dart';
 import '../widgets/share_trip_card.dart';
 
@@ -54,14 +52,13 @@ class _TripDashboardScreenState extends State<TripDashboardScreen>
       (Icons.map_rounded, strings.tabMap),
       (Icons.restaurant_rounded, strings.tabRestaurants),
       (Icons.account_balance_wallet_rounded, strings.tabCost),
-      (Icons.backpack_rounded, strings.tabPackingList),
     ];
   }
 
   @override
   void initState() {
     super.initState();
-    _tabController = TabController(length: 5, vsync: this);
+    _tabController = TabController(length: 4, vsync: this);
     _trip = widget.trip;
     _loadTripIfNeeded();
   }
@@ -124,10 +121,6 @@ class _TripDashboardScreenState extends State<TripDashboardScreen>
           create: (_) =>
               sl<BudgetCubit>()..loadBudget(widget.tripId),
         ),
-        BlocProvider(
-          create: (_) =>
-              sl<PackingListCubit>()..loadPackingList(widget.tripId),
-        ),
       ],
       child: Scaffold(
         backgroundColor: AppColors.adaptiveBgPrimary(context),
@@ -170,12 +163,6 @@ class _TripDashboardScreenState extends State<TripDashboardScreen>
                     MapTab(tripId: widget.tripId),
                     RestaurantsTab(tripId: widget.tripId),
                     BudgetTab(tripId: widget.tripId, countryCode: _trip?.countryCode),
-                    if (_trip != null)
-                      PackingListTab(trip: _trip!)
-                    else
-                      const Center(
-                        child: CircularProgressIndicator(color: AppColors.accentAmber),
-                      ),
                   ],
                 ),
               ),
@@ -438,10 +425,20 @@ class _TripDashboardScreenState extends State<TripDashboardScreen>
           labelStyle: AppTextStyles.labelSmall.copyWith(
             fontWeight: FontWeight.w700,
           ),
+          unselectedLabelStyle: AppTextStyles.labelSmall,
+          // Cairo sits on a taller line box than Inter did, so give the tab
+          // enough height for Arabic descenders instead of clipping them.
           tabs: _tabs(context)
               .map((t) => Tab(
-                    height: 36,
-                    child: Text(t.$2),
+                    height: 44,
+                    child: Center(
+                      child: Text(
+                        t.$2,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        textAlign: TextAlign.center,
+                      ),
+                    ),
                   ))
               .toList(),
         ),

@@ -26,7 +26,6 @@ class DatabaseHelper {
       _createFavoritesTable,
       _createExpensesTable,
       _createDocumentsTable,
-      _createPackingListTable,
       ..._createIndexesV2,
     ],
     3: [
@@ -69,7 +68,6 @@ class DatabaseHelper {
       await txn.execute(_createFavoritesTable);
       await txn.execute(_createExpensesTable);
       await txn.execute(_createDocumentsTable);
-      await txn.execute(_createPackingListTable);
 
       // Indexes
       for (final indexQuery in [..._createIndexes, ..._createIndexesV2]) {
@@ -271,18 +269,6 @@ class DatabaseHelper {
     )
   ''';
 
-  static const String _createPackingListTable = '''
-    CREATE TABLE IF NOT EXISTS packing_items (
-      id TEXT PRIMARY KEY,
-      trip_id TEXT NOT NULL REFERENCES trips(id) ON DELETE CASCADE,
-      item_name TEXT NOT NULL,
-      category TEXT DEFAULT 'other',
-      is_packed INTEGER DEFAULT 0,
-      quantity INTEGER DEFAULT 1,
-      is_ai_suggested INTEGER DEFAULT 0
-    )
-  ''';
-
   static const List<String> _createIndexes = [
     'CREATE INDEX IF NOT EXISTS idx_days_trip_id ON days(trip_id)',
     'CREATE INDEX IF NOT EXISTS idx_stops_trip_id ON stops(trip_id)',
@@ -297,7 +283,6 @@ class DatabaseHelper {
     'CREATE INDEX IF NOT EXISTS idx_expenses_trip_id ON actual_expenses(trip_id)',
     'CREATE INDEX IF NOT EXISTS idx_expenses_day_id ON actual_expenses(day_id)',
     'CREATE INDEX IF NOT EXISTS idx_documents_trip_id ON trip_documents(trip_id)',
-    'CREATE INDEX IF NOT EXISTS idx_packing_trip_id ON packing_items(trip_id)',
     'CREATE INDEX IF NOT EXISTS idx_users_uid ON users(uid)',
   ];
 

@@ -56,7 +56,6 @@ class CloudSyncService {
       final restaurantsRows = await _dbHelper.query('restaurants', where: 'trip_id = ?', whereArgs: [tripId]);
       final budgetItemsRows = await _dbHelper.query('budget_items', where: 'trip_id = ?', whereArgs: [tripId]);
       final chatMessagesRows = await _dbHelper.query('chat_messages', where: 'trip_id = ?', whereArgs: [tripId]);
-      final packingItemsRows = await _dbHelper.query('packing_items', where: 'trip_id = ?', whereArgs: [tripId]);
       final actualExpensesRows = await _dbHelper.query('actual_expenses', where: 'trip_id = ?', whereArgs: [tripId]);
 
       // 4. Construct payload (ensuring the user_id matches the active user uid)
@@ -70,7 +69,6 @@ class CloudSyncService {
         'restaurants': restaurantsRows,
         'budget_items': budgetItemsRows,
         'chat_messages': chatMessagesRows,
-        'packing_items': packingItemsRows,
         'actual_expenses': actualExpensesRows,
         'synced_at': DateTime.now().toIso8601String(),
       };
@@ -167,7 +165,6 @@ class CloudSyncService {
           final List<dynamic> restaurants = tripData['restaurants'] as List<dynamic>? ?? [];
           final List<dynamic> budgetItems = tripData['budget_items'] as List<dynamic>? ?? [];
           final List<dynamic> chatMessages = tripData['chat_messages'] as List<dynamic>? ?? [];
-          final List<dynamic> packingItems = tripData['packing_items'] as List<dynamic>? ?? [];
           final List<dynamic> actualExpenses = tripData['actual_expenses'] as List<dynamic>? ?? [];
 
           // Remove nested fields to insert the base trip row
@@ -177,7 +174,6 @@ class CloudSyncService {
             ..remove('restaurants')
             ..remove('budget_items')
             ..remove('chat_messages')
-            ..remove('packing_items')
             ..remove('actual_expenses');
 
           // Insert trip
@@ -215,13 +211,6 @@ class CloudSyncService {
           for (final c in chatMessages) {
             if (c is Map<String, dynamic>) {
               await txn.insert('chat_messages', c, conflictAlgorithm: ConflictAlgorithm.replace);
-            }
-          }
-
-          // Insert packing items
-          for (final p in packingItems) {
-            if (p is Map<String, dynamic>) {
-              await txn.insert('packing_items', p, conflictAlgorithm: ConflictAlgorithm.replace);
             }
           }
 

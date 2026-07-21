@@ -28,9 +28,6 @@ import '../../features/ai_chat/presentation/cubit/chat_cubit.dart';
 import '../../features/auth/data/auth_repository_impl.dart';
 import '../../features/auth/domain/repositories/auth_repository.dart';
 import '../../features/auth/presentation/cubit/auth_cubit.dart';
-import '../../features/packing_list/data/packing_repository_impl.dart';
-import '../../features/packing_list/domain/repositories/packing_repository.dart';
-import '../../features/packing_list/presentation/cubit/packing_list_cubit.dart';
 import '../../features/favorites/data/favorites_repository_impl.dart';
 import '../../features/favorites/domain/repositories/favorites_repository.dart';
 import '../../features/favorites/presentation/cubit/favorites_cubit.dart';
@@ -98,10 +95,6 @@ Future<void> setupDependencies() async {
     () => BudgetRepositoryImpl(dbHelper: sl<DatabaseHelper>()),
   );
 
-  sl.registerLazySingleton<PackingRepository>(
-    () => PackingRepositoryImpl(dbHelper: sl<DatabaseHelper>()),
-  );
-
   sl.registerLazySingleton<FavoritesRepository>(
     () => FavoritesRepositoryImpl(
       dbHelper: sl<DatabaseHelper>(),
@@ -148,13 +141,6 @@ Future<void> setupDependencies() async {
 
   sl.registerFactory<AuthCubit>(
     () => AuthCubit(repository: sl<AuthRepository>()),
-  );
-
-  sl.registerFactory<PackingListCubit>(
-    () => PackingListCubit(
-      repository: sl<PackingRepository>(),
-      aiService: sl<AITravelService>(),
-    ),
   );
 
   sl.registerFactory<DocumentCubit>(
