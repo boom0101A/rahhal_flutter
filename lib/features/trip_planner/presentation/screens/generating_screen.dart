@@ -154,8 +154,8 @@ class _GeneratingScreenBodyState extends State<_GeneratingScreenBody>
   }
 
   void _showErrorDialog(String message) {
-    // Map technical error codes to user-friendly Arabic messages
-    final String userMessage = _localizeError(message);
+    // Map technical error codes to user-friendly messages
+    final String userMessage = _localizeError(context, message);
 
     showDialog(
       context: context,
@@ -191,27 +191,22 @@ class _GeneratingScreenBodyState extends State<_GeneratingScreenBody>
     );
   }
 
-  /// Converts technical error codes from AIException into user-friendly Arabic strings.
-  String _localizeError(String code) {
+  /// Converts technical error codes from AIException into user-friendly text.
+  String _localizeError(BuildContext context, String code) {
+    final strings = AppStrings.of(context);
     if (code.contains('server-warmup-timeout') || code.contains('network-exception') || code.contains('connectionTimeout')) {
-      return '⏳ السيرفر كان في وضع السكون.\n'  
-             'يرجى الانتظار 30-60 ثانية ثم إعادة المحاولة.';
+      return strings.genErrorServerAsleep;
     }
     if (code.contains('invalid-api-key') || code.contains('missing-api-key')) {
-      return '🔑 مفتاح API غير صالح أو غير موجود.\n'
-             'تحقق من ملف .env في السيرفر:\n'
-             'GEMINI_API_KEY أو ANTHROPIC_API_KEY';
+      return strings.genErrorApiKey;
     }
     if (code.contains('rate-limit')) {
-      return '⏱ تجاوزت الحد المسموح من الطلبات.\n'
-             'انتظر دقيقة ثم أعد المحاولة.';
+      return strings.genErrorRateLimit;
     }
     if (code.contains('server-error')) {
-      return '🛠 خطأ في الخادم.\n'
-             'يرجى المحاولة مجدداً بعد قليل.';
+      return strings.genErrorServer;
     }
-    return '❌ حدث خطأ أثناء توليد الرحلة.\n'
-           'تحقق من اتصالك بالإنترنت وأعد المحاولة.';
+    return strings.genErrorGeneric;
   }
 
   @override
@@ -305,7 +300,7 @@ class _GeneratingScreenBodyState extends State<_GeneratingScreenBody>
                                   const SizedBox(width: 6),
                                   Flexible(
                                     child: Text(
-                                      'قد يستغرق الأمر حتى دقيقة عند أول استخدام',
+                                      AppStrings.of(context).genFirstRunHint,
                                       style: AppTextStyles.bodySmall.copyWith(
                                         color: AppColors.accentAmber,
                                       ),
@@ -345,7 +340,7 @@ class _GeneratingScreenBodyState extends State<_GeneratingScreenBody>
                                               const SizedBox(width: 8),
                                               Flexible(
                                                 child: Text(
-                                                  'الخادم يستغرق وقتاً أطول من المعتاد...',
+                                                  AppStrings.of(context).genServerSlow,
                                                   style: AppTextStyles.bodyMedium
                                                       .copyWith(
                                                     color: Colors.amber,
@@ -362,7 +357,7 @@ class _GeneratingScreenBodyState extends State<_GeneratingScreenBody>
                                             icon: const Icon(
                                                 Icons.refresh_rounded,
                                                 size: 16),
-                                            label: const Text('إعادة المحاولة الآن'),
+                                            label: Text(AppStrings.of(context).genRetryNow),
                                             style: ElevatedButton.styleFrom(
                                               backgroundColor:
                                                   AppColors.accentAmber,
@@ -410,7 +405,7 @@ class _GeneratingScreenBodyState extends State<_GeneratingScreenBody>
                               size: 18,
                             ),
                             label: Text(
-                              'إلغاء والعودة',
+                              AppStrings.of(context).genCancelAndBack,
                               style: AppTextStyles.bodyMedium.copyWith(
                                 color: AppColors.adaptiveTextSecondary(context),
                               ),

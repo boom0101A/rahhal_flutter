@@ -6,14 +6,15 @@ import '../../../../core/services/map_launcher_service.dart';
 import '../../../../core/utils/haptics.dart';
 import '../../domain/entities/restaurant_entity.dart';
 
-/// "Open in Google Maps" action shown under a restaurant, mirroring the same
-/// affordance the itinerary stops already have. Shared between the trip's
-/// Restaurants tab and the Favorites screen so both behave identically.
+/// "Open in Google Maps" action for a restaurant, used where the Restaurants
+/// tab's own inline link isn't available — currently Favorites and the
+/// restaurant details sheet. Prefers the Google Places ID (exact venue) and
+/// falls back to coordinates, matching the Restaurants tab's behaviour.
 class RestaurantMapButton extends StatelessWidget {
   final RestaurantEntity restaurant;
 
-  /// Renders a wider, filled button (used on the detail sheet) instead of the
-  /// compact inline chip used inside list cards.
+  /// Renders a full-width filled button (details sheet) instead of the compact
+  /// inline chip used inside list cards.
   final bool expanded;
 
   const RestaurantMapButton({
@@ -24,27 +25,28 @@ class RestaurantMapButton extends StatelessWidget {
 
   Future<void> _open(BuildContext context) async {
     Haptics.tap();
-    final strings = AppStrings.of(context);
     final messenger = ScaffoldMessenger.of(context);
+    final failureMessage = AppStrings.of(context).mapsOpenFailed;
 
-    final ok = await MapLauncherService.openInGoogleMaps(
-      placeName: restaurant.nameEn?.trim().isNotEmpty == true
+    final launched = await MapLauncherService.openInGoogleMaps(
+      placeName: restaurant.nameEn?.isNotEmpty == true
           ? restaurant.nameEn!
           : restaurant.name,
-      city: restaurant.address,
       lat: restaurant.latitude,
       lon: restaurant.longitude,
+      placeId: restaurant.placeId,
     );
 
-    if (!ok) {
-      messenger.showSnackBar(
-        SnackBar(content: Text(strings.mapOpenFailed)),
-      );
+    if (!launched) {
+      messenger.showSnackBar(SnackBar(content: Text(failureMessage)));
     }
   }
 
   @override
   Widget build(BuildContext context) {
+    // Nothing reliable to point at — don't offer a broken map link.
+    if (!restaurant.hasLocation) return const SizedBox.shrink();
+
     final strings = AppStrings.of(context);
 
     if (expanded) {
@@ -53,7 +55,7 @@ class RestaurantMapButton extends StatelessWidget {
         child: ElevatedButton.icon(
           onPressed: () => _open(context),
           icon: const Icon(Icons.map_rounded, size: 18),
-          label: Text(strings.openInGoogleMaps),
+          label: Text(strings.openInMaps),
           style: ElevatedButton.styleFrom(
             backgroundColor: AppColors.accentAmber,
             foregroundColor: AppColors.bgPrimary,
@@ -70,33 +72,30 @@ class RestaurantMapButton extends StatelessWidget {
       alignment: AlignmentDirectional.centerStart,
       child: InkWell(
         onTap: () => _open(context),
-        borderRadius: BorderRadius.circular(50),
-        child: Container(
-          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-          decoration: BoxDecoration(
-            color: AppColors.accentAmber.withValues(alpha: 0.12),
-            borderRadius: BorderRadius.circular(50),
-            border: Border.all(
-              color: AppColors.accentAmber.withValues(alpha: 0.35),
-            ),
-          ),
+        borderRadius: BorderRadius.circular(8),
+        child: Padding(
+          padding: const EdgeInsets.symmetric(vertical: 4),
           child: Row(
             mainAxisSize: MainAxisSize.min,
             children: [
               const Icon(Icons.location_on_rounded,
-                  size: 14, color: AppColors.accentAmber),
+                  color: AppColors.accentTurquoise, size: 15),
               const SizedBox(width: 4),
               Flexible(
                 child: Text(
-                  strings.restaurantLocation,
+                  strings.openInMaps,
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
                   style: AppTextStyles.labelSmall.copyWith(
-                    color: AppColors.accentAmber,
-                    fontWeight: FontWeight.w700,
+                    color: AppColors.accentTurquoise,
+                    decoration: TextDecoration.underline,
+                    decorationColor: AppColors.accentTurquoise,
                   ),
                 ),
               ),
+              const SizedBox(width: 2),
+              const Icon(Icons.open_in_new_rounded,
+                  color: AppColors.accentTurquoise, size: 12),
             ],
           ),
         ),

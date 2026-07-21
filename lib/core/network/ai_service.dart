@@ -173,6 +173,9 @@ class RestaurantResponse {
   final double longitude;
   final String aiDescription;
   final String? imageSearchQuery;
+  final String? openingHours;
+  final String? placeId;
+  final bool coordsVerified;
 
   const RestaurantResponse({
     required this.name,
@@ -186,6 +189,9 @@ class RestaurantResponse {
     required this.longitude,
     required this.aiDescription,
     this.imageSearchQuery,
+    this.openingHours,
+    this.placeId,
+    this.coordsVerified = false,
   });
 
   factory RestaurantResponse.fromJson(Map<String, dynamic> json) {
@@ -201,6 +207,9 @@ class RestaurantResponse {
       longitude: (json['longitude'] as num? ?? 0).toDouble(),
       aiDescription: json['ai_description'] as String? ?? '',
       imageSearchQuery: json['image_search_query'] as String?,
+      openingHours: json['opening_hours'] as String?,
+      placeId: json['place_id'] as String?,
+      coordsVerified: json['coords_verified'] as bool? ?? false,
     );
   }
 }

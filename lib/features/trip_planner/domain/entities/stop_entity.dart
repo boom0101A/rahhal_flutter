@@ -60,13 +60,8 @@ class StopEntity extends Equatable {
         _ => '📍',
       };
 
-  String get displayImageUrl {
-    if (imageUrl != null && imageUrl!.trim().isNotEmpty) {
-      return imageUrl!;
-    }
-    final seed = (name + id).hashCode.abs() % 1000;
-    return 'https://picsum.photos/seed/$seed/800/600';
-  }
+  /// Empty when we have no real photo — see [RestaurantEntity.displayImageUrl].
+  String get displayImageUrl => imageUrl?.trim() ?? '';
 
   String displayName(BuildContext context) {
     final lang = AppStrings.of(context).languageCode;

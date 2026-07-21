@@ -49,7 +49,7 @@ class _TripInputScreenState extends State<TripInputScreen> {
         });
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text('📍 تم تحديد موقعك: ${locationData.fullLocationDisplay}'),
+            content: Text(AppStrings.of(context).locationDetected(locationData.fullLocationDisplay)),
             backgroundColor: AppColors.accentAmber,
             behavior: SnackBarBehavior.floating,
           ),
@@ -227,8 +227,8 @@ class _TripInputScreenState extends State<TripInputScreen> {
                                   style: AppTextStyles.bodyLarge,
                                   decoration: InputDecoration(
                                     hintText: strings.planDestinationHint,
-                                    prefixIcon: const Icon(Icons.search_rounded,
-                                        color: AppColors.textSecondary,
+                                    prefixIcon: Icon(Icons.search_rounded,
+                                        color: AppColors.adaptiveTextSecondary(context),
                                         size: 20),
                                     suffixIcon: IconButton(
                                       icon: const Icon(Icons.gps_fixed_rounded, color: AppColors.accentAmber, size: 20),
@@ -481,7 +481,7 @@ class _TripInputScreenState extends State<TripInputScreen> {
             child: Text(
               AppStrings.of(context).planAIGreeting,
               style: AppTextStyles.bodyMedium.copyWith(
-                color: AppColors.textPrimary,
+                color: AppColors.adaptiveTextPrimary(context),
               ),
             ),
           ),

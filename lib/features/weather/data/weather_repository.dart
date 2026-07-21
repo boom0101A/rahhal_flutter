@@ -2,13 +2,16 @@ import 'package:dio/dio.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'dart:convert';
 import '../../../core/config/app_config.dart';
+import '../../../core/network/dio_client.dart';
 import '../domain/entities/weather_entity.dart';
 
 
 class WeatherRepository {
   final Dio _dio;
 
-  WeatherRepository({Dio? dio}) : _dio = dio ?? Dio();
+  // DioClient.general, not a bare Dio() — /api/weather now requires a
+  // Firebase ID token and only the shared client attaches one.
+  WeatherRepository({Dio? dio}) : _dio = dio ?? DioClient.general;
 
   static const _cachePrefix = 'weather_';
   static const _cacheTsPrefix = 'weather_ts_';

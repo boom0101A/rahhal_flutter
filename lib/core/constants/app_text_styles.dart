@@ -150,4 +150,14 @@ class AppTextStyles {
         fontWeight: FontWeight.w700,
         height: 1.2,
       );
+
+  /// Tab labels. Must be Cairo — the Inter-based label styles have no Arabic
+  /// glyphs, so Arabic tab titles fell back to a font with different metrics
+  /// and their descenders (ل، و، ج) were clipped by the tab's box.
+  /// The generous line height keeps those descenders inside the line box.
+  static TextStyle get tabLabel => GoogleFonts.cairo(
+        fontSize: 12,
+        fontWeight: FontWeight.w700,
+        height: 1.6,
+      );
 }

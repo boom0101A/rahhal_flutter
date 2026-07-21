@@ -1,4 +1,5 @@
 import 'package:connectivity_plus/connectivity_plus.dart';
+import '../../core/constants/app_strings.dart';
 import 'package:flutter/material.dart';
 import '../../core/constants/app_text_styles.dart';
 
@@ -39,7 +40,7 @@ class OfflineBanner extends StatelessWidget {
                             // which paints the yellow/black overflow stripes.
                             Flexible(
                               child: Text(
-                                'لا يوجد اتصال بالإنترنت. يرجى التحقق من الشبكة.',
+                                AppStrings.of(context).offlineMessage,
                                 maxLines: 1,
                                 overflow: TextOverflow.ellipsis,
                                 style: AppTextStyles.labelSmall.copyWith(

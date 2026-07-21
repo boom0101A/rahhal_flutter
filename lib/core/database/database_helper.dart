@@ -17,7 +17,7 @@ class DatabaseHelper {
 
   // ─── Init ─────────────────────────────────────────────────────────────────
 
-  static const int _dbVersion = 4;
+  static const int _dbVersion = 5;
   static const String _dbName = 'rahhal_ai.db';
 
   static final Map<int, List<String>> _migrations = {
@@ -37,6 +37,12 @@ class DatabaseHelper {
     4: [
       'ALTER TABLE stops ADD COLUMN coords_verified INTEGER DEFAULT 0;',
       'ALTER TABLE stops ADD COLUMN place_id TEXT;',
+    ],
+    // Restaurants now come from Google Places, so they carry a place_id we can
+    // deep-link with and a verified flag mirroring the one on stops.
+    5: [
+      'ALTER TABLE restaurants ADD COLUMN place_id TEXT;',
+      'ALTER TABLE restaurants ADD COLUMN coords_verified INTEGER DEFAULT 0;',
     ],
   };
 
@@ -187,7 +193,9 @@ class DatabaseHelper {
       opening_hours     TEXT,
       image_url         TEXT,
       ai_description    TEXT,
-      is_recommended    INTEGER DEFAULT 0
+      is_recommended    INTEGER DEFAULT 0,
+      place_id          TEXT,
+      coords_verified   INTEGER DEFAULT 0
     )
   ''';
 

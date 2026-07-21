@@ -127,7 +127,7 @@ class MainNavigationLayout extends StatelessWidget {
     final color = isSelected 
         ? AppColors.accentAmber 
         : (Theme.of(context).brightness == Brightness.dark 
-            ? AppColors.textSecondary 
+            ? AppColors.adaptiveTextSecondary(context) 
             : const Color(0xFF6B7280));
 
     return GestureDetector(

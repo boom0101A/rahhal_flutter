@@ -22,17 +22,13 @@ class ImageSearchService {
       );
       final url = response.data['url'] as String?;
       if (url != null && url.isNotEmpty) return url;
-      return _picsumFallback(query);
+      // No match: return null so the UI shows its own placeholder tile. This
+      // used to fall back to picsum.photos, which serves a RANDOM photo — a
+      // cat or a mountain would appear captioned as a restaurant in Basra.
+      return null;
     } catch (e) {
       debugPrint('[ImageSearch] Failed: $e');
-      return _picsumFallback(query);
+      return null;
     }
-  }
-
-  /// Deterministic Picsum fallback — no API key needed.
-  /// Uses lowercase normalization for consistent seeds across calls.
-  String _picsumFallback(String query) {
-    final seed = query.toLowerCase().hashCode.abs() % 1000;
-    return 'https://picsum.photos/seed/$seed/800/600';
   }
 }

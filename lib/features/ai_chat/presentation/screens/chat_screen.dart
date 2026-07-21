@@ -259,14 +259,13 @@ class _ChatScreenState extends State<ChatScreen> {
         GlassCard(
           padding: const EdgeInsets.all(14),
           child: Text(
-            'يمكنك سؤالي عن أي شيء: أفضل المطاعم، المواصلات، التكاليف، الطقس، '
-            'ساعات الزيارة، أماكن التسوق، الثقافة المحلية، أو أي تساؤل آخر عن رحلتك! 💬',
+            AppStrings.of(context).chatIntroHint,
             style: AppTextStyles.bodyMedium,
             textAlign: TextAlign.center,
           ),
         ),
         const SizedBox(height: 24),
-        Text(AppStrings.of(context).chatSuggestions, style: AppTextStyles.titleSmall),
+        Text(AppStrings.of(context).chatIntroHint, style: AppTextStyles.titleSmall),
         const SizedBox(height: 12),
         ..._suggestions(context).map((s) => _SuggestionChip(
               text: s,
@@ -339,7 +338,7 @@ class _ChatScreenState extends State<ChatScreen> {
                 shape: BoxShape.circle,
                 gradient: isTyping ? null : AppColors.amberGradient,
                 color: isTyping
-                    ? AppColors.textSecondary.withValues(alpha: 0.3)
+                    ? AppColors.adaptiveTextSecondary(context).withValues(alpha: 0.3)
                     : null,
                 boxShadow: isTyping ? null : AppColors.amberGlow,
               ),
@@ -456,13 +455,13 @@ class _TypingIndicator extends StatelessWidget {
           Container(
             padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 14),
             decoration: BoxDecoration(
-              color: AppColors.glass,
+              color: AppColors.adaptiveGlass(context),
               borderRadius: const BorderRadius.only(
                 topLeft: Radius.circular(20),
                 topRight: Radius.circular(20),
                 bottomRight: Radius.circular(20),
               ),
-              border: Border.all(color: AppColors.border),
+              border: Border.all(color: AppColors.adaptiveBorder(context)),
             ),
             child: Row(
               mainAxisSize: MainAxisSize.min,
@@ -515,8 +514,8 @@ class _SuggestionChip extends StatelessWidget {
             Expanded(
               child: Text(text, style: AppTextStyles.bodyMedium),
             ),
-            const Icon(Icons.chevron_left_rounded,
-                color: AppColors.textSecondary, size: 18),
+            Icon(Icons.chevron_left_rounded,
+                color: AppColors.adaptiveTextSecondary(context), size: 18),
           ],
         ),
       ),

@@ -145,7 +145,7 @@ class _TripDashboardScreenState extends State<TripDashboardScreen>
                       const SizedBox(width: 10),
                       Expanded(
                         child: Text(
-                          '⚠️ هذه خطة تجريبية (بيانات وهمية) بسبب عدم الاتصال بالسيرفر. يرجى التحقق من تشغيل خادم backend (node server.js) للحصول على رحلة حقيقية بالذكاء الاصطناعي.',
+                          AppStrings.of(context).mockTripWarning,
                           style: AppTextStyles.bodySmall.copyWith(
                             color: Colors.orange,
                             fontSize: 12,
@@ -229,7 +229,7 @@ class _TripDashboardScreenState extends State<TripDashboardScreen>
             Hero(
               tag: 'trip_hero_${widget.tripId}',
               child: CachedHeroImage(
-                url: trip?.displayImageUrl ?? 'https://picsum.photos/seed/rahhal/800/600',
+                url: trip?.displayImageUrl ?? '',
                 placeholder: () => _buildHeroGradient(),
               ),
             ),
@@ -335,7 +335,8 @@ class _TripDashboardScreenState extends State<TripDashboardScreen>
       ),
       // Stats row + Tab bar
       bottom: PreferredSize(
-        preferredSize: const Size.fromHeight(100),
+        // Stats row (~52) + tab bar (44 tab + 12 padding).
+        preferredSize: const Size.fromHeight(108),
         child: Column(
           children: [
             if (_trip != null) _buildStatsRow(),
@@ -422,20 +423,19 @@ class _TripDashboardScreenState extends State<TripDashboardScreen>
           dividerColor: Colors.transparent,
           labelColor: AppColors.adaptiveBgPrimary(context),
           unselectedLabelColor: AppColors.adaptiveTextSecondary(context),
-          labelStyle: AppTextStyles.labelSmall.copyWith(
-            fontWeight: FontWeight.w700,
-          ),
-          unselectedLabelStyle: AppTextStyles.labelSmall,
-          // Cairo sits on a taller line box than Inter did, so give the tab
-          // enough height for Arabic descenders instead of clipping them.
+          labelStyle: AppTextStyles.tabLabel,
+          unselectedLabelStyle: AppTextStyles.tabLabel,
+          labelPadding: const EdgeInsets.symmetric(horizontal: 4),
           tabs: _tabs(context)
               .map((t) => Tab(
                     height: 44,
-                    child: Center(
+                    // Arabic tab titles vary a lot in width; scale down rather
+                    // than ellipsize so every label stays fully readable.
+                    child: FittedBox(
+                      fit: BoxFit.scaleDown,
                       child: Text(
                         t.$2,
                         maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
                         textAlign: TextAlign.center,
                       ),
                     ),

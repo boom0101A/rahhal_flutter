@@ -7,6 +7,7 @@ import 'package:image_picker/image_picker.dart';
 import 'package:uuid/uuid.dart';
 import 'package:intl/intl.dart';
 import '../../../../core/constants/app_colors.dart';
+import '../../../../core/constants/app_strings.dart';
 import '../../../../core/constants/app_text_styles.dart';
 import '../../../../core/di/injection.dart';
 import '../../../../shared/widgets/app_error_widget.dart';
@@ -27,15 +28,8 @@ class DocumentsScreen extends StatefulWidget {
 class _DocumentsScreenState extends State<DocumentsScreen> {
   final ImagePicker _imagePicker = ImagePicker();
 
-  String _getDocTypeLabel(BuildContext context, String docType) {
-    return switch (docType) {
-      'passport' => 'جواز سفر / هوية',
-      'visa' => 'تأشيرة دخول',
-      'ticket' => 'تذكرة سفر',
-      'booking' => 'حجز إقامة / سيارة',
-      _ => 'مستند آخر',
-    };
-  }
+  String _getDocTypeLabel(BuildContext context, String docType) =>
+      AppStrings.of(context).documentTypeLabelFor(docType);
 
   IconData _getDocTypeIcon(String docType) {
     return switch (docType) {
@@ -53,7 +47,7 @@ class _DocumentsScreenState extends State<DocumentsScreen> {
       'visa' => AppColors.accentTurquoise,
       'ticket' => const Color(0xFF9B7FD4),
       'booking' => const Color(0xFF4CAF50),
-      _ => AppColors.textSecondary,
+      _ => AppColors.adaptiveTextSecondary(context),
     };
   }
 
@@ -78,9 +72,11 @@ class _DocumentsScreenState extends State<DocumentsScreen> {
                   size: 20,
                 ),
               ),
-              title: const Text(
-                'مستندات السفر',
-                style: TextStyle(fontWeight: FontWeight.bold),
+              title: Text(
+                AppStrings.of(context).documentsTitle,
+                // No explicit family: 'Inter' isn't a declared font asset and
+                // has no Arabic glyphs, so it fell back inconsistently.
+                style: const TextStyle(fontWeight: FontWeight.bold),
               ),
               centerTitle: true,
             ),
@@ -110,27 +106,27 @@ class _DocumentsScreenState extends State<DocumentsScreen> {
                                 .animate()
                                 .scale(duration: 600.ms, curve: Curves.easeOutBack),
                             const SizedBox(height: 20),
-                            const Text(
-                              'لا توجد مستندات بعد',
+                            Text(
+                              AppStrings.of(context).documentsEmptyTitle,
                               style: TextStyle(
                                 fontSize: 20,
                                 fontWeight: FontWeight.bold,
-                                color: AppColors.textPrimary,
+                                color: AppColors.adaptiveTextPrimary(context),
                               ),
                               textAlign: TextAlign.center,
                             ),
                             const SizedBox(height: 8),
-                            const Text(
-                              'احفظ جوازات سفرك، التأشيرات، وتذاكر الطيران للوصول السريع إليها أثناء السفر.',
+                            Text(
+                              AppStrings.of(context).documentsEmptySubtitle,
                               style: TextStyle(
                                 fontSize: 14,
-                                color: AppColors.textSecondary,
+                                color: AppColors.adaptiveTextSecondary(context),
                               ),
                               textAlign: TextAlign.center,
                             ),
                             const SizedBox(height: 32),
                             GradientButton(
-                              label: 'إضافة مستند جديد',
+                              label: AppStrings.of(context).documentAddNew,
                               icon: Icons.add_rounded,
                               onPressed: () => _showAddDocumentSheet(context),
                             ),
@@ -155,7 +151,7 @@ class _DocumentsScreenState extends State<DocumentsScreen> {
                         left: 20,
                         right: 20,
                         child: GradientButton(
-                          label: 'إضافة مستند جديد',
+                          label: AppStrings.of(context).documentAddNew,
                           icon: Icons.add_rounded,
                           onPressed: () => _showAddDocumentSheet(context),
                         ),
@@ -204,7 +200,7 @@ class _DocumentsScreenState extends State<DocumentsScreen> {
                       Text(
                         doc.title,
                         style: AppTextStyles.titleMedium.copyWith(
-                          color: isDark ? AppColors.textPrimary : const Color(0xFF0D1B2A),
+                          color: isDark ? AppColors.adaptiveTextPrimary(context) : const Color(0xFF0D1B2A),
                           fontWeight: FontWeight.bold,
                         ),
                         maxLines: 1,
@@ -214,7 +210,7 @@ class _DocumentsScreenState extends State<DocumentsScreen> {
                       Text(
                         _getDocTypeLabel(context, doc.docType),
                         style: AppTextStyles.bodySmall.copyWith(
-                          color: AppColors.textSecondary,
+                          color: AppColors.adaptiveTextSecondary(context),
                         ),
                       ),
                     ],
@@ -228,12 +224,12 @@ class _DocumentsScreenState extends State<DocumentsScreen> {
             ),
             if (doc.notes != null && doc.notes!.isNotEmpty) ...[
               const SizedBox(height: 12),
-              const Divider(color: AppColors.border, height: 1),
+              Divider(color: AppColors.adaptiveBorder(context), height: 1),
               const SizedBox(height: 8),
               Text(
                 doc.notes!,
                 style: AppTextStyles.bodyMedium.copyWith(
-                  color: isDark ? AppColors.textSecondary : const Color(0xFF4B5563),
+                  color: isDark ? AppColors.adaptiveTextSecondary(context) : const Color(0xFF4B5563),
                 ),
               ),
             ],
@@ -244,14 +240,14 @@ class _DocumentsScreenState extends State<DocumentsScreen> {
                   Icon(
                     Icons.event_busy_rounded,
                     size: 14,
-                    color: isExpired ? AppColors.error : AppColors.textSecondary,
+                    color: isExpired ? AppColors.error : AppColors.adaptiveTextSecondary(context),
                   ),
                   const SizedBox(width: 4),
                   Text(
-                    'تاريخ الانتهاء: ${DateFormat('yyyy/MM/dd').format(doc.expiryDate!)}',
+                    AppStrings.of(context).documentExpiryOn(DateFormat('yyyy/MM/dd').format(doc.expiryDate!)),
                     style: TextStyle(
                       fontSize: 12,
-                      color: isExpired ? AppColors.error : AppColors.textSecondary,
+                      color: isExpired ? AppColors.error : AppColors.adaptiveTextSecondary(context),
                       fontWeight: isExpired ? FontWeight.bold : FontWeight.normal,
                     ),
                   ),
@@ -263,9 +259,9 @@ class _DocumentsScreenState extends State<DocumentsScreen> {
                         color: AppColors.error.withValues(alpha: 0.1),
                         borderRadius: BorderRadius.circular(4),
                       ),
-                      child: const Text(
-                        'منتهي',
-                        style: TextStyle(fontSize: 10, color: AppColors.error, fontWeight: FontWeight.bold),
+                      child: Text(
+                        AppStrings.of(context).documentExpired,
+                        style: const TextStyle(fontSize: 10, color: AppColors.error, fontWeight: FontWeight.bold),
                       ),
                     ),
                   ],
@@ -281,7 +277,7 @@ class _DocumentsScreenState extends State<DocumentsScreen> {
                   width: double.infinity,
                   decoration: BoxDecoration(
                     borderRadius: BorderRadius.circular(12),
-                    border: Border.all(color: AppColors.border),
+                    border: Border.all(color: AppColors.adaptiveBorder(context)),
                   ),
                   child: ClipRRect(
                     borderRadius: BorderRadius.circular(12),
@@ -290,8 +286,8 @@ class _DocumentsScreenState extends State<DocumentsScreen> {
                       fit: doc.docType == 'ticket' ? BoxFit.contain : BoxFit.cover,
                       errorBuilder: (ctx, e, s) => Container(
                         color: Colors.black12,
-                        child: const Center(
-                          child: Icon(Icons.broken_image_rounded, color: AppColors.textSecondary),
+                        child: Center(
+                          child: Icon(Icons.broken_image_rounded, color: AppColors.adaptiveTextSecondary(ctx)),
                         ),
                       ),
                     ),
@@ -357,13 +353,13 @@ class _DocumentsScreenState extends State<DocumentsScreen> {
     showDialog(
       context: context,
       builder: (ctx) => AlertDialog(
-        backgroundColor: AppColors.bgCard,
-        title: const Text('حذف المستند', style: TextStyle(fontWeight: FontWeight.bold)),
-        content: Text('هل أنت متأكد من رغبتك في حذف "${doc.title}"؟'),
+        backgroundColor: AppColors.adaptiveBgCard(context),
+        title: Text(AppStrings.of(context).documentDeleteTitle, style: const TextStyle(fontWeight: FontWeight.bold)),
+        content: Text(AppStrings.of(context).documentDeleteConfirm(doc.title)),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(ctx),
-            child: const Text('إلغاء'),
+            child: Text(AppStrings.of(context).cancel),
           ),
           TextButton(
             onPressed: () {
@@ -371,7 +367,7 @@ class _DocumentsScreenState extends State<DocumentsScreen> {
               Navigator.pop(ctx);
             },
             style: TextButton.styleFrom(foregroundColor: AppColors.error),
-            child: const Text('حذف'),
+            child: Text(AppStrings.of(context).delete),
           ),
         ],
       ),
@@ -388,7 +384,7 @@ class _DocumentsScreenState extends State<DocumentsScreen> {
     showModalBottomSheet(
       context: context,
       isScrollControlled: true,
-      backgroundColor: AppColors.bgCard,
+      backgroundColor: AppColors.adaptiveBgCard(context),
       shape: const RoundedRectangleBorder(
         borderRadius: BorderRadius.only(
           topLeft: Radius.circular(24),
@@ -413,9 +409,9 @@ class _DocumentsScreenState extends State<DocumentsScreen> {
                     Row(
                       mainAxisAlignment: MainAxisAlignment.spaceBetween,
                       children: [
-                        const Text(
-                          'إضافة مستند سفر جديد',
-                          style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+                        Text(
+                          AppStrings.of(context).documentAddTitle,
+                          style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
                         ),
                         IconButton(
                           icon: const Icon(Icons.close_rounded),
@@ -426,20 +422,20 @@ class _DocumentsScreenState extends State<DocumentsScreen> {
                     const SizedBox(height: 16),
                     TextField(
                       controller: titleCtrl,
-                      decoration: const InputDecoration(
-                        labelText: 'عنوان المستند (مثال: جواز سفر أحمد)',
+                      decoration: InputDecoration(
+                        labelText: AppStrings.of(context).documentTitleLabel,
                       ),
                     ),
                     const SizedBox(height: 16),
                     DropdownButtonFormField<String>(
                       initialValue: docType,
-                      decoration: const InputDecoration(labelText: 'نوع المستند'),
-                      items: const [
-                        DropdownMenuItem(value: 'passport', child: Text('جواز سفر / هوية')),
-                        DropdownMenuItem(value: 'visa', child: Text('تأشيرة دخول')),
-                        DropdownMenuItem(value: 'ticket', child: Text('تذكرة سفر')),
-                        DropdownMenuItem(value: 'booking', child: Text('حجز إقامة / سيارة')),
-                        DropdownMenuItem(value: 'other', child: Text('مستند آخر')),
+                      decoration: InputDecoration(labelText: AppStrings.of(context).documentTypeLabel),
+                      items: [
+                        DropdownMenuItem(value: 'passport', child: Text(AppStrings.of(context).documentTypeLabelFor('passport'))),
+                        DropdownMenuItem(value: 'visa', child: Text(AppStrings.of(context).documentTypeLabelFor('visa'))),
+                        DropdownMenuItem(value: 'ticket', child: Text(AppStrings.of(context).documentTypeLabelFor('ticket'))),
+                        DropdownMenuItem(value: 'booking', child: Text(AppStrings.of(context).documentTypeLabelFor('booking'))),
+                        DropdownMenuItem(value: 'other', child: Text(AppStrings.of(context).documentTypeLabelFor('other'))),
                       ],
                       onChanged: (val) {
                         if (val != null) {
@@ -450,8 +446,8 @@ class _DocumentsScreenState extends State<DocumentsScreen> {
                     const SizedBox(height: 16),
                     TextField(
                       controller: notesCtrl,
-                      decoration: const InputDecoration(
-                        labelText: 'ملاحظات إضافية (اختياري)',
+                      decoration: InputDecoration(
+                        labelText: AppStrings.of(context).documentNotesLabel,
                       ),
                       maxLines: 2,
                     ),
@@ -460,8 +456,8 @@ class _DocumentsScreenState extends State<DocumentsScreen> {
                       contentPadding: EdgeInsets.zero,
                       title: Text(
                         expiryDate == null
-                            ? 'تاريخ الانتهاء (اختياري)'
-                            : 'تاريخ الانتهاء: ${DateFormat('yyyy/MM/dd').format(expiryDate!)}',
+                            ? AppStrings.of(context).documentExpiryOptional
+                            : AppStrings.of(context).documentExpiryOn(DateFormat('yyyy/MM/dd').format(expiryDate!)),
                       ),
                       trailing: const Icon(Icons.calendar_today_rounded, color: AppColors.accentAmber),
                       onTap: () async {
@@ -477,7 +473,7 @@ class _DocumentsScreenState extends State<DocumentsScreen> {
                       },
                     ),
                     const SizedBox(height: 16),
-                    const Text('صورة المستند / المرفق', style: TextStyle(fontWeight: FontWeight.bold)),
+                    Text(AppStrings.of(context).documentAttachmentLabel, style: const TextStyle(fontWeight: FontWeight.bold)),
                     const SizedBox(height: 8),
                     if (selectedFilePath != null) ...[
                       Stack(
@@ -523,7 +519,7 @@ class _DocumentsScreenState extends State<DocumentsScreen> {
                                 }
                               },
                               icon: const Icon(Icons.photo_library_rounded),
-                              label: const Text('المعرض'),
+                              label: Text(AppStrings.of(context).documentPickGallery),
                             ),
                           ),
                           const SizedBox(width: 12),
@@ -539,7 +535,7 @@ class _DocumentsScreenState extends State<DocumentsScreen> {
                                 }
                               },
                               icon: const Icon(Icons.camera_alt_rounded),
-                              label: const Text('الكاميرا'),
+                              label: Text(AppStrings.of(context).documentPickCamera),
                             ),
                           ),
                         ],
@@ -547,12 +543,12 @@ class _DocumentsScreenState extends State<DocumentsScreen> {
                     ],
                     const SizedBox(height: 24),
                     GradientButton(
-                      label: 'حفظ المستند',
+                      label: AppStrings.of(context).documentSave,
                       icon: Icons.check_rounded,
                       onPressed: () {
                         if (titleCtrl.text.trim().isEmpty) {
                           ScaffoldMessenger.of(context).showSnackBar(
-                            const SnackBar(content: Text('الرجاء إدخال عنوان للمستند')),
+                            SnackBar(content: Text(AppStrings.of(context).documentTitleRequired)),
                           );
                           return;
                         }

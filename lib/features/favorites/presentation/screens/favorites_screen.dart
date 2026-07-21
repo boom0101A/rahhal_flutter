@@ -175,7 +175,7 @@ class _FavoritesScreenState extends State<FavoritesScreen> {
                     Text(
                       stop.displayName(context),
                       style: AppTextStyles.titleMedium.copyWith(
-                        color: isDark ? AppColors.textPrimary : const Color(0xFF0D1B2A),
+                        color: isDark ? AppColors.adaptiveTextPrimary(context) : const Color(0xFF0D1B2A),
                       ),
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
@@ -186,7 +186,7 @@ class _FavoritesScreenState extends State<FavoritesScreen> {
                         stop.address!,
                         style: AppTextStyles.bodySmall.copyWith(
                           fontSize: 10,
-                          color: isDark ? AppColors.textSecondary : const Color(0xFF4B5563),
+                          color: isDark ? AppColors.adaptiveTextSecondary(context) : const Color(0xFF4B5563),
                         ),
                         maxLines: 1,
                         overflow: TextOverflow.ellipsis,
@@ -244,7 +244,9 @@ class _FavoritesScreenState extends State<FavoritesScreen> {
                         Text(
                           rest.name,
                           style: AppTextStyles.titleMedium.copyWith(
-                            color: isDark ? AppColors.textPrimary : const Color(0xFF0D1B2A),
+                            color: isDark
+                                ? AppColors.adaptiveTextPrimary(context)
+                                : const Color(0xFF0D1B2A),
                           ),
                           maxLines: 1,
                           overflow: TextOverflow.ellipsis,
@@ -255,7 +257,9 @@ class _FavoritesScreenState extends State<FavoritesScreen> {
                             rest.cuisineType!,
                             style: AppTextStyles.bodySmall.copyWith(
                               fontSize: 10,
-                              color: isDark ? AppColors.textSecondary : const Color(0xFF4B5563),
+                              color: isDark
+                                  ? AppColors.adaptiveTextSecondary(context)
+                                  : const Color(0xFF4B5563),
                             ),
                             maxLines: 1,
                             overflow: TextOverflow.ellipsis,

@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import '../../../../core/constants/app_strings.dart';
 import 'package:flutter_animate/flutter_animate.dart';
 import 'package:go_router/go_router.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -39,10 +40,10 @@ class _SplashScreenState extends State<SplashScreen> {
 
     if (!isFirebaseAvailable && mounted) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
+        SnackBar(
           content: Text(
-            'تعذّر الاتصال بالخدمات السحابية. التطبيق يعمل في وضع محلي.',
-            style: TextStyle(color: Colors.white),
+            AppStrings.of(context).cloudUnavailable,
+            style: const TextStyle(color: Colors.white),
           ),
           backgroundColor: Colors.orange,
           duration: Duration(seconds: 4),
@@ -97,7 +98,7 @@ class _SplashScreenState extends State<SplashScreen> {
                 const SizedBox(height: 24),
                 // App name
                 Text(
-                  'رحّال AI',
+                  AppStrings.of(context).appTitle,
                   style: AppTextStyles.displayLarge.copyWith(
                     fontSize: 40,
                     letterSpacing: 2,
@@ -109,7 +110,7 @@ class _SplashScreenState extends State<SplashScreen> {
                     .slideY(begin: 0.3, end: 0),
                 const SizedBox(height: 8),
                 Text(
-                  'مساعدك الذكي للسفر',
+                  AppStrings.of(context).splashTagline,
                   style: AppTextStyles.bodyMedium.copyWith(
                     color: AppColors.adaptiveTextSecondary(context),
                     letterSpacing: 1,
@@ -179,7 +180,7 @@ class _SplashScreenState extends State<SplashScreen> {
             shape: BoxShape.circle,
             color: i == 0
                 ? AppColors.accentAmber
-                : AppColors.textSecondary.withValues(alpha: 0.3),
+                : AppColors.adaptiveTextSecondary(context).withValues(alpha: 0.3),
           ),
         )
             .animate(onPlay: (c) => c.repeat())

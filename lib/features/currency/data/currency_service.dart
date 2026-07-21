@@ -1,11 +1,14 @@
 import 'package:dio/dio.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../../../core/config/app_config.dart';
+import '../../../core/network/dio_client.dart';
 
 class CurrencyService {
   final Dio _dio;
 
-  CurrencyService({Dio? dio}) : _dio = dio ?? Dio();
+  // DioClient.general, not a bare Dio() — /api/currency now requires a
+  // Firebase ID token and only the shared client attaches one.
+  CurrencyService({Dio? dio}) : _dio = dio ?? DioClient.general;
 
   static const _cachePrefix = 'currency_rate_';
   static const _cacheTimestampPrefix = 'currency_ts_';

@@ -12,6 +12,11 @@ class CachedHeroImage extends StatelessWidget {
   final Widget Function()? placeholder;
   final BorderRadius? borderRadius;
 
+  /// Emoji shown on the fallback tile when there is no image. Pick one that
+  /// matches the subject (🍽️ restaurant, 🏛️ landmark, ✈️ trip) so an absent
+  /// photo still reads as intentional rather than broken.
+  final String placeholderEmoji;
+
   const CachedHeroImage({
     super.key,
     required this.url,
@@ -20,6 +25,7 @@ class CachedHeroImage extends StatelessWidget {
     this.fit = BoxFit.cover,
     this.placeholder,
     this.borderRadius,
+    this.placeholderEmoji = '🏛️',
   });
 
   @override
@@ -27,7 +33,8 @@ class CachedHeroImage extends StatelessWidget {
     // تحقق من صحة الـ URL قبل المحاولة
     if (url.isEmpty ||
         (!url.startsWith('http://') && !url.startsWith('https://'))) {
-      return placeholder?.call() ?? _DefaultPlaceholder(height: height);
+      return placeholder?.call() ??
+          _DefaultPlaceholder(height: height, emoji: placeholderEmoji);
     }
 
     Widget image = CachedNetworkImage(
@@ -44,7 +51,8 @@ class CachedHeroImage extends StatelessWidget {
       ),
       // Placeholder عند الخطأ
       errorWidget: (context, url, error) =>
-          placeholder?.call() ?? _DefaultPlaceholder(height: height),
+          placeholder?.call() ??
+              _DefaultPlaceholder(height: height, emoji: placeholderEmoji),
       // Cache لمدة 7 أيام
       maxHeightDiskCache: 800,
       maxWidthDiskCache: 1200,
@@ -59,7 +67,8 @@ class CachedHeroImage extends StatelessWidget {
 
 class _DefaultPlaceholder extends StatelessWidget {
   final double? height;
-  const _DefaultPlaceholder({this.height});
+  final String emoji;
+  const _DefaultPlaceholder({this.height, this.emoji = '🏛️'});
 
   @override
   Widget build(BuildContext context) {
@@ -76,14 +85,8 @@ class _DefaultPlaceholder extends StatelessWidget {
           end: Alignment.bottomRight,
         ),
       ),
-      child: const Center(
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Text('🏛️', style: TextStyle(fontSize: 36)),
-            SizedBox(height: 4),
-          ],
-        ),
+      child: Center(
+        child: Text(emoji, style: const TextStyle(fontSize: 36)),
       ),
     );
   }

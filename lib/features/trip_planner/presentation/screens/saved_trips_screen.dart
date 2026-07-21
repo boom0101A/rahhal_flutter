@@ -367,8 +367,8 @@ class _TripCard extends StatelessWidget {
                         const SizedBox(height: 4),
                         Row(
                           children: [
-                            const Icon(Icons.calendar_today_rounded,
-                                size: 12, color: AppColors.textSecondary),
+                            Icon(Icons.calendar_today_rounded,
+                                size: 12, color: AppColors.adaptiveTextSecondary(context)),
                             const SizedBox(width: 4),
                             Text(
                               '${trip.durationDays} ${AppStrings.of(context).planDurationDays}',
