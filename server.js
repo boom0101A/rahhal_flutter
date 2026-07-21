@@ -62,6 +62,24 @@ if (process.env.FIREBASE_SERVICE_ACCOUNT) {
 // TTL: 24 hours — reduces Places API costs significantly
 const placesCache = new Map();
 const PLACES_CACHE_TTL_MS = 24 * 60 * 60 * 1000; // 24 hours
+
+// Circuit breaker for the Places free tier (100 searches/day). Once the daily
+// quota is gone every further call fails anyway, so a whole trip would spend
+// seconds hammering a dead endpoint (measured: 2.2s wasted on 14 lookups that
+// all 404'd). When we see a quota error we stop calling until this timestamp.
+let placesQuotaBlockedUntil = 0;
+const PLACES_QUOTA_COOLDOWN_MS = 30 * 60 * 1000; // re-probe every 30 minutes
+function isPlacesQuotaBlocked() {
+  return Date.now() < placesQuotaBlockedUntil;
+}
+function tripPlacesBreaker(errMessage) {
+  if (/quota|RESOURCE_EXHAUSTED|rate limit/i.test(errMessage || '')) {
+    placesQuotaBlockedUntil = Date.now() + PLACES_QUOTA_COOLDOWN_MS;
+    console.warn('[PLACES] Daily quota exhausted — skipping Places lookups for 30 minutes.');
+    return true;
+  }
+  return false;
+}
 // Max distance (km) a Places text-search match may be from the destination
 // center before it's rejected as "wrong city/governorate". Generous enough
 // to cover a metro area, tight enough to catch a same-named place resolved
@@ -357,9 +375,11 @@ async function callGemini(systemPrompt, messages, maxTokens = 4000, apiKey) {
 const GROQ_MODEL = process.env.GROQ_MODEL || 'openai/gpt-oss-20b';
 async function callGroq(systemPrompt, messages, maxTokens = 4000, apiKey) {
   // Groq's free tier caps tokens-per-minute at 8000 for the gpt-oss models,
-  // and (prompt + max_tokens) counts against it. The trip system prompt is
-  // ~1600 tokens, so keep the output budget low enough that a single request
-  // stays under the limit.
+  // and (prompt + max_tokens) — not actual usage — counts against it. With a
+  // ~1700-token system prompt that leaves ~6000 for output, which is also
+  // about what a 3-day Arabic itinerary genuinely needs. The practical
+  // consequence is roughly one generation per minute on the free tier;
+  // anything more falls through to the Gemini fallback.
   const outputBudget = Math.max(1024, Math.min(maxTokens, 6000));
 
   const chatMessages = [];
@@ -463,6 +483,9 @@ async function verifyPlaceWithGoogle(nameEn, cityEn, centerLat, centerLng) {
   if (!placesKey || placesKey === 'your_google_places_api_key_here') {
     return null; // Places API not configured — skip gracefully
   }
+  if (isPlacesQuotaBlocked()) {
+    return null; // daily quota already known to be gone — don't waste the round-trip
+  }
 
   const cacheKey = `${nameEn.toLowerCase().trim()}|${cityEn.toLowerCase().trim()}${centerLat && centerLng ? `|${centerLat.toFixed(2)},${centerLng.toFixed(2)}` : ''}`;
   const now = Date.now();
@@ -547,7 +570,12 @@ async function verifyPlaceWithGoogle(nameEn, cityEn, centerLat, centerLng) {
 
   } catch (err) {
     const apiError = err.response?.data?.error;
-    console.error(`[PLACES] Text Search error for "${nameEn}":`, apiError?.message || err.message);
+    const message = apiError?.message || err.message;
+    // Trip the breaker on quota errors so the remaining places in this trip
+    // (and the next few minutes of traffic) skip Places entirely.
+    if (!tripPlacesBreaker(message)) {
+      console.error(`[PLACES] Text Search error for "${nameEn}":`, message);
+    }
     placesCache.set(cacheKey, { data: null, timestamp: now });
     return null;
   }
@@ -624,7 +652,7 @@ async function verifyAllPlacesInTrip(tripData, destinationEn, userLat, userLng) 
   }
 
   // Process in batches of 5 concurrent requests
-  const CONCURRENCY = 5;
+  const CONCURRENCY = 8;
   for (let i = 0; i < tasks.length; i += CONCURRENCY) {
     const batch = tasks.slice(i, i + CONCURRENCY);
     await Promise.all(
@@ -1118,13 +1146,13 @@ ${countryCode ? `- Country: ${countryCode}` : ''}`;
   const messages = [{ role: 'user', content: userPrompt }];
 
   try {
-    // Arabic output consumes noticeably more tokens per character than
-    // English (BPE tokenizers aren't Arabic-optimized), and richer trips
-    // (more days, more travel styles, luxury tier with extra restaurants)
-    // need proportionally more. The models in use support up to 65536
-    // output tokens, so this stays well within budget even at the cap.
-    const estimatedTokens = Math.max(8000, durationDays * 3000);
-    const MAX_TOKENS = Math.min(estimatedTokens, 40000);
+    // Arabic JSON runs about 1.3 characters per token, so a 3-day trip needs
+    // roughly 6000 output tokens for its ~8k characters. Measured the hard
+    // way: trimming the reservation to 5000 truncated the reply mid-JSON,
+    // which then burned a retry and fell through to the slow fallback. Keep
+    // the budget generous — a truncated reply costs far more than the tokens.
+    const estimatedTokens = 2000 + durationDays * 1500;
+    const MAX_TOKENS = Math.min(Math.max(estimatedTokens, 6000), 40000);
 
     async function requestAndParse(extraInstruction) {
       const msgs = extraInstruction
@@ -1202,8 +1230,20 @@ ${countryCode ? `- Country: ${countryCode}` : ''}`;
 
     let parsedData;
     let lastError;
-    const maxAttempts = 3; // 1 initial + 2 retries
+    // Now that the destination is resolved to English up-front, attempt 1
+    // succeeds in the normal case, so a single retry is enough insurance.
+    // A wall-clock budget stops us starting an attempt that would push the
+    // user past the point where the request just feels broken — three full
+    // attempts (each ~5.5s, plus the Gemini fallback inside callAI) used to
+    // stretch a failed generation past 30 seconds.
+    const maxAttempts = 2;
+    const GENERATION_BUDGET_MS = 22000;
+    const startedAt = Date.now();
     for (let attempt = 0; attempt < maxAttempts; attempt++) {
+      if (attempt > 0 && Date.now() - startedAt > GENERATION_BUDGET_MS) {
+        console.warn('[TRIP] generation budget exhausted — not starting another attempt');
+        break;
+      }
       try {
         const extraInstruction = attempt === 0
           ? undefined

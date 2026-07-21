@@ -38,8 +38,6 @@ class _GeneratingScreenBodyState extends State<_GeneratingScreenBody>
   late final AnimationController _rotationCtrl;
   int _currentStep = 0;
   bool _aiCompleted = false;
-  bool _showSlowWarning = false;
-  Timer? _slowWarningTimer;
   TripPlannerState? _pendingSuccessState; // hold success state until animation done
 
   int _factIndex = 0;
@@ -64,7 +62,6 @@ class _GeneratingScreenBodyState extends State<_GeneratingScreenBody>
       duration: const Duration(seconds: 8),
     )..repeat();
     _animateSteps();
-    _startSlowTimer();
     _startFactRotation();
     // Trigger generation after the frame is built so BlocProvider is ready
     WidgetsBinding.instance.addPostFrameCallback((_) => _startGeneration());
@@ -79,18 +76,8 @@ class _GeneratingScreenBodyState extends State<_GeneratingScreenBody>
     });
   }
 
-  void _startSlowTimer() {
-    _slowWarningTimer?.cancel();
-    _slowWarningTimer = Timer(const Duration(seconds: 20), () {
-      if (mounted && !_aiCompleted) {
-        setState(() => _showSlowWarning = true);
-      }
-    });
-  }
-
   @override
   void dispose() {
-    _slowWarningTimer?.cancel();
     _factTimer?.cancel();
     _rotationCtrl.dispose();
     super.dispose();
@@ -113,8 +100,6 @@ class _GeneratingScreenBodyState extends State<_GeneratingScreenBody>
 
   void _startGeneration() {
     if (!mounted) return;
-    setState(() => _showSlowWarning = false);
-    _startSlowTimer();
     context.read<TripPlannerCubit>().generateTripPlan(
       destination: widget.params['destination'] as String,
       durationDays: widget.params['durationDays'] as int,
@@ -131,8 +116,7 @@ class _GeneratingScreenBodyState extends State<_GeneratingScreenBody>
   void _handleState(TripPlannerState state) {
     if (state is TripPlannerSuccess) {
       _aiCompleted = true;
-      _slowWarningTimer?.cancel();
-      Haptics.success();
+        Haptics.success();
       final allStepsShown = _currentStep >= 4;
       if (allStepsShown) {
         _navigateToSuccess(state);
@@ -140,8 +124,7 @@ class _GeneratingScreenBodyState extends State<_GeneratingScreenBody>
         _pendingSuccessState = state; // wait for animation
       }
     } else if (state is TripPlannerError) {
-      _slowWarningTimer?.cancel();
-      Haptics.warning();
+        Haptics.warning();
       // show error dialog immediately regardless of animation
       _showErrorDialog(state.message);
     }
@@ -311,72 +294,6 @@ class _GeneratingScreenBodyState extends State<_GeneratingScreenBody>
                               ),
                             ),
                           ],
-
-                          // ✅ Slow warning — wrapped in AnimatedSize to smoothly expand
-                          AnimatedSize(
-                            duration: const Duration(milliseconds: 350),
-                            curve: Curves.easeOut,
-                            child: _showSlowWarning
-                                ? Padding(
-                                    padding: const EdgeInsets.only(top: 12),
-                                    child: Container(
-                                      margin: const EdgeInsets.symmetric(horizontal: 20),
-                                      padding: const EdgeInsets.all(12),
-                                      decoration: BoxDecoration(
-                                        color: Colors.amber.withValues(alpha: 0.15),
-                                        borderRadius: BorderRadius.circular(14),
-                                        border: Border.all(
-                                            color: Colors.amber.withValues(alpha: 0.4)),
-                                      ),
-                                      child: Column(
-                                        mainAxisSize: MainAxisSize.min,
-                                        children: [
-                                          Row(
-                                            mainAxisAlignment:
-                                                MainAxisAlignment.center,
-                                            children: [
-                                              const Icon(Icons.speed_rounded,
-                                                  color: Colors.amber, size: 18),
-                                              const SizedBox(width: 8),
-                                              Flexible(
-                                                child: Text(
-                                                  AppStrings.of(context).genServerSlow,
-                                                  style: AppTextStyles.bodyMedium
-                                                      .copyWith(
-                                                    color: Colors.amber,
-                                                    fontWeight: FontWeight.w600,
-                                                  ),
-                                                  textAlign: TextAlign.center,
-                                                ),
-                                              ),
-                                            ],
-                                          ),
-                                          const SizedBox(height: 8),
-                                          ElevatedButton.icon(
-                                            onPressed: _startGeneration,
-                                            icon: const Icon(
-                                                Icons.refresh_rounded,
-                                                size: 16),
-                                            label: Text(AppStrings.of(context).genRetryNow),
-                                            style: ElevatedButton.styleFrom(
-                                              backgroundColor:
-                                                  AppColors.accentAmber,
-                                              foregroundColor:
-                                                  AppColors.bgPrimary,
-                                              padding: const EdgeInsets.symmetric(
-                                                  horizontal: 16, vertical: 8),
-                                              shape: RoundedRectangleBorder(
-                                                borderRadius:
-                                                    BorderRadius.circular(20),
-                                              ),
-                                            ),
-                                          ),
-                                        ],
-                                      ),
-                                    ).animate().fadeIn(duration: 400.ms),
-                                  )
-                                : const SizedBox.shrink(),
-                          ),
 
                           const SizedBox(height: 20),
 
