@@ -13,6 +13,8 @@ import '../../../../../shared/widgets/app_badges.dart';
 import '../../../../../core/services/location_service.dart';
 import '../../../../../core/di/injection.dart';
 import '../cubit/map_cubit.dart';
+import '../../data/cached_tile_provider.dart';
+import '../../data/offline_map_service.dart';
 import '../../../trip_planner/domain/entities/stop_entity.dart';
 import '../../../../core/constants/app_strings.dart';
 import '../../../../../shared/widgets/app_error_widget.dart';
@@ -63,6 +65,8 @@ class _MapViewState extends State<_MapView> with WidgetsBindingObserver {
   bool _fetchingLocation = false;
   bool _isLocatingUser = false;
   bool _mapReady = false;
+  bool _downloadingOffline = false;
+  double _offlineProgress = 0;
 
   StreamSubscription<Position>? _positionSub;
 
@@ -225,6 +229,50 @@ class _MapViewState extends State<_MapView> with WidgetsBindingObserver {
     }
   }
 
+  /// Pre-download the trip's map tiles for offline use, with a progress
+  /// indicator and a summary snackbar.
+  Future<void> _downloadOfflineMap() async {
+    final stops = widget.state.stops
+        .where((s) => s.hasValidLocation)
+        .map((s) => LatLng(s.latitude, s.longitude))
+        .toList();
+    final strings = AppStrings.of(context);
+    final messenger = ScaffoldMessenger.of(context);
+
+    if (stops.isEmpty) {
+      messenger.showSnackBar(
+        SnackBar(content: Text(strings.offlineMapNoStops)),
+      );
+      return;
+    }
+
+    setState(() {
+      _downloadingOffline = true;
+      _offlineProgress = 0;
+    });
+    messenger.showSnackBar(
+      SnackBar(content: Text(strings.offlineMapDownloading)),
+    );
+
+    final cached = await OfflineMapService.downloadForStops(
+      stops,
+      onProgress: (done, total) {
+        if (mounted && total > 0) {
+          setState(() => _offlineProgress = done / total);
+        }
+      },
+    );
+
+    if (!mounted) return;
+    setState(() {
+      _downloadingOffline = false;
+      _offlineProgress = 0;
+    });
+    messenger.showSnackBar(
+      SnackBar(content: Text(strings.offlineMapDone(cached))),
+    );
+  }
+
   LatLng _center() {
     final stops = widget.state.filteredStops.isNotEmpty
         ? widget.state.filteredStops
@@ -331,6 +379,40 @@ class _MapViewState extends State<_MapView> with WidgetsBindingObserver {
             ).animate().slideY(begin: 1, end: 0, duration: 300.ms),
           ),
 
+        // Offline map download button (mobile only — web has no disk cache).
+        if (!kIsWeb)
+          Positioned(
+            bottom: selectedStop != null ? 200 : 80,
+            left: 16,
+            child: Container(
+              decoration: BoxDecoration(
+                color: AppColors.adaptiveBgCard(context),
+                shape: BoxShape.circle,
+                border: Border.all(color: AppColors.adaptiveBorder(context)),
+                boxShadow: AppColors.cardShadow,
+              ),
+              child: IconButton(
+                tooltip: AppStrings.of(context).offlineMapDownload,
+                onPressed: _downloadingOffline ? null : _downloadOfflineMap,
+                icon: _downloadingOffline
+                    ? SizedBox(
+                        width: 22,
+                        height: 22,
+                        child: CircularProgressIndicator(
+                          strokeWidth: 2.4,
+                          value: _offlineProgress > 0 ? _offlineProgress : null,
+                          color: AppColors.accentTurquoise,
+                        ),
+                      )
+                    : const Icon(
+                        Icons.download_for_offline_rounded,
+                        color: AppColors.accentTurquoise,
+                        size: 24,
+                      ),
+              ),
+            ),
+          ),
+
         Positioned(
           bottom: selectedStop != null ? 140 : 20,
           left: 16,
@@ -390,6 +472,8 @@ class _MapViewState extends State<_MapView> with WidgetsBindingObserver {
       urlTemplate: 'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
       userAgentPackageName: 'com.rahhalai.rahhal_flutter',
       maxZoom: 19,
+      // Disk-cache every viewed tile so the map keeps working offline.
+      tileProvider: CachedTileProvider(),
     );
   }
 
