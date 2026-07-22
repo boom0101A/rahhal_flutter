@@ -11,6 +11,7 @@ import '../../../../shared/widgets/glass_card.dart';
 import '../../../../shared/widgets/shimmer_loader.dart';
 import '../cubit/favorites_cubit.dart';
 import '../../domain/entities/favorite_item.dart';
+import '../../../../shared/widgets/cached_hero_image.dart';
 import '../../../restaurants/presentation/widgets/restaurant_detail_sheet.dart';
 import '../../../restaurants/presentation/widgets/restaurant_map_button.dart';
 
@@ -225,15 +226,20 @@ class _FavoritesScreenState extends State<FavoritesScreen> {
             children: [
               Row(
                 children: [
-                  Container(
-                    width: 44,
-                    height: 44,
-                    decoration: BoxDecoration(
-                      color: AppColors.accentTurquoise.withValues(alpha: 0.1),
-                      borderRadius: BorderRadius.circular(12),
-                    ),
-                    child: const Center(
-                      child: Text('🍴', style: TextStyle(fontSize: 20)),
+                  ClipRRect(
+                    borderRadius: BorderRadius.circular(12),
+                    child: SizedBox(
+                      width: 44,
+                      height: 44,
+                      // Real Google Places photo (falls back to a 🍴 tile when
+                      // the restaurant has no image), matching the Restaurants
+                      // tab instead of the old fixed emoji.
+                      child: CachedHeroImage(
+                        url: rest.displayImageUrl,
+                        height: 44,
+                        fit: BoxFit.cover,
+                        placeholderEmoji: '🍴',
+                      ),
                     ),
                   ),
                   const SizedBox(width: 12),

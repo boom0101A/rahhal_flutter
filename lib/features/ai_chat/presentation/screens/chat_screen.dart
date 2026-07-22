@@ -265,7 +265,7 @@ class _ChatScreenState extends State<ChatScreen> {
           ),
         ),
         const SizedBox(height: 24),
-        Text(AppStrings.of(context).chatIntroHint, style: AppTextStyles.titleSmall),
+        Text(AppStrings.of(context).chatSuggestedQuestions, style: AppTextStyles.titleSmall),
         const SizedBox(height: 12),
         ..._suggestions(context).map((s) => _SuggestionChip(
               text: s,

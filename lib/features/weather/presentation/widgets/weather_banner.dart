@@ -1,5 +1,7 @@
+import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
 import '../../../../core/constants/app_strings.dart';
+import '../../../../core/di/injection.dart';
 import '../../../../core/constants/app_colors.dart';
 import '../../../../core/constants/app_text_styles.dart';
 import '../../domain/entities/weather_entity.dart';
@@ -40,7 +42,7 @@ class _WeatherBannerState extends State<WeatherBanner> {
       return;
     }
     try {
-      final repo = WeatherRepository();
+      final repo = sl<WeatherRepository>();
       final result = await repo.getForecast(
         lat: widget.lat!,
         lon: widget.lon!,
@@ -74,21 +76,35 @@ class _WeatherBannerState extends State<WeatherBanner> {
   }
 
   Widget _buildBanner(BuildContext context) {
+    // The banner used a fixed navy gradient, which turned into a near-black
+    // slab on the light theme's white background. Give light mode a pale sky
+    // gradient with dark text instead.
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    final onBannerFaint =
+        isDark ? Colors.white54 : const Color(0xFF5A7A94); // captions / icons
+
     return Container(
       margin: const EdgeInsets.only(bottom: 16),
       padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
       decoration: BoxDecoration(
         gradient: LinearGradient(
-          colors: [
-            const Color(0xFF1A3A5C).withValues(alpha: 0.85),
-            const Color(0xFF0D2137).withValues(alpha: 0.85),
-          ],
+          colors: isDark
+              ? [
+                  const Color(0xFF1A3A5C).withValues(alpha: 0.85),
+                  const Color(0xFF0D2137).withValues(alpha: 0.85),
+                ]
+              : [
+                  const Color(0xFFE8F4FD).withValues(alpha: 0.95),
+                  const Color(0xFFD0EAF8).withValues(alpha: 0.95),
+                ],
           begin: Alignment.topLeft,
           end: Alignment.bottomRight,
         ),
         borderRadius: BorderRadius.circular(16),
         border: Border.all(
-          color: Colors.white.withValues(alpha: 0.08),
+          color: isDark
+              ? Colors.white.withValues(alpha: 0.08)
+              : const Color(0xFF1A3A5C).withValues(alpha: 0.15),
         ),
         boxShadow: [
           BoxShadow(
@@ -103,15 +119,17 @@ class _WeatherBannerState extends State<WeatherBanner> {
         children: [
           Row(
             children: [
-              const Icon(Icons.cloud_outlined, size: 14, color: Colors.white54),
+              Icon(Icons.cloud_outlined, size: 14, color: onBannerFaint),
               const SizedBox(width: 4),
               Expanded(
                 child: Text(
                   _forecast!.city.isNotEmpty
-                      ? '${_forecast!.city} — Forecast'
-                      : 'Weather Forecast',
+                      ? '${_forecast!.city} — ${AppStrings.of(context).weatherForecast}'
+                      : AppStrings.of(context).weatherForecast,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
                   style: AppTextStyles.labelSmall.copyWith(
-                    color: Colors.white54,
+                    color: onBannerFaint,
                     letterSpacing: 0.5,
                   ),
                 ),
@@ -168,22 +186,33 @@ class _WeatherDayChip extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    // Same light/dark treatment as the banner this chip sits on.
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    final onBannerStrong = isDark ? Colors.white : const Color(0xFF102A43);
+    final onBannerMuted = isDark ? Colors.white60 : const Color(0xFF41627E);
+
     // Parse date
     final parts = day.date.split('-');
     final dt = parts.length == 3
         ? DateTime(int.parse(parts[0]), int.parse(parts[1]), int.parse(parts[2]))
         : null;
     final dayLabel = dt != null
-        ? _shortDay(dt.weekday)
+        ? _shortDay(dt.weekday, context)
         : day.date.substring(5); // MM-DD
 
     return Container(
       margin: const EdgeInsetsDirectional.only(end: 10),
       padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
       decoration: BoxDecoration(
-        color: Colors.white.withValues(alpha: 0.07),
+        color: isDark
+            ? Colors.white.withValues(alpha: 0.07)
+            : Colors.white.withValues(alpha: 0.55),
         borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: Colors.white.withValues(alpha: 0.08)),
+        border: Border.all(
+          color: isDark
+              ? Colors.white.withValues(alpha: 0.08)
+              : const Color(0xFF1A3A5C).withValues(alpha: 0.12),
+        ),
       ),
       child: Column(
         mainAxisAlignment: MainAxisAlignment.center,
@@ -191,24 +220,28 @@ class _WeatherDayChip extends StatelessWidget {
           Text(
             dayLabel,
             style: AppTextStyles.labelSmall.copyWith(
-              color: Colors.white60,
+              color: onBannerMuted,
               fontSize: 10,
             ),
           ),
           const SizedBox(height: 2),
-          // Weather icon from OWM
-          Image.network(
-            day.iconUrl,
+          // Weather icon from OWM. CachedNetworkImage (not Image.network) so
+          // the horizontal list doesn't re-fetch the same handful of icons
+          // every time a chip scrolls back into view.
+          CachedNetworkImage(
+            imageUrl: day.iconUrl,
             width: 28,
             height: 28,
-            errorBuilder: (_, __, ___) =>
+            // A spinner per 28px icon would flicker; keep the space reserved.
+            placeholder: (_, __) => const SizedBox(width: 28, height: 28),
+            errorWidget: (_, __, ___) =>
                 const Icon(Icons.wb_sunny_rounded, size: 22, color: Colors.amber),
           ),
           const SizedBox(height: 2),
           Text(
             '${day.tempMax.toStringAsFixed(0)}° / ${day.tempMin.toStringAsFixed(0)}°',
             style: AppTextStyles.labelSmall.copyWith(
-              color: Colors.white,
+              color: onBannerStrong,
               fontSize: 10,
               fontWeight: FontWeight.bold,
             ),
@@ -218,8 +251,12 @@ class _WeatherDayChip extends StatelessWidget {
     );
   }
 
-  String _shortDay(int weekday) {
-    const days = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
-    return days[(weekday - 1).clamp(0, 6)];
+  /// Weekday abbreviation in the active language. DateTime.weekday is
+  /// 1 = Monday … 7 = Sunday.
+  String _shortDay(int weekday, BuildContext context) {
+    const arDays = ['الإثنين', 'الثلاثاء', 'الأربعاء', 'الخميس', 'الجمعة', 'السبت', 'الأحد'];
+    const enDays = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
+    final idx = (weekday - 1).clamp(0, 6);
+    return AppStrings.of(context).languageCode == 'en' ? enDays[idx] : arDays[idx];
   }
 }

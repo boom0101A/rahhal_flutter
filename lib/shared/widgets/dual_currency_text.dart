@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import '../../core/constants/app_text_styles.dart';
 import '../../core/constants/app_colors.dart';
+import '../../core/di/injection.dart';
 import '../../features/currency/data/currency_service.dart';
 
 /// Widget يعرض مبلغاً بالدولار + العملة المحلية للوجهة
@@ -47,7 +48,7 @@ class _DualCurrencyTextState extends State<DualCurrencyText> {
     }
 
     setState(() { _loading = true; _localCurrency = currency; });
-    final rate = await CurrencyService().getRate(currency);
+    final rate = await sl<CurrencyService>().getRate(currency);
     if (mounted) setState(() { _rate = rate; _loading = false; });
   }
 
