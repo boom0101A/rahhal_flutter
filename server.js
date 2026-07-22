@@ -93,31 +93,175 @@ const PLACES_MAX_DISTANCE_KM = 100;
 // governorate capitals + major MENA/world cities) without spending any Google
 // Places quota; Places is only used as a fallback for names not listed here.
 const AR_CITY_DICTIONARY = {
-  // Iraq — governorate capitals & notable cities
+  // ═══ Iraq — comprehensive: all 19 governorates (capital + governorate name
+  // aliases) plus notable districts/cities from the far north to the far south
+  // and the far west to the far east. Country is always Iraq/IQ. ═══
+
+  // Baghdad governorate
   'بغداد': { en: 'Baghdad', country: 'Iraq', code: 'IQ' },
+  'الكاظمية': { en: 'Kadhimiya, Baghdad', country: 'Iraq', code: 'IQ' },
+  'أبو غريب': { en: 'Abu Ghraib', country: 'Iraq', code: 'IQ' },
+  'المحمودية': { en: 'Al-Mahmudiyah', country: 'Iraq', code: 'IQ' },
+  'المدائن': { en: 'Al-Mada\'in', country: 'Iraq', code: 'IQ' },
+  'التاجي': { en: 'Al-Taji', country: 'Iraq', code: 'IQ' },
+
+  // Basra governorate (far south)
   'البصرة': { en: 'Basra', country: 'Iraq', code: 'IQ' },
   'بصرة': { en: 'Basra', country: 'Iraq', code: 'IQ' },
+  'الفاو': { en: 'Al-Faw', country: 'Iraq', code: 'IQ' },
+  'الزبير': { en: 'Al-Zubair', country: 'Iraq', code: 'IQ' },
+  'القرنة': { en: 'Al-Qurna', country: 'Iraq', code: 'IQ' },
+  'أبو الخصيب': { en: 'Abu Al-Khaseeb', country: 'Iraq', code: 'IQ' },
+  'أم قصر': { en: 'Umm Qasr', country: 'Iraq', code: 'IQ' },
+  'شط العرب': { en: 'Shatt Al-Arab, Basra', country: 'Iraq', code: 'IQ' },
+
+  // Nineveh governorate (far north-west)
+  'نينوى': { en: 'Mosul (Nineveh)', country: 'Iraq', code: 'IQ' },
   'الموصل': { en: 'Mosul', country: 'Iraq', code: 'IQ' },
   'موصل': { en: 'Mosul', country: 'Iraq', code: 'IQ' },
+  'تلعفر': { en: 'Tal Afar', country: 'Iraq', code: 'IQ' },
+  'سنجار': { en: 'Sinjar', country: 'Iraq', code: 'IQ' },
+  'بعشيقة': { en: 'Bashiqa', country: 'Iraq', code: 'IQ' },
+  'الحمدانية': { en: 'Al-Hamdaniya (Qaraqosh)', country: 'Iraq', code: 'IQ' },
+  'قرقوش': { en: 'Qaraqosh', country: 'Iraq', code: 'IQ' },
+  'الشيخان': { en: 'Al-Shikhan', country: 'Iraq', code: 'IQ' },
+  'لالش': { en: 'Lalish, Nineveh', country: 'Iraq', code: 'IQ' },
+  'الحضر': { en: 'Hatra', country: 'Iraq', code: 'IQ' },
+  'نمرود': { en: 'Nimrud', country: 'Iraq', code: 'IQ' },
+
+  // Erbil governorate (north / Kurdistan)
   'أربيل': { en: 'Erbil', country: 'Iraq', code: 'IQ' },
   'اربيل': { en: 'Erbil', country: 'Iraq', code: 'IQ' },
+  'شقلاوة': { en: 'Shaqlawa', country: 'Iraq', code: 'IQ' },
+  'سوران': { en: 'Soran', country: 'Iraq', code: 'IQ' },
+  'كويسنجق': { en: 'Koya', country: 'Iraq', code: 'IQ' },
+  'راوندوز': { en: 'Rawanduz', country: 'Iraq', code: 'IQ' },
+  'عنكاوة': { en: 'Ainkawa, Erbil', country: 'Iraq', code: 'IQ' },
+  'جومان': { en: 'Choman', country: 'Iraq', code: 'IQ' },
+  'صلاح الدين أربيل': { en: 'Salahaddin, Erbil', country: 'Iraq', code: 'IQ' },
+
+  // Kirkuk governorate
   'كركوك': { en: 'Kirkuk', country: 'Iraq', code: 'IQ' },
+  'الحويجة': { en: 'Al-Hawija', country: 'Iraq', code: 'IQ' },
+  'داقوق': { en: 'Daquq', country: 'Iraq', code: 'IQ' },
+  'دبس': { en: 'Dibis', country: 'Iraq', code: 'IQ' },
+
+  // Najaf governorate
   'النجف': { en: 'Najaf', country: 'Iraq', code: 'IQ' },
   'نجف': { en: 'Najaf', country: 'Iraq', code: 'IQ' },
+  'الكوفة': { en: 'Kufa', country: 'Iraq', code: 'IQ' },
+  'المشخاب': { en: 'Al-Mishkhab', country: 'Iraq', code: 'IQ' },
+  'المناذرة': { en: 'Al-Manathira', country: 'Iraq', code: 'IQ' },
+
+  // Karbala governorate
   'كربلاء': { en: 'Karbala', country: 'Iraq', code: 'IQ' },
+  'عين التمر': { en: 'Ain Al-Tamur', country: 'Iraq', code: 'IQ' },
+  'الهندية': { en: 'Al-Hindiya', country: 'Iraq', code: 'IQ' },
+  'طويريج': { en: 'Twairij', country: 'Iraq', code: 'IQ' },
+
+  // Babil governorate
+  'بابل': { en: 'Babylon (Hillah)', country: 'Iraq', code: 'IQ' },
   'الحلة': { en: 'Hillah', country: 'Iraq', code: 'IQ' },
+  'المسيب': { en: 'Al-Musayyib', country: 'Iraq', code: 'IQ' },
+  'المحاويل': { en: 'Al-Mahawil', country: 'Iraq', code: 'IQ' },
+  'الهاشمية': { en: 'Al-Hashimiyah', country: 'Iraq', code: 'IQ' },
+
+  // Anbar governorate (far west)
+  'الأنبار': { en: 'Ramadi (Anbar)', country: 'Iraq', code: 'IQ' },
   'الرمادي': { en: 'Ramadi', country: 'Iraq', code: 'IQ' },
-  'الناصرية': { en: 'Nasiriyah', country: 'Iraq', code: 'IQ' },
-  'العمارة': { en: 'Amarah', country: 'Iraq', code: 'IQ' },
-  'الديوانية': { en: 'Diwaniyah', country: 'Iraq', code: 'IQ' },
-  'الكوت': { en: 'Kut', country: 'Iraq', code: 'IQ' },
-  'السماوة': { en: 'Samawah', country: 'Iraq', code: 'IQ' },
-  'بعقوبة': { en: 'Baqubah', country: 'Iraq', code: 'IQ' },
-  'تكريت': { en: 'Tikrit', country: 'Iraq', code: 'IQ' },
   'الفلوجة': { en: 'Fallujah', country: 'Iraq', code: 'IQ' },
-  'دهوك': { en: 'Duhok', country: 'Iraq', code: 'IQ' },
-  'السليمانية': { en: 'Sulaymaniyah', country: 'Iraq', code: 'IQ' },
+  'هيت': { en: 'Hit', country: 'Iraq', code: 'IQ' },
+  'حديثة': { en: 'Haditha', country: 'Iraq', code: 'IQ' },
+  'القائم': { en: 'Al-Qaim', country: 'Iraq', code: 'IQ' },
+  'عنة': { en: 'Anah', country: 'Iraq', code: 'IQ' },
+  'راوة': { en: 'Rawa', country: 'Iraq', code: 'IQ' },
+  'الرطبة': { en: 'Rutba', country: 'Iraq', code: 'IQ' },
+  'الحبانية': { en: 'Habbaniyah', country: 'Iraq', code: 'IQ' },
+
+  // Dhi Qar governorate (south)
+  'ذي قار': { en: 'Nasiriyah (Dhi Qar)', country: 'Iraq', code: 'IQ' },
+  'الناصرية': { en: 'Nasiriyah', country: 'Iraq', code: 'IQ' },
+  'الرفاعي': { en: 'Al-Rifai', country: 'Iraq', code: 'IQ' },
+  'سوق الشيوخ': { en: 'Suq Al-Shuyukh', country: 'Iraq', code: 'IQ' },
+  'الجبايش': { en: 'Al-Chibayish', country: 'Iraq', code: 'IQ' },
+  'الشطرة': { en: 'Al-Shatrah', country: 'Iraq', code: 'IQ' },
+  'أور': { en: 'Ur', country: 'Iraq', code: 'IQ' },
+
+  // Maysan governorate (south-east)
+  'ميسان': { en: 'Amarah (Maysan)', country: 'Iraq', code: 'IQ' },
+  'العمارة': { en: 'Amarah', country: 'Iraq', code: 'IQ' },
+  'علي الغربي': { en: 'Ali Al-Gharbi', country: 'Iraq', code: 'IQ' },
+  'المجر الكبير': { en: 'Al-Majar Al-Kabir', country: 'Iraq', code: 'IQ' },
+  'قلعة صالح': { en: 'Qalat Saleh', country: 'Iraq', code: 'IQ' },
+  'الكحلاء': { en: 'Al-Kahla', country: 'Iraq', code: 'IQ' },
+
+  // Al-Qadisiyyah governorate
+  'القادسية': { en: 'Diwaniyah (Al-Qadisiyyah)', country: 'Iraq', code: 'IQ' },
+  'الديوانية': { en: 'Diwaniyah', country: 'Iraq', code: 'IQ' },
+  'عفك': { en: 'Afak', country: 'Iraq', code: 'IQ' },
+  'الحمزة': { en: 'Al-Hamza', country: 'Iraq', code: 'IQ' },
+  'الشامية': { en: 'Al-Shamiya', country: 'Iraq', code: 'IQ' },
+  'نفر': { en: 'Nippur', country: 'Iraq', code: 'IQ' },
+
+  // Wasit governorate (east)
+  'واسط': { en: 'Kut (Wasit)', country: 'Iraq', code: 'IQ' },
+  'الكوت': { en: 'Kut', country: 'Iraq', code: 'IQ' },
+  'العزيزية': { en: 'Al-Aziziyah', country: 'Iraq', code: 'IQ' },
+  'الصويرة': { en: 'Al-Suwaira', country: 'Iraq', code: 'IQ' },
+  'الحي': { en: 'Al-Hai', country: 'Iraq', code: 'IQ' },
+  'بدرة': { en: 'Badra', country: 'Iraq', code: 'IQ' },
+  'النعمانية': { en: 'Al-Numaniyah', country: 'Iraq', code: 'IQ' },
+
+  // Al-Muthanna governorate
+  'المثنى': { en: 'Samawah (Al-Muthanna)', country: 'Iraq', code: 'IQ' },
+  'السماوة': { en: 'Samawah', country: 'Iraq', code: 'IQ' },
+  'الرميثة': { en: 'Al-Rumaitha', country: 'Iraq', code: 'IQ' },
+  'الخضر': { en: 'Al-Khidr', country: 'Iraq', code: 'IQ' },
+  'الوركاء': { en: 'Uruk (Warka)', country: 'Iraq', code: 'IQ' },
+
+  // Diyala governorate (east)
+  'ديالى': { en: 'Baqubah (Diyala)', country: 'Iraq', code: 'IQ' },
+  'بعقوبة': { en: 'Baqubah', country: 'Iraq', code: 'IQ' },
+  'خانقين': { en: 'Khanaqin', country: 'Iraq', code: 'IQ' },
+  'المقدادية': { en: 'Al-Muqdadiyah', country: 'Iraq', code: 'IQ' },
+  'بلدروز': { en: 'Baladruz', country: 'Iraq', code: 'IQ' },
+  'جلولاء': { en: 'Jalawla', country: 'Iraq', code: 'IQ' },
+  'كفري': { en: 'Kifri', country: 'Iraq', code: 'IQ' },
+  'مندلي': { en: 'Mandali', country: 'Iraq', code: 'IQ' },
+
+  // Saladin (Salah al-Din) governorate
+  'صلاح الدين': { en: 'Tikrit (Salah al-Din)', country: 'Iraq', code: 'IQ' },
+  'تكريت': { en: 'Tikrit', country: 'Iraq', code: 'IQ' },
   'سامراء': { en: 'Samarra', country: 'Iraq', code: 'IQ' },
+  'بلد': { en: 'Balad', country: 'Iraq', code: 'IQ' },
+  'بيجي': { en: 'Baiji', country: 'Iraq', code: 'IQ' },
+  'الدجيل': { en: 'Al-Dujail', country: 'Iraq', code: 'IQ' },
+  'طوز خورماتو': { en: 'Tuz Khurmatu', country: 'Iraq', code: 'IQ' },
+  'الشرقاط': { en: 'Al-Shirqat', country: 'Iraq', code: 'IQ' },
+  'الدور': { en: 'Al-Dour', country: 'Iraq', code: 'IQ' },
+
+  // Dohuk governorate (far north)
+  'دهوك': { en: 'Duhok', country: 'Iraq', code: 'IQ' },
+  'زاخو': { en: 'Zakho', country: 'Iraq', code: 'IQ' },
+  'العمادية': { en: 'Amadiya', country: 'Iraq', code: 'IQ' },
+  'سيميل': { en: 'Sumel', country: 'Iraq', code: 'IQ' },
+  'عقرة': { en: 'Akre', country: 'Iraq', code: 'IQ' },
+  'بردرش': { en: 'Bardarash', country: 'Iraq', code: 'IQ' },
+
+  // Sulaymaniyah governorate (north-east)
+  'السليمانية': { en: 'Sulaymaniyah', country: 'Iraq', code: 'IQ' },
+  'رانية': { en: 'Ranya', country: 'Iraq', code: 'IQ' },
+  'جمجمال': { en: 'Chamchamal', country: 'Iraq', code: 'IQ' },
+  'كلار': { en: 'Kalar', country: 'Iraq', code: 'IQ' },
+  'دربنديخان': { en: 'Darbandikhan', country: 'Iraq', code: 'IQ' },
+  'دوكان': { en: 'Dukan', country: 'Iraq', code: 'IQ' },
+  'بنجوين': { en: 'Penjwin', country: 'Iraq', code: 'IQ' },
+  'حلبجة': { en: 'Halabja', country: 'Iraq', code: 'IQ' },
+
+  // Kurdistan region (generic)
+  'كردستان': { en: 'Erbil (Kurdistan)', country: 'Iraq', code: 'IQ' },
+  'إقليم كردستان': { en: 'Erbil (Kurdistan)', country: 'Iraq', code: 'IQ' },
+
   // Major MENA / world cities
   'القاهرة': { en: 'Cairo', country: 'Egypt', code: 'EG' },
   'الإسكندرية': { en: 'Alexandria', country: 'Egypt', code: 'EG' },
@@ -142,11 +286,78 @@ const AR_CITY_DICTIONARY = {
   'مراكش': { en: 'Marrakesh', country: 'Morocco', code: 'MA' },
   'تونس': { en: 'Tunis', country: 'Tunisia', code: 'TN' },
   'طرابلس': { en: 'Tripoli', country: 'Libya', code: 'LY' },
+  // ── World cities (Arabic input) ─────────────────────────────────────────
+  // Europe
   'باريس': { en: 'Paris', country: 'France', code: 'FR' },
   'لندن': { en: 'London', country: 'United Kingdom', code: 'GB' },
   'روما': { en: 'Rome', country: 'Italy', code: 'IT' },
+  'ميلان': { en: 'Milan', country: 'Italy', code: 'IT' },
+  'البندقية': { en: 'Venice', country: 'Italy', code: 'IT' },
+  'مدريد': { en: 'Madrid', country: 'Spain', code: 'ES' },
+  'برشلونة': { en: 'Barcelona', country: 'Spain', code: 'ES' },
+  'برلين': { en: 'Berlin', country: 'Germany', code: 'DE' },
+  'ميونخ': { en: 'Munich', country: 'Germany', code: 'DE' },
+  'أمستردام': { en: 'Amsterdam', country: 'Netherlands', code: 'NL' },
+  'فيينا': { en: 'Vienna', country: 'Austria', code: 'AT' },
+  'براغ': { en: 'Prague', country: 'Czech Republic', code: 'CZ' },
+  'أثينا': { en: 'Athens', country: 'Greece', code: 'GR' },
+  'لشبونة': { en: 'Lisbon', country: 'Portugal', code: 'PT' },
+  'زيورخ': { en: 'Zurich', country: 'Switzerland', code: 'CH' },
+  'جنيف': { en: 'Geneva', country: 'Switzerland', code: 'CH' },
+  'بروكسل': { en: 'Brussels', country: 'Belgium', code: 'BE' },
+  'موسكو': { en: 'Moscow', country: 'Russia', code: 'RU' },
+  'دبلن': { en: 'Dublin', country: 'Ireland', code: 'IE' },
+  // Asia
   'طوكيو': { en: 'Tokyo', country: 'Japan', code: 'JP' },
+  'أوساكا': { en: 'Osaka', country: 'Japan', code: 'JP' },
+  'كيوتو': { en: 'Kyoto', country: 'Japan', code: 'JP' },
+  'سيول': { en: 'Seoul', country: 'South Korea', code: 'KR' },
+  'بكين': { en: 'Beijing', country: 'China', code: 'CN' },
+  'شنغهاي': { en: 'Shanghai', country: 'China', code: 'CN' },
+  'هونغ كونغ': { en: 'Hong Kong', country: 'Hong Kong', code: 'HK' },
+  'بانكوك': { en: 'Bangkok', country: 'Thailand', code: 'TH' },
+  'سنغافورة': { en: 'Singapore', country: 'Singapore', code: 'SG' },
+  'كوالالمبور': { en: 'Kuala Lumpur', country: 'Malaysia', code: 'MY' },
+  'جاكرتا': { en: 'Jakarta', country: 'Indonesia', code: 'ID' },
+  'بالي': { en: 'Bali', country: 'Indonesia', code: 'ID' },
+  'مومباي': { en: 'Mumbai', country: 'India', code: 'IN' },
+  'نيودلهي': { en: 'New Delhi', country: 'India', code: 'IN' },
+  'دلهي': { en: 'Delhi', country: 'India', code: 'IN' },
+  'مانيلا': { en: 'Manila', country: 'Philippines', code: 'PH' },
+  'باكو': { en: 'Baku', country: 'Azerbaijan', code: 'AZ' },
+  'تبليسي': { en: 'Tbilisi', country: 'Georgia', code: 'GE' },
+  // Americas
+  'نيويورك': { en: 'New York', country: 'United States', code: 'US' },
+  'لوس أنجلوس': { en: 'Los Angeles', country: 'United States', code: 'US' },
+  'لاس فيغاس': { en: 'Las Vegas', country: 'United States', code: 'US' },
+  'سان فرانسيسكو': { en: 'San Francisco', country: 'United States', code: 'US' },
+  'ميامي': { en: 'Miami', country: 'United States', code: 'US' },
+  'شيكاغو': { en: 'Chicago', country: 'United States', code: 'US' },
+  'واشنطن': { en: 'Washington', country: 'United States', code: 'US' },
+  'تورنتو': { en: 'Toronto', country: 'Canada', code: 'CA' },
+  'مونتريال': { en: 'Montreal', country: 'Canada', code: 'CA' },
+  'المكسيك': { en: 'Mexico City', country: 'Mexico', code: 'MX' },
+  'ريو دي جانيرو': { en: 'Rio de Janeiro', country: 'Brazil', code: 'BR' },
+  'ساو باولو': { en: 'Sao Paulo', country: 'Brazil', code: 'BR' },
+  'بوينس آيرس': { en: 'Buenos Aires', country: 'Argentina', code: 'AR' },
+  // Oceania & Africa
+  'سيدني': { en: 'Sydney', country: 'Australia', code: 'AU' },
+  'ملبورن': { en: 'Melbourne', country: 'Australia', code: 'AU' },
+  'كيب تاون': { en: 'Cape Town', country: 'South Africa', code: 'ZA' },
+  'نيروبي': { en: 'Nairobi', country: 'Kenya', code: 'KE' },
+  'زنجبار': { en: 'Zanzibar', country: 'Tanzania', code: 'TZ' },
 };
+
+// A destination written in Latin script (e.g. "Barcelona", "Kyoto") doesn't
+// need resolving — the LLM reads Latin city names reliably. Only Arabic names
+// buried in the trip prompt confuse it, which is what the dictionary/Places
+// path is for. Detecting Latin input lets us skip the Google Places call
+// entirely for the whole non-Arabic world, saving the daily quota.
+function isLatinScriptDestination(s) {
+  if (!s) return false;
+  if (/[؀-ۿ]/.test(s)) return false; // contains Arabic letters
+  return /[A-Za-z]/.test(s); // has Latin letters
+}
 
 // Look up a destination in the static dictionary. Matches the whole string
 // first, then tries each known Arabic name as a substring (handles inputs
@@ -913,14 +1124,20 @@ function applyRealRestaurants(tripData, realRestaurants) {
 // the Places lookups later. Returns null if Places isn't configured or the
 // destination can't be resolved.
 async function resolveDestinationEN(rawDestination) {
-  // 1. Zero-cost static dictionary first (covers the common destinations
-  //    without spending any Google Places quota).
+  // 1. Zero-cost static dictionary first (covers common destinations without
+  //    spending any Google Places quota).
   const dict = lookupCityDictionary(rawDestination);
   if (dict) {
     return { cityEn: dict.en, country: dict.country, countryCode: dict.code, lat: null, lng: null };
   }
 
-  // 2. Fall back to Google Places for names not in the dictionary.
+  // 2. Latin-script input (any non-Arabic city worldwide): pass it straight
+  //    through — the model reads it fine, so no Places lookup is needed.
+  if (isLatinScriptDestination(rawDestination)) {
+    return { cityEn: rawDestination.trim(), country: '', countryCode: '', lat: null, lng: null };
+  }
+
+  // 3. Arabic name not in the dictionary → fall back to Google Places.
   const placesKey = process.env.GOOGLE_PLACES_API_KEY;
   if (!placesKey || placesKey === 'your_google_places_api_key_here') return null;
   try {
@@ -1765,18 +1982,40 @@ app.get('/api/nearby-places', async (req, res) => {
 });
 
 // ─── Self Keep-Alive Ping (prevents Render free tier sleep) ─────────────────
-// Render free tier puts the server to sleep after 15 minutes of inactivity.
-// This self-ping sends a lightweight GET /health every 14 minutes to keep it awake.
-const SELF_PING_INTERVAL_MS = 14 * 60 * 1000; // 14 minutes
+// Free hosting tiers spin the container down after some minutes of inactivity,
+// which makes the user's first trip wait ~30s for a cold start. Pinging the
+// PUBLIC url every few minutes generates real inbound traffic that keeps it
+// awake. Pinging localhost does NOT — it never leaves the container, so the
+// platform still sees no traffic and sleeps anyway (the previous bug on
+// Railway, which doesn't set RENDER_EXTERNAL_URL).
+const SELF_PING_INTERVAL_MS = 4 * 60 * 1000; // 4 minutes — under typical idle windows
+
+// Resolve the public base URL from whichever platform we're on.
+function resolvePublicUrl() {
+  if (process.env.PUBLIC_URL) return process.env.PUBLIC_URL;
+  if (process.env.RENDER_EXTERNAL_URL) return process.env.RENDER_EXTERNAL_URL;
+  // Railway exposes the domain without a scheme.
+  if (process.env.RAILWAY_PUBLIC_DOMAIN) return `https://${process.env.RAILWAY_PUBLIC_DOMAIN}`;
+  if (process.env.RAILWAY_STATIC_URL) {
+    const u = process.env.RAILWAY_STATIC_URL;
+    return u.startsWith('http') ? u : `https://${u}`;
+  }
+  return null;
+}
 
 function startSelfPing() {
-  // RENDER_EXTERNAL_URL is auto-set by Render with the public URL
-  const selfUrl = process.env.RENDER_EXTERNAL_URL || `http://localhost:${PORT}`;
-  console.log(`[KEEP-ALIVE] Self-ping enabled → ${selfUrl}/health every 14min`);
+  const publicUrl = resolvePublicUrl();
+  if (!publicUrl) {
+    // Local dev (or an unknown platform) — a localhost ping wouldn't prevent
+    // any real sleep, so skip it rather than log misleading "success".
+    console.log('[KEEP-ALIVE] No public URL detected — self-ping disabled (local dev).');
+    return;
+  }
+  console.log(`[KEEP-ALIVE] Self-ping enabled → ${publicUrl}/health every 4min`);
 
   setInterval(async () => {
     try {
-      await axios.get(`${selfUrl}/health`, { timeout: 10000 });
+      await axios.get(`${publicUrl}/health`, { timeout: 10000 });
       console.log('[KEEP-ALIVE] Self-ping successful ✅');
     } catch (err) {
       console.warn('[KEEP-ALIVE] Self-ping failed:', err.message);

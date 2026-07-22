@@ -248,6 +248,36 @@ class _TripInputScreenState extends State<TripInputScreen> {
                                       .map((c) => _buildCityChip(c))
                                       .toList(),
                                 ),
+                                const SizedBox(height: 14),
+                                // All Iraqi governorates — tap one to plan a
+                                // trip (and see its attractions) for it.
+                                Row(
+                                  children: [
+                                    const Text('🇮🇶',
+                                        style: TextStyle(fontSize: 14)),
+                                    const SizedBox(width: 6),
+                                    Text(
+                                      strings.iraqiGovernoratesLabel,
+                                      style: AppTextStyles.labelMedium.copyWith(
+                                        color: AppColors
+                                            .adaptiveTextSecondary(context),
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                                const SizedBox(height: 8),
+                                SizedBox(
+                                  height: 34,
+                                  child: ListView.separated(
+                                    scrollDirection: Axis.horizontal,
+                                    itemCount:
+                                        strings.iraqiGovernorates.length,
+                                    separatorBuilder: (_, __) =>
+                                        const SizedBox(width: 8),
+                                    itemBuilder: (_, i) => _buildCityChip(
+                                        strings.iraqiGovernorates[i]),
+                                  ),
+                                ),
                               ],
                             ),
                           ).animate().fadeIn(delay: 100.ms).slideY(begin: 0.1),
