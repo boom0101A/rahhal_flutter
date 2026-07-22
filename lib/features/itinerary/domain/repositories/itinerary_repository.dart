@@ -9,4 +9,5 @@ abstract class ItineraryRepository {
   Future<Either<Failure, StopEntity>> getStopById(String stopId);
   Future<Either<Failure, void>> reorderStops(
       String dayId, List<String> orderedStopIds);
+  Future<Either<Failure, void>> setStopVisited(String stopId, bool visited);
 }

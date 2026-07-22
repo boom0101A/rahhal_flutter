@@ -17,7 +17,7 @@ class DatabaseHelper {
 
   // ─── Init ─────────────────────────────────────────────────────────────────
 
-  static const int _dbVersion = 5;
+  static const int _dbVersion = 6;
   static const String _dbName = 'rahhal_ai.db';
 
   static final Map<int, List<String>> _migrations = {
@@ -43,6 +43,10 @@ class DatabaseHelper {
     5: [
       'ALTER TABLE restaurants ADD COLUMN place_id TEXT;',
       'ALTER TABLE restaurants ADD COLUMN coords_verified INTEGER DEFAULT 0;',
+    ],
+    // Per-stop "visited" flag powers the day-progress tracker.
+    6: [
+      'ALTER TABLE stops ADD COLUMN is_visited INTEGER DEFAULT 0;',
     ],
   };
 
@@ -171,7 +175,8 @@ class DatabaseHelper {
       booking_required  INTEGER DEFAULT 0,
       booking_url       TEXT,
       coords_verified   INTEGER DEFAULT 0,
-      place_id          TEXT
+      place_id          TEXT,
+      is_visited        INTEGER DEFAULT 0
     )
   ''';
 

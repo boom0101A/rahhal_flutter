@@ -81,6 +81,21 @@ class ItineraryRepositoryImpl implements ItineraryRepository {
     }
   }
 
+  @override
+  Future<Either<Failure, void>> setStopVisited(String stopId, bool visited) async {
+    try {
+      await _dbHelper.update(
+        'stops',
+        {'is_visited': visited ? 1 : 0},
+        where: 'id = ?',
+        whereArgs: [stopId],
+      );
+      return const Right(null);
+    } catch (e) {
+      return Left(DatabaseFailure(e.toString()));
+    }
+  }
+
   DayEntity _dayFromMap(Map<String, dynamic> m) => DayEntity(
         id: m['id'] as String,
         tripId: m['trip_id'] as String,
@@ -111,5 +126,6 @@ class ItineraryRepositoryImpl implements ItineraryRepository {
         imageUrl: m['image_url'] as String?,
         bookingRequired: (m['booking_required'] as int? ?? 0) == 1,
         bookingUrl: m['booking_url'] as String?,
+        isVisited: (m['is_visited'] as int? ?? 0) == 1,
       );
 }

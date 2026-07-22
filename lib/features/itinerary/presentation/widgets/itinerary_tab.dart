@@ -16,6 +16,7 @@ import '../../../favorites/presentation/cubit/favorites_cubit.dart';
 import '../../domain/entities/day_entity.dart';
 import '../../../../../core/constants/app_strings.dart';
 import '../../../../../core/utils/haptics.dart';
+import '../../../../../core/utils/travel_estimate.dart';
 import '../../../../../shared/widgets/app_error_widget.dart';
 import '../../../../../core/services/map_launcher_service.dart';
 
@@ -135,23 +136,41 @@ class ItineraryTab extends StatelessWidget {
           const SizedBox(height: 4),
         ],
 
+        // Day progress ("visited N of M")
+        if (!state.isLoadingStops && state.selectedDayStops.isNotEmpty)
+          _DayProgress(
+            visited: state.visitedCount,
+            total: state.selectedDayStops.length,
+          ),
+
         // Stops with timeline
         if (state.isLoadingStops)
           ...List.generate(3, (_) => const ShimmerStopCard())
         else if (state.selectedDayStops.isEmpty)
           _buildEmptyDay(context)
         else
-          ...state.selectedDayStops.asMap().entries.map(
-                (e) => _StopTimelineItem(
-                  stop: e.value,
-                  isLast: e.key == state.selectedDayStops.length - 1,
-                  index: e.key,
-                  countryCode: countryCode,
-                  onTap: () => context.push(
-                      '/trip/${e.value.tripId}/stop/${e.value.id}',
-                      extra: e.value),
-                ),
+          ...state.selectedDayStops.asMap().entries.expand((e) {
+            final i = e.key;
+            final stop = e.value;
+            final isLast = i == state.selectedDayStops.length - 1;
+            return [
+              _StopTimelineItem(
+                stop: stop,
+                isLast: isLast,
+                index: i,
+                countryCode: countryCode,
+                onTap: () => context.push(
+                    '/trip/${stop.tripId}/stop/${stop.id}',
+                    extra: stop),
               ),
+              // "X min to next stop" hint between consecutive stops.
+              if (!isLast)
+                _TravelConnector(
+                  from: stop,
+                  to: state.selectedDayStops[i + 1],
+                ),
+            ];
+          }),
       ],
     );
   }
@@ -344,22 +363,28 @@ class _StopTimelineItem extends StatelessWidget {
                   textAlign: TextAlign.center,
                 ),
                 const SizedBox(height: 4),
-                // Dot
-                Container(
-                  width: 12,
-                  height: 12,
-                  decoration: BoxDecoration(
-                    shape: BoxShape.circle,
-                    color: AppColors.accentAmber,
-                    boxShadow: AppColors.amberGlow,
-                  ),
-                ),
+                // Dot — turns into a green check once the stop is visited.
+                stop.isVisited
+                    ? const Icon(Icons.check_circle_rounded,
+                        size: 16, color: AppColors.success)
+                    : Container(
+                        width: 12,
+                        height: 12,
+                        decoration: BoxDecoration(
+                          shape: BoxShape.circle,
+                          color: AppColors.accentAmber,
+                          boxShadow: AppColors.amberGlow,
+                        ),
+                      ),
                 // Line
                 if (!isLast)
                   Expanded(
                     child: Container(
                       width: 2,
-                      color: AppColors.accentAmber.withValues(alpha: 0.3),
+                      color: (stop.isVisited
+                              ? AppColors.success
+                              : AppColors.accentAmber)
+                          .withValues(alpha: 0.3),
                       margin: const EdgeInsets.symmetric(vertical: 4),
                     ),
                   ),
@@ -400,11 +425,42 @@ class _StopTimelineItem extends StatelessWidget {
                               Expanded(
                                 child: Text(
                                   stop.displayName(context),
-                                  style: AppTextStyles.titleMedium,
+                                  style: AppTextStyles.titleMedium.copyWith(
+                                    decoration: stop.isVisited
+                                        ? TextDecoration.lineThrough
+                                        : null,
+                                    color: stop.isVisited
+                                        ? AppColors.adaptiveTextSecondary(context)
+                                        : null,
+                                  ),
                                   maxLines: 2,
                                   overflow: TextOverflow.ellipsis,
                                 ),
                               ),
+                              // Mark visited toggle
+                              IconButton(
+                                icon: Icon(
+                                  stop.isVisited
+                                      ? Icons.check_circle_rounded
+                                      : Icons.radio_button_unchecked_rounded,
+                                  color: stop.isVisited
+                                      ? AppColors.success
+                                      : AppColors.adaptiveTextSecondary(context),
+                                  size: 22,
+                                ),
+                                tooltip: stop.isVisited
+                                    ? AppStrings.of(context).markNotVisited
+                                    : AppStrings.of(context).markVisited,
+                                padding: EdgeInsets.zero,
+                                constraints: const BoxConstraints(),
+                                onPressed: () {
+                                  Haptics.toggle();
+                                  context
+                                      .read<ItineraryCubit>()
+                                      .toggleVisited(stop.id);
+                                },
+                              ),
+                              const SizedBox(width: 8),
                               BlocBuilder<FavoritesCubit, FavoritesState>(
                                 builder: (context, state) {
                                   final isFav = context.read<FavoritesCubit>().isKeyFavorite('stop', stop.id);
@@ -768,6 +824,112 @@ class _ReorderStopsSheetState extends State<_ReorderStopsSheet> {
           ),
         );
       },
+    );
+  }
+}
+
+/// A slim progress bar + "visited N of M" counter for the selected day.
+class _DayProgress extends StatelessWidget {
+  final int visited;
+  final int total;
+
+  const _DayProgress({required this.visited, required this.total});
+
+  @override
+  Widget build(BuildContext context) {
+    final strings = AppStrings.of(context);
+    final ratio = total == 0 ? 0.0 : visited / total;
+    final allDone = visited == total && total > 0;
+
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 12),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Icon(
+                allDone ? Icons.emoji_events_rounded : Icons.timeline_rounded,
+                size: 16,
+                color: allDone ? AppColors.success : AppColors.accentAmber,
+              ),
+              const SizedBox(width: 6),
+              Text(
+                allDone
+                    ? strings.dayProgressComplete
+                    : strings.dayProgressLabel(visited, total),
+                style: AppTextStyles.labelMedium.copyWith(
+                  color: allDone ? AppColors.success : null,
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 6),
+          ClipRRect(
+            borderRadius: BorderRadius.circular(50),
+            child: TweenAnimationBuilder<double>(
+              tween: Tween(begin: 0, end: ratio),
+              duration: const Duration(milliseconds: 400),
+              curve: Curves.easeOut,
+              builder: (context, value, _) => LinearProgressIndicator(
+                value: value,
+                minHeight: 6,
+                backgroundColor: AppColors.adaptiveBorder(context),
+                valueColor: AlwaysStoppedAnimation(
+                    allDone ? AppColors.success : AppColors.accentAmber),
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+/// A small hint shown between two consecutive stops, e.g. "🚶 ~12 min · 0.9 km".
+/// Aligns under the timeline thread so it reads as part of the vertical flow.
+class _TravelConnector extends StatelessWidget {
+  final StopEntity from;
+  final StopEntity to;
+
+  const _TravelConnector({required this.from, required this.to});
+
+  @override
+  Widget build(BuildContext context) {
+    final est = TravelEstimate.between(
+      fromLat: from.latitude,
+      fromLng: from.longitude,
+      toLat: to.latitude,
+      toLng: to.longitude,
+    );
+    if (est == null) return const SizedBox(height: 8);
+
+    final strings = AppStrings.of(context);
+    final label = est.isWalking
+        ? strings.travelWalk(est.minutes)
+        : strings.travelDrive(est.minutes);
+
+    return Padding(
+      padding: const EdgeInsets.only(left: 52, top: 2, bottom: 6),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(
+            est.isWalking
+                ? Icons.directions_walk_rounded
+                : Icons.directions_car_rounded,
+            size: 13,
+            color: AppColors.adaptiveTextSecondary(context),
+          ),
+          const SizedBox(width: 4),
+          Text(
+            '$label · ${est.distanceLabel}',
+            style: AppTextStyles.labelSmall.copyWith(
+              color: AppColors.adaptiveTextSecondary(context),
+            ),
+          ),
+        ],
+      ),
     );
   }
 }

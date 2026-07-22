@@ -21,6 +21,7 @@ class StopEntity extends Equatable {
   final String? imageUrl;
   final bool bookingRequired;
   final String? bookingUrl;
+  final bool isVisited;
 
   const StopEntity({
     required this.id,
@@ -41,7 +42,30 @@ class StopEntity extends Equatable {
     this.imageUrl,
     required this.bookingRequired,
     this.bookingUrl,
+    this.isVisited = false,
   });
+
+  StopEntity copyWith({bool? isVisited}) => StopEntity(
+        id: id,
+        dayId: dayId,
+        tripId: tripId,
+        orderIndex: orderIndex,
+        name: name,
+        nameEn: nameEn,
+        category: category,
+        timeOfDay: timeOfDay,
+        startTime: startTime,
+        durationMinutes: durationMinutes,
+        latitude: latitude,
+        longitude: longitude,
+        address: address,
+        costUsd: costUsd,
+        aiTip: aiTip,
+        imageUrl: imageUrl,
+        bookingRequired: bookingRequired,
+        bookingUrl: bookingUrl,
+        isVisited: isVisited ?? this.isVisited,
+      );
 
   bool get hasValidLocation =>
       latitude.abs() > 0.001 && longitude.abs() > 0.001;
@@ -76,6 +100,6 @@ class StopEntity extends Equatable {
   @override
   List<Object?> get props => [
         id, dayId, tripId, orderIndex, name, category, timeOfDay,
-        latitude, longitude, costUsd, bookingRequired,
+        latitude, longitude, costUsd, bookingRequired, isVisited,
       ];
 }

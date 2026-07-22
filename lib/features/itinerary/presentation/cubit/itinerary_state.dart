@@ -25,6 +25,21 @@ class ItineraryLoaded extends ItineraryState {
 
   DayEntity get selectedDay => days[selectedDayIndex];
 
+  int get visitedCount => selectedDayStops.where((s) => s.isVisited).length;
+
+  ItineraryLoaded copyWith({
+    List<DayEntity>? days,
+    int? selectedDayIndex,
+    List<StopEntity>? selectedDayStops,
+    bool? isLoadingStops,
+  }) =>
+      ItineraryLoaded(
+        days: days ?? this.days,
+        selectedDayIndex: selectedDayIndex ?? this.selectedDayIndex,
+        selectedDayStops: selectedDayStops ?? this.selectedDayStops,
+        isLoadingStops: isLoadingStops ?? this.isLoadingStops,
+      );
+
   @override
   List<Object?> get props =>
       [days, selectedDayIndex, selectedDayStops, isLoadingStops];

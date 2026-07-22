@@ -70,4 +70,24 @@ class ItineraryCubit extends Cubit<ItineraryState> {
     await _repository.reorderStops(dayId, orderedStopIds);
     await selectDay(current.selectedDayIndex);
   }
+
+  /// Toggle a stop's "visited" flag. Updates the UI immediately (optimistic)
+  /// and rolls back only if the DB write fails, so ticking a stop feels instant.
+  Future<void> toggleVisited(String stopId) async {
+    final current = state;
+    if (current is! ItineraryLoaded) return;
+
+    final updated = current.selectedDayStops
+        .map((s) => s.id == stopId ? s.copyWith(isVisited: !s.isVisited) : s)
+        .toList();
+    final newValue = updated.firstWhere((s) => s.id == stopId).isVisited;
+
+    emit(current.copyWith(selectedDayStops: updated));
+
+    final result = await _repository.setStopVisited(stopId, newValue);
+    result.fold(
+      (_) => emit(current), // revert to the pre-toggle state on failure
+      (_) {},
+    );
+  }
 }
