@@ -106,6 +106,35 @@ class ItineraryTab extends StatelessWidget {
           const SizedBox(height: 16),
         ],
 
+        // Stops header with a reorder action (only when there's >1 stop to move)
+        if (!state.isLoadingStops && state.selectedDayStops.length > 1) ...[
+          Row(
+            children: [
+              Expanded(
+                child: Text(
+                  AppStrings.of(context).itineraryStopsTitle,
+                  style: AppTextStyles.titleMedium,
+                ),
+              ),
+              TextButton.icon(
+                onPressed: () => _openReorderSheet(
+                  context,
+                  dayId: state.selectedDay.id,
+                  stops: state.selectedDayStops,
+                ),
+                icon: const Icon(Icons.swap_vert_rounded,
+                    size: 18, color: AppColors.accentAmber),
+                label: Text(
+                  AppStrings.of(context).reorder,
+                  style: AppTextStyles.labelMedium
+                      .copyWith(color: AppColors.accentAmber),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 4),
+        ],
+
         // Stops with timeline
         if (state.isLoadingStops)
           ...List.generate(3, (_) => const ShimmerStopCard())
@@ -163,6 +192,27 @@ class ItineraryTab extends StatelessWidget {
     return AppErrorWidget(
       message: message,
       onRetry: () => context.read<ItineraryCubit>().loadItinerary(tripId),
+    );
+  }
+
+  /// Opens a bottom sheet where the day's stops can be dragged into a new
+  /// order. On confirm it persists via the cubit's reorderStops. Kept as a
+  /// dedicated sheet so the main timeline (with its connector lines) stays
+  /// clean rather than turning into a drag surface.
+  void _openReorderSheet(
+    BuildContext context, {
+    required String dayId,
+    required List<StopEntity> stops,
+  }) {
+    final cubit = context.read<ItineraryCubit>();
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (_) => _ReorderStopsSheet(
+        stops: stops,
+        onSave: (orderedIds) => cubit.reorderStops(dayId, orderedIds),
+      ),
     );
   }
 
@@ -559,6 +609,165 @@ class _StopTimelineItem extends StatelessWidget {
           primaryStyle: AppTextStyles.labelSmall,
         ),
       ],
+    );
+  }
+}
+
+/// Bottom sheet listing a day's stops in a ReorderableListView. Editing a
+/// local copy and only persisting on "save" keeps a mid-drag state from
+/// hitting the database on every frame.
+class _ReorderStopsSheet extends StatefulWidget {
+  final List<StopEntity> stops;
+  final void Function(List<String> orderedStopIds) onSave;
+
+  const _ReorderStopsSheet({required this.stops, required this.onSave});
+
+  @override
+  State<_ReorderStopsSheet> createState() => _ReorderStopsSheetState();
+}
+
+class _ReorderStopsSheetState extends State<_ReorderStopsSheet> {
+  late List<StopEntity> _stops;
+
+  @override
+  void initState() {
+    super.initState();
+    _stops = List.of(widget.stops);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final strings = AppStrings.of(context);
+    return DraggableScrollableSheet(
+      initialChildSize: 0.6,
+      minChildSize: 0.4,
+      maxChildSize: 0.9,
+      expand: false,
+      builder: (context, scrollController) {
+        return Container(
+          decoration: BoxDecoration(
+            color: AppColors.adaptiveBgPrimary(context),
+            borderRadius: const BorderRadius.vertical(top: Radius.circular(24)),
+          ),
+          child: Column(
+            children: [
+              const SizedBox(height: 12),
+              Container(
+                width: 40,
+                height: 4,
+                decoration: BoxDecoration(
+                  color: AppColors.adaptiveBorder(context),
+                  borderRadius: BorderRadius.circular(50),
+                ),
+              ),
+              Padding(
+                padding: const EdgeInsets.fromLTRB(20, 16, 20, 8),
+                child: Row(
+                  children: [
+                    const Icon(Icons.swap_vert_rounded,
+                        color: AppColors.accentAmber, size: 20),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: Text(strings.reorderStopsTitle,
+                          style: AppTextStyles.headlineSmall),
+                    ),
+                  ],
+                ),
+              ),
+              Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 20),
+                child: Align(
+                  alignment: AlignmentDirectional.centerStart,
+                  child: Text(strings.reorderStopsHint,
+                      style: AppTextStyles.bodySmall
+                          .copyWith(color: AppColors.adaptiveTextSecondary(context))),
+                ),
+              ),
+              const SizedBox(height: 8),
+              Expanded(
+                child: ReorderableListView.builder(
+                  scrollController: scrollController,
+                  padding: const EdgeInsets.fromLTRB(16, 4, 16, 8),
+                  itemCount: _stops.length,
+                  // onReorderItem already accounts for the removed item, so no
+                  // manual newIndex adjustment is needed (unlike onReorder).
+                  onReorderItem: (oldIndex, newIndex) {
+                    setState(() {
+                      final item = _stops.removeAt(oldIndex);
+                      _stops.insert(newIndex, item);
+                    });
+                    Haptics.toggle();
+                  },
+                  itemBuilder: (context, index) {
+                    final stop = _stops[index];
+                    return Container(
+                      key: ValueKey(stop.id),
+                      margin: const EdgeInsets.only(bottom: 8),
+                      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                      decoration: BoxDecoration(
+                        color: AppColors.adaptiveGlass(context),
+                        borderRadius: BorderRadius.circular(12),
+                        border: Border.all(color: AppColors.adaptiveBorder(context)),
+                      ),
+                      child: Row(
+                        children: [
+                          Text('${index + 1}',
+                              style: AppTextStyles.labelMedium
+                                  .copyWith(color: AppColors.accentAmber)),
+                          const SizedBox(width: 10),
+                          Text(stop.categoryEmoji, style: const TextStyle(fontSize: 18)),
+                          const SizedBox(width: 10),
+                          Expanded(
+                            child: Text(
+                              stop.displayName(context),
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: AppTextStyles.titleSmall,
+                            ),
+                          ),
+                          Icon(Icons.drag_handle_rounded,
+                              color: AppColors.adaptiveTextSecondary(context)),
+                        ],
+                      ),
+                    );
+                  },
+                ),
+              ),
+              Padding(
+                padding: EdgeInsets.fromLTRB(
+                    20, 8, 20, 12 + MediaQuery.of(context).padding.bottom),
+                child: Row(
+                  children: [
+                    Expanded(
+                      child: TextButton(
+                        onPressed: () => Navigator.pop(context),
+                        child: Text(strings.cancel),
+                      ),
+                    ),
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: ElevatedButton(
+                        onPressed: () {
+                          widget.onSave(_stops.map((s) => s.id).toList());
+                          Navigator.pop(context);
+                        },
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: AppColors.accentAmber,
+                          foregroundColor: AppColors.bgPrimary,
+                          padding: const EdgeInsets.symmetric(vertical: 12),
+                          shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(12)),
+                        ),
+                        child: Text(strings.save),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+        );
+      },
     );
   }
 }

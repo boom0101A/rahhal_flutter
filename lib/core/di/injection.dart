@@ -3,6 +3,9 @@ import '../network/ai_service.dart';
 import '../network/cloud_sync_service.dart';
 import '../network/image_search_service.dart';
 import '../network/weather_service.dart';
+import '../../features/weather/data/weather_repository.dart';
+import '../../features/currency/data/currency_service.dart';
+import '../../features/nearby/data/nearby_service.dart';
 import '../services/notification_service.dart';
 import '../services/location_service.dart';
 import '../database/database_helper.dart';
@@ -101,6 +104,12 @@ Future<void> setupDependencies() async {
       authRepository: sl<AuthRepository>(),
     ),
   );
+
+  sl.registerLazySingleton<WeatherRepository>(() => WeatherRepository());
+
+  sl.registerLazySingleton<CurrencyService>(() => CurrencyService());
+
+  sl.registerLazySingleton<NearbyService>(() => NearbyService());
 
   sl.registerLazySingleton<ChatRepository>(
     () => ChatRepositoryImpl(

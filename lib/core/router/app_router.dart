@@ -11,6 +11,7 @@ import '../../features/trip_planner/presentation/screens/trip_dashboard_screen.d
 import '../../features/map/presentation/screens/map_full_screen.dart';
 import '../../features/ai_chat/presentation/screens/chat_screen.dart';
 import '../../features/auth/presentation/screens/settings_screen.dart';
+import '../../features/nearby/presentation/screens/nearby_screen.dart';
 import '../../features/auth/presentation/screens/profile_screen.dart';
 import '../../features/itinerary/presentation/screens/stop_detail_screen.dart';
 import '../../features/favorites/presentation/screens/favorites_screen.dart';
@@ -134,6 +135,14 @@ class AppRouter {
         name: 'settings',
         pageBuilder: (context, state) =>
             slideUpPage(state: state, child: const SettingsScreen()),
+      ),
+
+      // ── Nearby ("What's around me") ──────────────────────────────────────
+      GoRoute(
+        path: '/nearby',
+        name: 'nearby',
+        pageBuilder: (context, state) =>
+            slideUpPage(state: state, child: const NearbyScreen()),
       ),
 
       // ── Generating Screen ─────────────────────────────────────────────────

@@ -182,6 +182,10 @@ class _TripInputScreenState extends State<TripInputScreen> {
                         children: [
                           // AI greeting
                           _buildAIGreeting(),
+                          const SizedBox(height: 16),
+
+                          // "What's around me" — live nearby discovery
+                          _buildNearbyButton(context),
                           const SizedBox(height: 20),
 
                           // Destination
@@ -445,6 +449,52 @@ class _TripInputScreenState extends State<TripInputScreen> {
               ),
             ],
           ),
+    );
+  }
+
+  Widget _buildNearbyButton(BuildContext context) {
+    final strings = AppStrings.of(context);
+    return GestureDetector(
+      onTap: () => context.push('/nearby'),
+      child: Container(
+        padding: const EdgeInsets.all(14),
+        decoration: BoxDecoration(
+          gradient: LinearGradient(
+            colors: [
+              AppColors.accentTurquoise.withValues(alpha: 0.18),
+              AppColors.accentAmber.withValues(alpha: 0.12),
+            ],
+            begin: Alignment.centerLeft,
+            end: Alignment.centerRight,
+          ),
+          borderRadius: BorderRadius.circular(16),
+          border: Border.all(
+              color: AppColors.accentTurquoise.withValues(alpha: 0.3)),
+        ),
+        child: Row(
+          children: [
+            const Icon(Icons.explore_rounded,
+                color: AppColors.accentTurquoise, size: 26),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(strings.nearbyTitle, style: AppTextStyles.titleMedium),
+                  const SizedBox(height: 2),
+                  Text(strings.nearbyDiscoverSubtitle,
+                      style: AppTextStyles.bodySmall.copyWith(
+                          color: AppColors.adaptiveTextSecondary(context)),
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis),
+                ],
+              ),
+            ),
+            Icon(Icons.arrow_forward_ios_rounded,
+                size: 14, color: AppColors.adaptiveTextSecondary(context)),
+          ],
+        ),
+      ),
     );
   }
 

@@ -1708,15 +1708,41 @@ app.get('/api/nearby-places', async (req, res) => {
     out body 20;
   `;
 
+  // Overpass rejects a raw text/plain body (406) and wants the query as a
+  // form-encoded `data=` field with a real User-Agent. Try the main endpoint,
+  // then a mirror, before giving up.
+  const overpassHosts = [
+    'https://overpass-api.de/api/interpreter',
+    'https://overpass.kumi.systems/api/interpreter',
+  ];
+
+  const postOverpass = async (host) => axios.post(
+    host,
+    new URLSearchParams({ data: overpassQuery }).toString(),
+    {
+      headers: {
+        'Content-Type': 'application/x-www-form-urlencoded',
+        'User-Agent': 'RahhalAI/1.0 (trip planner nearby-places)',
+      },
+      // Public Overpass instances usually answer in ~2s but occasionally 504 /
+      // stall under load; give each host a generous window before failing over.
+      timeout: 28000,
+    },
+  );
+
   try {
-    const response = await axios.post(
-      'https://overpass-api.de/api/interpreter',
-      overpassQuery,
-      {
-        headers: { 'Content-Type': 'text/plain' },
-        timeout: 20000,
+    let response;
+    let lastErr;
+    for (const host of overpassHosts) {
+      try {
+        response = await postOverpass(host);
+        break;
+      } catch (e) {
+        lastErr = e;
+        console.warn(`[NEARBY] ${host} failed: ${e.response?.status || e.message}`);
       }
-    );
+    }
+    if (!response) throw lastErr || new Error('all-overpass-hosts-failed');
 
     const elements = response.data?.elements || [];
     const places = elements

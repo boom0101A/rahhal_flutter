@@ -6,6 +6,8 @@ import 'package:go_router/go_router.dart';
 import '../../../../core/constants/app_colors.dart';
 import '../../../../core/constants/app_text_styles.dart';
 import '../../../../core/constants/app_strings.dart';
+import '../../../../core/services/notification_service.dart';
+import '../../domain/entities/trip_entity.dart';
 import '../../../../core/config/app_config.dart';
 import '../../../../core/di/injection.dart';
 import '../../../../core/utils/haptics.dart';
@@ -132,8 +134,25 @@ class _GeneratingScreenBodyState extends State<_GeneratingScreenBody>
 
   void _navigateToSuccess(TripPlannerState state) {
     if (state is TripPlannerSuccess && mounted) {
+      _scheduleTripReminder(state.trip);
       context.go('/trip/${state.trip.id}', extra: state.trip);
     }
+  }
+
+  /// If the trip has a start date, schedule a "your trip is coming up"
+  /// reminder for a few days before. Fire-and-forget — a failed reminder must
+  /// never block opening the trip.
+  Future<void> _scheduleTripReminder(TripEntity trip) async {
+    final start = trip.startDate;
+    if (start == null) return;
+    final strings = AppStrings.of(context);
+    await NotificationService.requestPermission();
+    await NotificationService.scheduleTripReminder(
+      tripId: trip.id,
+      title: strings.notifTripSoonTitle(trip.destination),
+      body: strings.notifTripSoonBody,
+      tripStartDate: start,
+    );
   }
 
   void _showErrorDialog(String message) {

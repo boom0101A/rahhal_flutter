@@ -8,6 +8,7 @@ import 'package:uuid/uuid.dart';
 import 'package:intl/intl.dart';
 import '../../../../core/constants/app_colors.dart';
 import '../../../../core/constants/app_strings.dart';
+import '../../../../core/services/notification_service.dart';
 import '../../../../core/constants/app_text_styles.dart';
 import '../../../../core/di/injection.dart';
 import '../../../../shared/widgets/app_error_widget.dart';
@@ -301,6 +302,21 @@ class _DocumentsScreenState extends State<DocumentsScreen> {
     ).animate().fadeIn(duration: 350.ms);
   }
 
+  /// Schedule a local reminder ~30 days before a document (passport/visa)
+  /// expires. Fire-and-forget; ignored when the document has no expiry date.
+  Future<void> _scheduleExpiryReminder(DocumentEntity doc) async {
+    final expiry = doc.expiryDate;
+    if (expiry == null) return;
+    final strings = AppStrings.of(context);
+    await NotificationService.requestPermission();
+    await NotificationService.scheduleDocumentExpiryReminder(
+      documentId: doc.id,
+      title: strings.notifDocExpiryTitle,
+      body: strings.notifDocExpiryBody(doc.title),
+      expiryDate: expiry,
+    );
+  }
+
   void _viewDocumentImage(BuildContext context, String path, String title) {
     showDialog(
       context: context,
@@ -565,6 +581,7 @@ class _DocumentsScreenState extends State<DocumentsScreen> {
                         );
 
                         context.read<DocumentCubit>().addDocument(doc);
+                        _scheduleExpiryReminder(doc);
                         Navigator.pop(ctx);
                       },
                     ),

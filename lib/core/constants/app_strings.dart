@@ -316,6 +316,38 @@ class AppStrings {
   String get save => _t('حفظ', 'Save');
   String get delete => _t('حذف', 'Delete');
   String get edit => _t('تعديل', 'Edit');
+  String get reorder => _t('ترتيب', 'Reorder');
+  String get retry => _t('إعادة المحاولة', 'Retry');
+  String get refresh => _t('تحديث', 'Refresh');
+
+  // Nearby ("What's around me")
+  String get nearbyTitle => _t('ماذا حولي؟', 'What\'s Around Me?');
+  String get nearbyAround => _t('حول', 'Around');
+  String get nearbyDiscoverSubtitle =>
+      _t('اكتشف المعالم والمطاعم قرب موقعك الآن',
+         'Discover attractions & restaurants near you now');
+  String get nearbyFilterAll => _t('الكل', 'All');
+  String get nearbyFilterAttractions => _t('معالم', 'Attractions');
+  String get nearbyFilterMuseums => _t('متاحف', 'Museums');
+  String get nearbyFilterRestaurants => _t('مطاعم', 'Restaurants');
+  String get nearbyFilterParks => _t('حدائق', 'Parks');
+  String get nearbyNoLocationTitle => _t('تعذّر تحديد موقعك', 'Couldn\'t get your location');
+  String get nearbyNoLocationSubtitle =>
+      _t('فعّل إذن الموقع لاكتشاف الأماكن القريبة منك.',
+         'Enable location permission to discover places near you.');
+  String get nearbyErrorTitle => _t('حدث خطأ', 'Something went wrong');
+  String get nearbyErrorSubtitle =>
+      _t('تعذّر جلب الأماكن القريبة. تحقّق من اتصالك وحاول مجددًا.',
+         'Couldn\'t load nearby places. Check your connection and try again.');
+  String get nearbyEmptyTitle => _t('لا توجد أماكن قريبة', 'No places nearby');
+  String get nearbyEmptySubtitle =>
+      _t('لم نعثر على أماكن مميزة في نطاق قريب منك الآن.',
+         'We couldn\'t find notable places within range right now.');
+  String get itineraryStopsTitle => _t('محطات اليوم', 'Today\'s Stops');
+  String get reorderStopsTitle => _t('إعادة ترتيب المحطات', 'Reorder Stops');
+  String get reorderStopsHint =>
+      _t('اسحب المحطات لتغيير ترتيب زيارتها خلال اليوم.',
+         'Drag the stops to change the order you visit them.');
   String get back => _t('رجوع', 'Back');
   String get confirm => _t('تأكيد', 'Confirm');
   String get cancel => _t('إلغاء', 'Cancel');
@@ -601,11 +633,24 @@ class AppStrings {
   String get weatherApproximate =>
       _t('طقس تقريبي (بيانات محاكاة)', 'Approximate weather (simulated data)');
   String get weatherSimulatedBadge => _t('محاكاة', 'Simulated');
+  String get weatherForecast => _t('توقعات الطقس', 'Weather Forecast');
 
   // Chat
   String get chatIntroHint => _t(
       'يمكنك سؤالي عن أي شيء: أفضل المطاعم، المواصلات، التكاليف، الطقس، ساعات الزيارة، أماكن التسوق، الثقافة المحلية، أو أي تساؤل آخر عن رحلتك! 💬',
       'Ask me anything: best restaurants, transport, costs, weather, opening hours, shopping, local culture, or any other question about your trip! 💬');
+  String get chatSuggestedQuestions => _t('أسئلة مقترحة', 'Suggested Questions');
+
+  // Notifications
+  String notifTripSoonTitle(String destination) =>
+      _t('✈️ رحلتك إلى $destination تقترب!', '✈️ Your trip to $destination is coming up!');
+  String get notifTripSoonBody =>
+      _t('بعد 3 أيام فقط — تأكد من استعداداتك ووثائقك.', 'Only 3 days to go — check your prep and documents.');
+  String get notifDocExpiryTitle =>
+      _t('⚠️ وثيقة سفر تقترب من الانتهاء', '⚠️ A travel document is expiring soon');
+  String notifDocExpiryBody(String docTitle) =>
+      _t('"$docTitle" ستنتهي صلاحيتها خلال شهر. جدّدها قبل سفرك.',
+         '"$docTitle" expires within a month. Renew it before you travel.');
 
   // Auth
   String passwordResetSent(String email) => _t(
