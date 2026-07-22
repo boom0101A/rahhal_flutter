@@ -229,10 +229,19 @@ class AppStrings {
   String get chatTitle => _t('مساعد رحّال', 'Rahhal Assistant');
   String get chatHint => _t('اسأل عن رحلتك...', 'Ask about your trip...');
   String get chatTyping => _t('رحّال يكتب...', 'Rahhal is typing...');
-  String get chatQuickReply1 => _t('ما أفضل وقت للزيارة؟', 'What\'s the best time to visit?');
-  String get chatQuickReply2 => _t('اقترح أنشطة إضافية', 'Suggest additional activities');
-  String get chatQuickReply3 => _t('كيف أوفر في الميزانية؟', 'How do I save budget?');
-  String get chatQuickReply4 => _t('أفضل وسائل النقل', 'What are the best transport options?');
+  // Smart, action-oriented replan prompts (answered with the trip's context).
+  String get chatQuickReply1 =>
+      _t('الطقس سيئ اليوم — اقترح بديلاً داخلياً', 'Bad weather today — suggest an indoor alternative');
+  String get chatQuickReply2 =>
+      _t('ما أفضل ترتيب لمحطات اليوم؟', 'What\'s the best order for today\'s stops?');
+  String get chatQuickReply3 =>
+      _t('لو كان لديّ يوم إضافي، ماذا أزور؟', 'If I had an extra day, what should I add?');
+  String get chatQuickReply4 =>
+      _t('أفضل الأكلات المحلية لأجربها', 'Best local dishes I should try');
+  String get chatQuickReply5 =>
+      _t('نصائح وآداب محلية مهمة', 'Important local tips & etiquette');
+  String get chatQuickReply6 =>
+      _t('كيف أوفّر في الميزانية؟', 'How can I save on budget?');
   String get chatOnlineStatus => _t('متصل الآن', 'Online');
   String get chatIntroTitle => _t('أهلاً! أنا مساعد رحّال', 'Hi! I\'m Rahhal Assistant');
   String get chatIntroSubtitle => _t('اسألني عن أي شيء يتعلق برحلتك وسأساعدك فوراً', 'Ask me anything about your trip and I\'ll help you');
@@ -326,6 +335,16 @@ class AppStrings {
   String get nearbyDiscoverSubtitle =>
       _t('اكتشف المعالم والمطاعم قرب موقعك الآن',
          'Discover attractions & restaurants near you now');
+
+  // Offline map
+  String get offlineMapDownload => _t('تحميل الخريطة للاستخدام دون إنترنت', 'Download map for offline use');
+  String get offlineMapDownloading =>
+      _t('جارٍ تحميل خريطة الرحلة للاستخدام دون إنترنت...', 'Downloading the trip map for offline use...');
+  String get offlineMapNoStops =>
+      _t('لا توجد محطات بإحداثيات لتحميل خريطتها.', 'No stops with coordinates to download a map for.');
+  String offlineMapDone(int tiles) =>
+      _t('تم حفظ الخريطة للاستخدام دون إنترنت ($tiles جزء).',
+         'Map saved for offline use ($tiles tiles).');
   String get nearbyFilterAll => _t('الكل', 'All');
   String get nearbyFilterAttractions => _t('معالم', 'Attractions');
   String get nearbyFilterMuseums => _t('متاحف', 'Museums');
@@ -344,6 +363,15 @@ class AppStrings {
       _t('لم نعثر على أماكن مميزة في نطاق قريب منك الآن.',
          'We couldn\'t find notable places within range right now.');
   String get itineraryStopsTitle => _t('محطات اليوم', 'Today\'s Stops');
+  String get markVisited => _t('وضع علامة زُرت', 'Mark as visited');
+  String get markNotVisited => _t('إلغاء علامة زُرت', 'Mark as not visited');
+  String dayProgressLabel(int visited, int total) =>
+      _t('زُرت $visited من $total', 'Visited $visited of $total');
+  String get dayProgressComplete => _t('أنجزت كل محطات اليوم! 🎉', 'All stops done! 🎉');
+  String travelWalk(int minutes) =>
+      _t('~$minutes دقيقة سيرًا', '~$minutes min walk');
+  String travelDrive(int minutes) =>
+      _t('~$minutes دقيقة بالسيارة', '~$minutes min drive');
   String get reorderStopsTitle => _t('إعادة ترتيب المحطات', 'Reorder Stops');
   String get reorderStopsHint =>
       _t('اسحب المحطات لتغيير ترتيب زيارتها خلال اليوم.',
@@ -357,6 +385,23 @@ class AppStrings {
   List<String> get popularCities => _t(
     ['إسطنبول', 'دبي', 'باريس', 'القاهرة', 'لندن', 'طوكيو', 'روما', 'مراكش'],
     ['Istanbul', 'Dubai', 'Paris', 'Cairo', 'London', 'Tokyo', 'Rome', 'Marrakech']
+  );
+
+  String get iraqiGovernoratesLabel => _t('محافظات العراق', 'Iraqi Governorates');
+
+  // All 19 Iraqi governorates (by their common capital/name, which the
+  // destination resolver maps to real places). Tapping one plans a trip for it.
+  List<String> get iraqiGovernorates => _t(
+    [
+      'بغداد', 'البصرة', 'الموصل', 'أربيل', 'كركوك', 'النجف', 'كربلاء',
+      'الحلة', 'الرمادي', 'الناصرية', 'العمارة', 'الديوانية', 'الكوت',
+      'السماوة', 'بعقوبة', 'تكريت', 'دهوك', 'السليمانية', 'حلبجة',
+    ],
+    [
+      'Baghdad', 'Basra', 'Mosul', 'Erbil', 'Kirkuk', 'Najaf', 'Karbala',
+      'Hillah', 'Ramadi', 'Nasiriyah', 'Amarah', 'Diwaniyah', 'Kut',
+      'Samawah', 'Baqubah', 'Tikrit', 'Duhok', 'Sulaymaniyah', 'Halabja',
+    ],
   );
 
   // Stop types & category names

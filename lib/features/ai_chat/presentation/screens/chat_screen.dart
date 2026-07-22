@@ -11,6 +11,7 @@ import '../cubit/chat_cubit.dart';
 import '../../domain/entities/chat_message_entity.dart';
 import '../../../trip_planner/domain/entities/trip_entity.dart';
 import '../../../trip_planner/domain/repositories/trip_repository.dart';
+import '../../../itinerary/domain/repositories/itinerary_repository.dart';
 
 class ChatScreen extends StatefulWidget {
   final String tripId;
@@ -35,8 +36,16 @@ class _ChatScreenState extends State<ChatScreen> {
       strings.chatQuickReply2,
       strings.chatQuickReply3,
       strings.chatQuickReply4,
+      strings.chatQuickReply5,
+      strings.chatQuickReply6,
     ];
   }
+
+  // Compact text summary of the itinerary, fed to the AI so replan-style
+  // questions ("best order for today", "indoor alternative") are grounded in
+  // the real stops rather than generic destination advice.
+  String _itineraryContext = '';
+  bool _contextReady = false;
 
   @override
   void initState() {
@@ -44,6 +53,8 @@ class _ChatScreenState extends State<ChatScreen> {
     _trip = widget.trip;
     if (_trip == null) {
       _loadTrip();
+    } else {
+      _loadItineraryContext();
     }
   }
 
@@ -65,9 +76,41 @@ class _ChatScreenState extends State<ChatScreen> {
             _trip = trip;
             _isLoading = false;
           });
+          _loadItineraryContext();
         }
       },
     );
+  }
+
+  /// Best-effort: any failure just leaves the context empty and the assistant
+  /// falls back to destination-level advice.
+  Future<void> _loadItineraryContext() async {
+    try {
+      final daysResult =
+          await sl<ItineraryRepository>().getDaysForTrip(widget.tripId);
+      final buffer = StringBuffer();
+      await daysResult.fold(
+        (_) async {},
+        (days) async {
+          for (final day in days) {
+            final stopsResult =
+                await sl<ItineraryRepository>().getStopsForDay(day.id);
+            stopsResult.fold((_) {}, (stops) {
+              if (stops.isEmpty) return;
+              final names = stops.map((s) => s.nameEn?.isNotEmpty == true
+                  ? s.nameEn!
+                  : s.name);
+              final theme = day.theme != null ? ' (${day.theme})' : '';
+              buffer.writeln('Day ${day.dayNumber}$theme: ${names.join(', ')}');
+            });
+          }
+        },
+      );
+      _itineraryContext = buffer.toString().trim();
+    } catch (_) {
+      _itineraryContext = '';
+    }
+    if (mounted) setState(() => _contextReady = true);
   }
 
   @override
@@ -99,7 +142,7 @@ class _ChatScreenState extends State<ChatScreen> {
 
   @override
   Widget build(BuildContext context) {
-    if (_trip == null || _isLoading) {
+    if (_trip == null || _isLoading || !_contextReady) {
       return Scaffold(
         backgroundColor: AppColors.adaptiveBgPrimary(context),
         body: const Center(
@@ -113,7 +156,10 @@ class _ChatScreenState extends State<ChatScreen> {
         ..initChat(
           tripId: widget.tripId,
           destination: _trip?.destination ?? '',
-          tripSummary: _trip?.aiSummary ?? '',
+          tripSummary: [
+            _trip?.aiSummary ?? '',
+            if (_itineraryContext.isNotEmpty) 'Itinerary:\n$_itineraryContext',
+          ].where((s) => s.isNotEmpty).join('\n\n'),
         ),
       child: BlocListener<ChatCubit, ChatState>(
         listenWhen: (previous, current) =>
