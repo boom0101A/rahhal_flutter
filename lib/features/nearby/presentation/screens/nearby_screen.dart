@@ -56,7 +56,17 @@ class _NearbyScreenState extends State<NearbyScreen> {
     }
   }
 
-  static const _filters = ['all', 'attraction', 'museum', 'restaurant', 'park'];
+  static const _filters = [
+    'all',
+    'attraction',
+    'historic',
+    'museum',
+    'restaurant',
+    'cafe',
+    'park',
+    'shopping',
+    'worship',
+  ];
 
   List<NearbyPlace> get _filtered => _filter == 'all'
       ? _places
@@ -65,17 +75,26 @@ class _NearbyScreenState extends State<NearbyScreen> {
   String _filterLabel(String id, AppStrings s) => switch (id) {
         'all' => s.nearbyFilterAll,
         'attraction' => s.nearbyFilterAttractions,
+        'historic' => s.nearbyFilterHistoric,
         'museum' => s.nearbyFilterMuseums,
         'restaurant' => s.nearbyFilterRestaurants,
+        'cafe' => s.nearbyFilterCafes,
         'park' => s.nearbyFilterParks,
-        _ => id,
+        'shopping' => s.nearbyFilterShopping,
+        'worship' => s.nearbyFilterWorship,
+        'viewpoint' => s.nearbyFilterViewpoints,
+        _ => s.nearbyFilterOther,
       };
 
   IconData _iconFor(String type) => switch (type) {
         'attraction' => Icons.attractions_rounded,
+        'historic' => Icons.account_balance_rounded,
         'museum' => Icons.museum_rounded,
         'restaurant' => Icons.restaurant_rounded,
+        'cafe' => Icons.local_cafe_rounded,
         'park' => Icons.park_rounded,
+        'shopping' => Icons.local_mall_rounded,
+        'worship' => Icons.mosque_rounded,
         'viewpoint' => Icons.landscape_rounded,
         _ => Icons.place_rounded,
       };

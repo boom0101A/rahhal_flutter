@@ -1913,16 +1913,28 @@ app.get('/api/nearby-places', async (req, res) => {
     return res.status(400).json({ error: 'lat and lng are required' });
   }
 
+  // Query nodes AND ways (many parks/museums/malls are mapped as ways/areas,
+  // not single nodes) across a broad set of categories. Restaurants are NOT
+  // required to carry a "cuisine" tag any more — that filter dropped most of
+  // them. `out center` gives ways a lat/lng too. We ask for a generous cap so
+  // the balancing step below has enough of every category to choose from.
   const overpassQuery = `
-    [out:json][timeout:15];
+    [out:json][timeout:25];
     (
-      node["tourism"="attraction"](around:${radius},${lat},${lng});
-      node["tourism"="museum"](around:${radius},${lat},${lng});
-      node["amenity"="restaurant"]["cuisine"](around:${radius},${lat},${lng});
-      node["leisure"="park"](around:${radius},${lat},${lng});
-      node["tourism"="viewpoint"](around:${radius},${lat},${lng});
+      nwr["tourism"="attraction"](around:${radius},${lat},${lng});
+      nwr["tourism"="museum"](around:${radius},${lat},${lng});
+      nwr["tourism"="viewpoint"](around:${radius},${lat},${lng});
+      nwr["tourism"="artwork"](around:${radius},${lat},${lng});
+      nwr["historic"](around:${radius},${lat},${lng});
+      nwr["amenity"="restaurant"](around:${radius},${lat},${lng});
+      nwr["amenity"="cafe"](around:${radius},${lat},${lng});
+      nwr["amenity"="place_of_worship"](around:${radius},${lat},${lng});
+      nwr["leisure"="park"](around:${radius},${lat},${lng});
+      nwr["leisure"="garden"](around:${radius},${lat},${lng});
+      nwr["shop"="mall"](around:${radius},${lat},${lng});
+      nwr["amenity"="marketplace"](around:${radius},${lat},${lng});
     );
-    out body 20;
+    out center 120;
   `;
 
   // Overpass rejects a raw text/plain body (406) and wants the query as a
@@ -1962,17 +1974,70 @@ app.get('/api/nearby-places', async (req, res) => {
     if (!response) throw lastErr || new Error('all-overpass-hosts-failed');
 
     const elements = response.data?.elements || [];
-    const places = elements
-      .filter(el => el.tags && (el.tags.name || el.tags['name:ar'] || el.tags['name:en']))
-      .map(el => ({
+
+    // Collapse each OSM element's raw tags into one of our app categories.
+    const categorize = (tags) => {
+      if (tags.tourism === 'museum') return 'museum';
+      if (tags.leisure === 'park' || tags.leisure === 'garden') return 'park';
+      if (tags.amenity === 'restaurant') return 'restaurant';
+      if (tags.amenity === 'cafe') return 'cafe';
+      if (tags.shop === 'mall' || tags.amenity === 'marketplace') return 'shopping';
+      if (tags.amenity === 'place_of_worship') return 'worship';
+      if (tags.tourism === 'viewpoint') return 'viewpoint';
+      if (tags.historic) return 'historic';
+      if (tags.tourism === 'attraction' || tags.tourism === 'artwork') return 'attraction';
+      return 'other';
+    };
+
+    const seenNames = new Set();
+    const normalized = [];
+    for (const el of elements) {
+      const tags = el.tags;
+      if (!tags) continue;
+      const nameAr = tags['name:ar'] || tags.name || tags['name:en'];
+      if (!nameAr) continue;
+
+      // Coordinates: nodes carry lat/lon; ways/relations carry `center`.
+      const plat = el.lat ?? el.center?.lat;
+      const plng = el.lon ?? el.center?.lon;
+      if (plat == null || plng == null) continue;
+
+      // Dedup by normalized name so the same venue mapped twice (e.g. as a
+      // node and a way) or two branches with the same name appear once.
+      const dedupKey = String(nameAr).trim().toLowerCase();
+      if (seenNames.has(dedupKey)) continue;
+      seenNames.add(dedupKey);
+
+      normalized.push({
         id: el.id,
-        name: el.tags['name:ar'] || el.tags.name || el.tags['name:en'] || 'مكان',
-        name_en: el.tags['name:en'] || el.tags.name || '',
-        lat: el.lat,
-        lng: el.lon,
-        type: el.tags.tourism || el.tags.amenity || el.tags.leisure || 'other',
-      }))
-      .slice(0, 15); // max 15 places
+        name: nameAr,
+        name_en: tags['name:en'] || tags.name || '',
+        lat: plat,
+        lng: plng,
+        type: categorize(tags),
+      });
+    }
+
+    // Balance the result so every category that exists is represented instead
+    // of the closest one filling all the slots. Round-robin across categories.
+    const byType = new Map();
+    for (const p of normalized) {
+      if (!byType.has(p.type)) byType.set(p.type, []);
+      byType.get(p.type).push(p);
+    }
+    const buckets = [...byType.values()];
+    const places = [];
+    const MAX = 24;
+    let added = true;
+    while (added && places.length < MAX) {
+      added = false;
+      for (const bucket of buckets) {
+        if (bucket.length === 0) continue;
+        places.push(bucket.shift());
+        added = true;
+        if (places.length >= MAX) break;
+      }
+    }
 
     return res.status(200).json({ places });
   } catch (error) {
