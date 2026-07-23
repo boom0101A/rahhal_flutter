@@ -124,6 +124,7 @@ class TripRepositoryImpl implements TripRepository {
       // 1. Pre-fetch images for all stops and restaurants in parallel OUTSIDE the DB transaction
       final Map<String, String?> stopImageMap = {};
       final Map<String, String?> restaurantImageMap = {};
+      final Map<String, String?> hotelImageMap = {};
       final List<Future<void> Function()> imageTasks = [];
 
       // Tasks for stops
@@ -173,6 +174,24 @@ class TripRepositoryImpl implements TripRepository {
               restaurantImageMap[key] = url;
             } catch (_) {
               restaurantImageMap[key] = null;
+            }
+          });
+        }
+      }
+
+      // Tasks for hotels
+      for (final h in planResponse.hotels) {
+        final key = h.name.trim().toLowerCase();
+        if (!hotelImageMap.containsKey(key)) {
+          final query = (h.imageSearchQuery != null && h.imageSearchQuery!.isNotEmpty)
+              ? h.imageSearchQuery!
+              : '${h.name} hotel ${trip.destination}';
+          imageTasks.add(() async {
+            try {
+              final url = await sl<ImageSearchService>().searchPhoto(query);
+              hotelImageMap[key] = url;
+            } catch (_) {
+              hotelImageMap[key] = null;
             }
           });
         }
@@ -322,6 +341,37 @@ class TripRepositoryImpl implements TripRepository {
 
         for (final row in restaurantsToInsert.values) {
           await txn.insert('restaurants', row, conflictAlgorithm: ConflictAlgorithm.replace);
+        }
+
+        // Insert Hotels (real, sourced from Google Places / OSM by the server)
+        final Set<String> insertedHotelKeys = {};
+        for (final h in planResponse.hotels) {
+          final key = h.name.trim().toLowerCase();
+          if (key.isEmpty || insertedHotelKeys.contains(key)) continue;
+          insertedHotelKeys.add(key);
+
+          final fetchedUrl = hotelImageMap[key];
+          final hotelImageUrl =
+              (fetchedUrl != null && fetchedUrl.isNotEmpty) ? fetchedUrl : null;
+
+          await txn.insert('hotels', {
+            'id': _uuid.v4(),
+            'trip_id': trip.id,
+            'name': h.name,
+            'name_en': h.nameEn,
+            'hotel_type': h.hotelType,
+            'rating': h.rating,
+            'price_per_night': h.pricePerNightUsd,
+            'address': h.address,
+            'latitude': h.latitude,
+            'longitude': h.longitude,
+            'phone': h.phone,
+            'image_url': hotelImageUrl,
+            'ai_description': h.aiDescription,
+            'booking_url': h.bookingUrl,
+            'place_id': h.placeId,
+            'coords_verified': h.coordsVerified ? 1 : 0,
+          }, conflictAlgorithm: ConflictAlgorithm.replace);
         }
 
         // Budget Items

@@ -54,6 +54,7 @@ class CloudSyncService {
       final daysRows = await _dbHelper.query('days', where: 'trip_id = ?', whereArgs: [tripId]);
       final stopsRows = await _dbHelper.query('stops', where: 'trip_id = ?', whereArgs: [tripId]);
       final restaurantsRows = await _dbHelper.query('restaurants', where: 'trip_id = ?', whereArgs: [tripId]);
+      final hotelsRows = await _dbHelper.query('hotels', where: 'trip_id = ?', whereArgs: [tripId]);
       final budgetItemsRows = await _dbHelper.query('budget_items', where: 'trip_id = ?', whereArgs: [tripId]);
       final chatMessagesRows = await _dbHelper.query('chat_messages', where: 'trip_id = ?', whereArgs: [tripId]);
       final actualExpensesRows = await _dbHelper.query('actual_expenses', where: 'trip_id = ?', whereArgs: [tripId]);
@@ -67,6 +68,7 @@ class CloudSyncService {
         'days': daysRows,
         'stops': stopsRows,
         'restaurants': restaurantsRows,
+        'hotels': hotelsRows,
         'budget_items': budgetItemsRows,
         'chat_messages': chatMessagesRows,
         'actual_expenses': actualExpensesRows,
@@ -163,6 +165,7 @@ class CloudSyncService {
           final List<dynamic> days = tripData['days'] as List<dynamic>? ?? [];
           final List<dynamic> stops = tripData['stops'] as List<dynamic>? ?? [];
           final List<dynamic> restaurants = tripData['restaurants'] as List<dynamic>? ?? [];
+          final List<dynamic> hotels = tripData['hotels'] as List<dynamic>? ?? [];
           final List<dynamic> budgetItems = tripData['budget_items'] as List<dynamic>? ?? [];
           final List<dynamic> chatMessages = tripData['chat_messages'] as List<dynamic>? ?? [];
           final List<dynamic> actualExpenses = tripData['actual_expenses'] as List<dynamic>? ?? [];
@@ -172,6 +175,7 @@ class CloudSyncService {
             ..remove('days')
             ..remove('stops')
             ..remove('restaurants')
+            ..remove('hotels')
             ..remove('budget_items')
             ..remove('chat_messages')
             ..remove('actual_expenses');
@@ -197,6 +201,13 @@ class CloudSyncService {
           for (final r in restaurants) {
             if (r is Map<String, dynamic>) {
               await txn.insert('restaurants', r, conflictAlgorithm: ConflictAlgorithm.replace);
+            }
+          }
+
+          // Insert hotels
+          for (final h in hotels) {
+            if (h is Map<String, dynamic>) {
+              await txn.insert('hotels', h, conflictAlgorithm: ConflictAlgorithm.replace);
             }
           }
 

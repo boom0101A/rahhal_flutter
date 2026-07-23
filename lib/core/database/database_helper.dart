@@ -17,7 +17,7 @@ class DatabaseHelper {
 
   // ─── Init ─────────────────────────────────────────────────────────────────
 
-  static const int _dbVersion = 6;
+  static const int _dbVersion = 7;
   static const String _dbName = 'rahhal_ai.db';
 
   static final Map<int, List<String>> _migrations = {
@@ -48,6 +48,11 @@ class DatabaseHelper {
     6: [
       'ALTER TABLE stops ADD COLUMN is_visited INTEGER DEFAULT 0;',
     ],
+    // Real hotels, sourced from Google Places / OSM, shown in a dedicated tab.
+    7: [
+      _createHotelsTable,
+      'CREATE INDEX IF NOT EXISTS idx_hotels_trip_id ON hotels(trip_id)',
+    ],
   };
 
   Future<Database> _initDatabase() async {
@@ -70,6 +75,7 @@ class DatabaseHelper {
       await txn.execute(_createDaysTable);
       await txn.execute(_createStopsTable);
       await txn.execute(_createRestaurantsTable);
+      await txn.execute(_createHotelsTable);
       await txn.execute(_createBudgetItemsTable);
       await txn.execute(_createChatMessagesTable);
 
@@ -204,6 +210,27 @@ class DatabaseHelper {
     )
   ''';
 
+  static const String _createHotelsTable = '''
+    CREATE TABLE IF NOT EXISTS hotels (
+      id                TEXT PRIMARY KEY,
+      trip_id           TEXT NOT NULL REFERENCES trips(id) ON DELETE CASCADE,
+      name              TEXT NOT NULL,
+      name_en           TEXT,
+      hotel_type        TEXT,
+      rating            REAL DEFAULT 0,
+      price_per_night   REAL DEFAULT 0,
+      address           TEXT,
+      latitude          REAL DEFAULT 0,
+      longitude         REAL DEFAULT 0,
+      phone             TEXT,
+      image_url         TEXT,
+      ai_description    TEXT,
+      booking_url       TEXT,
+      place_id          TEXT,
+      coords_verified   INTEGER DEFAULT 0
+    )
+  ''';
+
   static const String _createBudgetItemsTable = '''
     CREATE TABLE IF NOT EXISTS budget_items (
       id            TEXT PRIMARY KEY,
@@ -287,6 +314,7 @@ class DatabaseHelper {
     'CREATE INDEX IF NOT EXISTS idx_stops_trip_id ON stops(trip_id)',
     'CREATE INDEX IF NOT EXISTS idx_stops_day_id ON stops(day_id)',
     'CREATE INDEX IF NOT EXISTS idx_restaurants_trip_id ON restaurants(trip_id)',
+    'CREATE INDEX IF NOT EXISTS idx_hotels_trip_id ON hotels(trip_id)',
     'CREATE INDEX IF NOT EXISTS idx_budget_items_trip_id ON budget_items(trip_id)',
     'CREATE INDEX IF NOT EXISTS idx_chat_messages_trip_id ON chat_messages(trip_id)',
   ];

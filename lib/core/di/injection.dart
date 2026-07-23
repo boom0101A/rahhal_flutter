@@ -21,6 +21,9 @@ import '../../features/map/presentation/cubit/map_cubit.dart';
 import '../../features/restaurants/data/restaurant_repository_impl.dart';
 import '../../features/restaurants/domain/repositories/restaurant_repository.dart';
 import '../../features/restaurants/presentation/cubit/restaurants_cubit.dart';
+import '../../features/hotels/data/hotel_repository_impl.dart';
+import '../../features/hotels/domain/repositories/hotel_repository.dart';
+import '../../features/hotels/presentation/cubit/hotels_cubit.dart';
 import '../../features/budget/data/budget_repository_impl.dart';
 import '../../features/budget/domain/repositories/budget_repository.dart';
 import '../../features/budget/presentation/cubit/budget_cubit.dart';
@@ -94,6 +97,10 @@ Future<void> setupDependencies() async {
     () => RestaurantRepositoryImpl(dbHelper: sl<DatabaseHelper>()),
   );
 
+  sl.registerLazySingleton<HotelRepository>(
+    () => HotelRepositoryImpl(dbHelper: sl<DatabaseHelper>()),
+  );
+
   sl.registerLazySingleton<BudgetRepository>(
     () => BudgetRepositoryImpl(dbHelper: sl<DatabaseHelper>()),
   );
@@ -134,6 +141,10 @@ Future<void> setupDependencies() async {
 
   sl.registerFactory<RestaurantsCubit>(
     () => RestaurantsCubit(repository: sl<RestaurantRepository>()),
+  );
+
+  sl.registerFactory<HotelsCubit>(
+    () => HotelsCubit(repository: sl<HotelRepository>()),
   );
 
   sl.registerFactory<BudgetCubit>(

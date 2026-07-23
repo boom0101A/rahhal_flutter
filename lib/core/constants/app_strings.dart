@@ -141,12 +141,21 @@ class AppStrings {
   String get tabSchedule => _t('الجدول', 'Schedule');
   String get tabMap => _t('الخريطة', 'Map');
   String get tabRestaurants => _t('المطاعم', 'Restaurants');
+  String get tabHotels => _t('الفنادق', 'Hotels');
   String get tabCost => _t('التكاليف', 'Costs');
 
   // Trip Stats
   String get statsDays => _t('أيام', 'Days');
   String get statsPlaces => _t('مكان', 'Places');
   String get statsRestaurants => _t('مطعم', 'Restaurants');
+  String get statsHotels => _t('فندق', 'Hotels');
+
+  // Hotels
+  String get hotelsTitle => _t('الفنادق القريبة', 'Nearby Hotels');
+  String get noHotelsFound => _t(
+      'لم نعثر على فنادق موثّقة لهذه الوجهة',
+      'No verified hotels found for this destination');
+  String get perNight => _t('ليلة', 'night');
   String get statsPerDay => _t('/يوم', '/day');
   String get statsTravelers => _t('مسافر', 'traveler');
 
@@ -631,8 +640,8 @@ class AppStrings {
       '⏳ السيرفر كان في وضع السكون.\nيرجى الانتظار 30-60 ثانية ثم إعادة المحاولة.',
       '⏳ The server was asleep.\nPlease wait 30-60 seconds and try again.');
   String get genErrorApiKey => _t(
-      '🔑 مفتاح API غير صالح أو غير موجود.\nتحقق من ملف .env في السيرفر:\nGEMINI_API_KEY أو ANTHROPIC_API_KEY',
-      '🔑 The API key is invalid or missing.\nCheck the server .env file:\nGEMINI_API_KEY or ANTHROPIC_API_KEY');
+      '🔑 مفتاح API غير صالح أو غير موجود.\nتحقق من ملف .env في السيرفر:\nGROQ_API_KEY أو GEMINI_API_KEY',
+      '🔑 The API key is invalid or missing.\nCheck the server .env file:\nGROQ_API_KEY or GEMINI_API_KEY');
   String get genErrorRateLimit => _t(
       '⏱ تجاوزت الحد المسموح من الطلبات.\nانتظر دقيقة ثم أعد المحاولة.',
       '⏱ You have exceeded the request limit.\nWait a minute and try again.');

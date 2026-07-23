@@ -14,6 +14,7 @@ class TripPlanResponse {
   final String heroImageQuery;
   final List<DayPlanResponse> days;
   final List<RestaurantResponse> allRestaurants;
+  final List<HotelResponse> hotels;
   final BudgetBreakdownResponse budgetBreakdown;
   final List<String> travelTips;
   final String bestTimeToVisit;
@@ -30,6 +31,7 @@ class TripPlanResponse {
     required this.heroImageQuery,
     required this.days,
     required this.allRestaurants,
+    this.hotels = const [],
     required this.budgetBreakdown,
     required this.travelTips,
     required this.bestTimeToVisit,
@@ -51,6 +53,9 @@ class TripPlanResponse {
           .toList(),
       allRestaurants: ((json['all_restaurants'] as List?) ?? [])
           .map((r) => RestaurantResponse.fromJson(r as Map<String, dynamic>))
+          .toList(),
+      hotels: ((json['hotels'] as List?) ?? [])
+          .map((h) => HotelResponse.fromJson(h as Map<String, dynamic>))
           .toList(),
       budgetBreakdown: BudgetBreakdownResponse.fromJson(
           json['budget_breakdown'] as Map<String, dynamic>? ?? {}),
@@ -214,6 +219,59 @@ class RestaurantResponse {
   }
 }
 
+class HotelResponse {
+  final String name;
+  final String? nameEn;
+  final String? hotelType;
+  final double rating;
+  final double pricePerNightUsd;
+  final String address;
+  final double latitude;
+  final double longitude;
+  final String? phone;
+  final String aiDescription;
+  final String? imageSearchQuery;
+  final String? bookingUrl;
+  final String? placeId;
+  final bool coordsVerified;
+
+  const HotelResponse({
+    required this.name,
+    this.nameEn,
+    this.hotelType,
+    required this.rating,
+    required this.pricePerNightUsd,
+    required this.address,
+    required this.latitude,
+    required this.longitude,
+    this.phone,
+    required this.aiDescription,
+    this.imageSearchQuery,
+    this.bookingUrl,
+    this.placeId,
+    this.coordsVerified = false,
+  });
+
+  factory HotelResponse.fromJson(Map<String, dynamic> json) {
+    return HotelResponse(
+      name: json['name'] as String? ?? '',
+      nameEn: json['name_en'] as String?,
+      hotelType: json['hotel_type'] as String?,
+      rating: (json['rating'] as num? ?? 0).toDouble(),
+      pricePerNightUsd: (json['price_per_night_usd'] as num? ?? 0).toDouble(),
+      address: json['address'] as String? ?? '',
+      latitude: (json['latitude'] as num? ?? 0).toDouble(),
+      longitude: (json['longitude'] as num? ?? 0).toDouble(),
+      phone: json['phone'] as String?,
+      aiDescription: json['ai_description'] as String? ?? '',
+      imageSearchQuery: json['image_search_query'] as String?,
+      bookingUrl: json['booking_url'] as String?,
+      placeId: json['place_id'] as String?,
+      coordsVerified: json['coords_verified'] as bool? ?? false,
+    );
+  }
+}
+
 class BudgetBreakdownResponse {
   final double accommodationUsd;
   final double foodUsd;
@@ -355,10 +413,17 @@ class AITravelService {
       final classified = _classifyError(e);
       debugPrint('[AITravelService] generateTripPlan failed: ${classified.message}');
 
-      // When mock fallback is enabled, use smart city data for ANY error.
-      // This guarantees the app always works — even without a valid API key.
-      // When a real Gemini key is configured later, real AI kicks in automatically.
-      if (AppConfig.kUseMockFallback) {
+      // Mock data is a safety net ONLY for "the backend has no working AI key
+      // at all" (invalid-api-key) — a case where retrying can never succeed.
+      // Retryable errors (rate-limit, timeouts, transient server errors) must
+      // propagate to the UI's existing error dialog, which already gives the
+      // user an accurate, actionable message and a retry button. Previously
+      // ANY error — including simply hitting Groq's free-tier per-minute
+      // limit after generating two trips close together — silently replaced
+      // the request with a full fake itinerary, shown as if it were real
+      // until the user noticed the small "mock data" banner.
+      final isUnconfigured = classified.message == 'invalid-api-key';
+      if (AppConfig.kUseMockFallback && isUnconfigured) {
         debugPrint('[AITravelService] Activating smart city fallback for: ${classified.message}');
         try {
           return _generateMockTripResponse(

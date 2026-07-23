@@ -177,7 +177,7 @@ class _MapViewState extends State<_MapView> with WidgetsBindingObserver {
         setState(() => _userLocation = position);
 
         if (_mapReady && widget.state.stops.isEmpty) {
-          _mapController.move(position!, 14.0);
+          _mapController.move(position, 14.0);
         }
       }
     } finally {

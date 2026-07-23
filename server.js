@@ -460,6 +460,7 @@ app.use('/api/photos', authenticateFirebaseToken);
 app.use('/api/weather', authenticateFirebaseToken);
 app.use('/api/currency', authenticateFirebaseToken);
 app.use('/api/nearby-places', authenticateFirebaseToken);
+app.use('/api/hotels', authenticateFirebaseToken);
 
 // Health Check Endpoints for cloud hosting services (Render / Railway)
 app.get('/', (req, res) => {
@@ -1115,6 +1116,265 @@ function applyRealRestaurants(tripData, realRestaurants) {
   return tripData;
 }
 
+// ─── Real hotels, sourced from Google Places (not from the LLM) ──────────────
+//
+// Same rationale as restaurants: the model invents plausible hotel names that
+// don't exist, so we pull the real ones straight from Places and (when Places
+// is off / quota-blocked) fall back to OpenStreetMap. Each hotel carries a
+// place_id / coordinates so the app can deep-link it into Google Maps.
+
+// Places priceLevel enum → rough USD per night (a room is far pricier than a
+// meal, so this is a separate scale from PRICE_LEVEL_USD).
+const HOTEL_PRICE_LEVEL_USD = {
+  PRICE_LEVEL_FREE: 0,
+  PRICE_LEVEL_INEXPENSIVE: 30,
+  PRICE_LEVEL_MODERATE: 70,
+  PRICE_LEVEL_EXPENSIVE: 140,
+  PRICE_LEVEL_VERY_EXPENSIVE: 260,
+};
+
+// Place types we accept as "somewhere you sleep".
+const LODGING_PLACE_TYPES = new Set([
+  'lodging', 'hotel', 'motel', 'resort_hotel', 'guest_house', 'hostel',
+  'bed_and_breakfast', 'extended_stay_hotel', 'budget_japanese_inn',
+  'inn', 'campground', 'cottage', 'farmstay', 'private_guest_room',
+]);
+
+const HOTEL_FIELD_MASK = [
+  'places.id',
+  'places.displayName',
+  'places.location',
+  'places.formattedAddress',
+  'places.rating',
+  'places.userRatingCount',
+  'places.priceLevel',
+  'places.primaryTypeDisplayName',
+  'places.types',
+  'places.websiteUri',
+  'places.nationalPhoneNumber',
+  'places.editorialSummary',
+].join(',');
+
+async function searchHotelsInLanguage(cityEn, centerLat, centerLng, languageCode) {
+  const placesKey = process.env.GOOGLE_PLACES_API_KEY;
+  const body = {
+    textQuery: `best hotels in ${cityEn}`,
+    includedType: 'lodging',
+    languageCode,
+    maxResultCount: 20,
+  };
+  if (centerLat && centerLng) {
+    body.locationBias = {
+      circle: {
+        center: { latitude: parseFloat(centerLat), longitude: parseFloat(centerLng) },
+        radius: 30000,
+      },
+    };
+  }
+
+  const res = await axios.post(
+    'https://places.googleapis.com/v1/places:searchText',
+    body,
+    {
+      headers: {
+        'Content-Type': 'application/json',
+        'X-Goog-Api-Key': placesKey,
+        'X-Goog-FieldMask': HOTEL_FIELD_MASK,
+      },
+      timeout: 10000,
+    }
+  );
+  return res.data?.places || [];
+}
+
+// Returns an array of app-shaped hotel objects, or [] when Places is
+// unconfigured / quota-blocked / returns nothing usable.
+async function fetchRealHotels(cityEn, centerLat, centerLng, limit) {
+  const placesKey = process.env.GOOGLE_PLACES_API_KEY;
+  if (!placesKey || placesKey === 'your_google_places_api_key_here') {
+    console.warn('[HOTELS] Places not configured — will try OSM fallback.');
+    return [];
+  }
+  if (isPlacesQuotaBlocked()) {
+    return [];
+  }
+
+  const cacheKey = `__hotels__|${cityEn.toLowerCase().trim()}|${limit}`;
+  const now = Date.now();
+  if (placesCache.has(cacheKey)) {
+    const cached = placesCache.get(cacheKey);
+    if (now - cached.timestamp < PLACES_CACHE_TTL_MS) return cached.data;
+    placesCache.delete(cacheKey);
+  }
+
+  let arPlaces = [];
+  let enPlaces = [];
+  try {
+    [arPlaces, enPlaces] = await Promise.all([
+      searchHotelsInLanguage(cityEn, centerLat, centerLng, 'ar'),
+      searchHotelsInLanguage(cityEn, centerLat, centerLng, 'en'),
+    ]);
+  } catch (err) {
+    const apiError = err.response?.data?.error;
+    const message = apiError?.message || err.message;
+    tripPlacesBreaker(message);
+    console.error('[HOTELS] Places search failed:', message);
+    return [];
+  }
+
+  const enById = new Map(enPlaces.map((p) => [p.id, p]));
+
+  const candidates = arPlaces
+    .filter((p) => {
+      if (!p.location || !p.displayName?.text) return false;
+      // `includedType` is a soft filter — require a real lodging type tag.
+      if (!(p.types || []).some((t) => LODGING_PLACE_TYPES.has(t))) return false;
+      // Thin listings are usually closed or mis-tagged — but keep the bar
+      // lower than restaurants: some real hotels in smaller Iraqi cities have
+      // few reviews, and we'd rather show them than an empty list.
+      if ((p.userRatingCount || 0) < 5) return false;
+      if (centerLat && centerLng) {
+        const distKm = haversineDistance(
+          parseFloat(centerLat), parseFloat(centerLng),
+          p.location.latitude, p.location.longitude
+        );
+        if (distKm > PLACES_MAX_DISTANCE_KM) return false;
+      }
+      return true;
+    })
+    .sort((a, b) =>
+      ((b.rating || 0) * Math.log10((b.userRatingCount || 0) + 10)) -
+      ((a.rating || 0) * Math.log10((a.userRatingCount || 0) + 10))
+    )
+    .slice(0, limit);
+
+  const mapped = candidates.map((p) => {
+    const en = enById.get(p.id);
+    const category = p.primaryTypeDisplayName?.text || en?.primaryTypeDisplayName?.text || '';
+    const imageQuery = en?.displayName?.text
+      ? `${en.displayName.text} hotel`
+      : `hotel ${cityEn} building`;
+    const editorial = p.editorialSummary?.text;
+    const ratingText = p.rating
+      ? `تقييم ${p.rating} من ${(p.userRatingCount || 0).toLocaleString('en-US')} زائر على خرائط Google`
+      : 'فندق على خرائط Google';
+
+    return {
+      name: p.displayName.text,
+      name_en: en?.displayName?.text || p.displayName.text,
+      hotel_type: category,
+      rating: p.rating || 0,
+      price_per_night_usd: HOTEL_PRICE_LEVEL_USD[p.priceLevel] ?? 70,
+      address: p.formattedAddress || '',
+      latitude: p.location.latitude,
+      longitude: p.location.longitude,
+      phone: p.nationalPhoneNumber || null,
+      ai_description: editorial ? `${editorial} — ${ratingText}.` : `${ratingText}.`,
+      image_search_query: imageQuery,
+      booking_url: p.websiteUri || null,
+      place_id: p.id,
+      coords_verified: true,
+    };
+  });
+
+  placesCache.set(cacheKey, { data: mapped, timestamp: now });
+  console.log(`[HOTELS] ${mapped.length} real hotels sourced for "${cityEn}"`);
+  return mapped;
+}
+
+// Free fallback: OpenStreetMap / Overpass around a coordinate. Used when Places
+// is off or quota-blocked so a trip still shows real hotels. Coverage in small
+// Iraqi governorates is thinner than Google's, but it's real, free data.
+async function fetchHotelsOverpass(lat, lng, radius = 15000, limit = 24) {
+  if (lat == null || lng == null) return [];
+  const overpassQuery = `
+    [out:json][timeout:25];
+    (
+      nwr["tourism"="hotel"](around:${radius},${lat},${lng});
+      nwr["tourism"="guest_house"](around:${radius},${lat},${lng});
+      nwr["tourism"="hostel"](around:${radius},${lat},${lng});
+      nwr["tourism"="motel"](around:${radius},${lat},${lng});
+      nwr["tourism"="resort"](around:${radius},${lat},${lng});
+      nwr["tourism"="apartment"](around:${radius},${lat},${lng});
+    );
+    out center 80;
+  `;
+  const hosts = [
+    'https://overpass-api.de/api/interpreter',
+    'https://overpass.kumi.systems/api/interpreter',
+  ];
+  let response;
+  for (const host of hosts) {
+    try {
+      response = await axios.post(
+        host,
+        new URLSearchParams({ data: overpassQuery }).toString(),
+        {
+          headers: {
+            'Content-Type': 'application/x-www-form-urlencoded',
+            'User-Agent': 'RahhalAI/1.0 (trip planner hotels)',
+          },
+          timeout: 28000,
+        }
+      );
+      break;
+    } catch (e) {
+      console.warn(`[HOTELS] Overpass ${host} failed: ${e.response?.status || e.message}`);
+    }
+  }
+  if (!response) return [];
+
+  const seen = new Set();
+  const hotels = [];
+  for (const el of response.data?.elements || []) {
+    const tags = el.tags;
+    if (!tags) continue;
+    const nameAr = tags['name:ar'] || tags.name || tags['name:en'];
+    if (!nameAr) continue;
+    const plat = el.lat ?? el.center?.lat;
+    const plng = el.lon ?? el.center?.lon;
+    if (plat == null || plng == null) continue;
+    const key = String(nameAr).trim().toLowerCase();
+    if (seen.has(key)) continue;
+    seen.add(key);
+
+    const addressParts = [
+      tags['addr:street'],
+      tags['addr:city'],
+    ].filter(Boolean);
+
+    hotels.push({
+      name: nameAr,
+      name_en: tags['name:en'] || tags.name || '',
+      hotel_type: tags.tourism === 'guest_house' ? 'Guest house'
+        : tags.tourism === 'hostel' ? 'Hostel'
+        : tags.tourism === 'motel' ? 'Motel'
+        : tags.tourism === 'resort' ? 'Resort'
+        : tags.tourism === 'apartment' ? 'Apartment' : 'Hotel',
+      rating: 0,
+      price_per_night_usd: 0,
+      address: addressParts.join('، '),
+      latitude: plat,
+      longitude: plng,
+      phone: tags.phone || tags['contact:phone'] || null,
+      ai_description: 'فندق مسجّل على OpenStreetMap.',
+      image_search_query: `${tags['name:en'] || 'hotel'} ${tags['addr:city'] || ''} building`.trim(),
+      booking_url: tags.website || tags['contact:website'] || null,
+      place_id: null,
+      coords_verified: true,
+    });
+    if (hotels.length >= limit) break;
+  }
+  console.log(`[HOTELS] ${hotels.length} hotels sourced from OSM around ${lat},${lng}`);
+  return hotels;
+}
+
+// Attach a real hotels list to the trip (empty array when none could be found).
+function applyHotels(tripData, hotels) {
+  tripData.hotels = Array.isArray(hotels) ? hotels : [];
+  return tripData;
+}
+
 // ─── POST /api/generate-trip ────────────────────────────────────────────────
 // Resolve a possibly-Arabic destination string to a canonical English city
 // name + country using Google Places (New). Doing this here — rather than
@@ -1530,6 +1790,24 @@ ${countryCode ? `- Country: ${countryCode}` : ''}`;
       restaurantLimit
     );
     parsedData = applyRealRestaurants(parsedData, realRestaurants);
+
+    // Real hotels for the destination (Places first, OSM as a free fallback so
+    // a trip still shows real hotels when the Places quota is gone).
+    const hotelLimit = 12;
+    let hotels = await fetchRealHotels(
+      destinationEn,
+      centerLat || restaurantCentroid?.lat,
+      centerLng || restaurantCentroid?.lng,
+      hotelLimit
+    );
+    if (!hotels.length) {
+      const fbLat = centerLat || restaurantCentroid?.lat || (resolved && resolved.lat);
+      const fbLng = centerLng || restaurantCentroid?.lng || (resolved && resolved.lng);
+      if (fbLat && fbLng) {
+        hotels = await fetchHotelsOverpass(fbLat, fbLng, 15000, hotelLimit);
+      }
+    }
+    parsedData = applyHotels(parsedData, hotels);
 
     return res.status(200).json(parsedData);
   } catch (error) {
@@ -2043,6 +2321,46 @@ app.get('/api/nearby-places', async (req, res) => {
   } catch (error) {
     console.error('[NEARBY] Overpass API error:', error.message);
     return res.status(500).json({ error: 'Failed to fetch nearby places', places: [] });
+  }
+});
+
+// ─── GET /api/hotels ─────────────────────────────────────────────────────────
+// Real hotels for a destination — powers the standalone "browse hotels" screen.
+// Accepts either a `destination` string (resolved to a canonical city + coords)
+// or explicit lat/lng. Falls back to OpenStreetMap when Places is unavailable.
+app.get('/api/hotels', async (req, res) => {
+  const { destination, lat, lng } = req.query;
+
+  if (!destination && (!lat || !lng)) {
+    return res.status(400).json({ error: 'destination or lat/lng required', hotels: [] });
+  }
+
+  try {
+    let cityEn = (destination || '').toString().trim();
+    let cLat = lat ? parseFloat(lat) : null;
+    let cLng = lng ? parseFloat(lng) : null;
+
+    if (destination) {
+      const resolved = await resolveDestinationEN(destination);
+      if (resolved) {
+        cityEn = resolved.cityEn || cityEn;
+        cLat = cLat || resolved.lat;
+        cLng = cLng || resolved.lng;
+      }
+    }
+
+    let hotels = [];
+    if (cityEn) {
+      hotels = await fetchRealHotels(cityEn, cLat, cLng, 24);
+    }
+    if (!hotels.length && cLat && cLng) {
+      hotels = await fetchHotelsOverpass(cLat, cLng, 20000, 24);
+    }
+
+    return res.status(200).json({ hotels });
+  } catch (error) {
+    console.error('[HOTELS] endpoint error:', error.message);
+    return res.status(500).json({ error: 'Failed to fetch hotels', hotels: [] });
   }
 });
 

@@ -19,6 +19,8 @@ import '../../../map/presentation/cubit/map_cubit.dart';
 import '../../../map/presentation/widgets/map_tab.dart';
 import '../../../restaurants/presentation/cubit/restaurants_cubit.dart';
 import '../../../restaurants/presentation/widgets/restaurants_tab.dart';
+import '../../../hotels/presentation/cubit/hotels_cubit.dart';
+import '../../../hotels/presentation/widgets/hotels_tab.dart';
 import '../../../budget/presentation/cubit/budget_cubit.dart';
 import '../../../budget/presentation/widgets/budget_tab.dart';
 import '../../domain/repositories/trip_repository.dart';
@@ -51,6 +53,7 @@ class _TripDashboardScreenState extends State<TripDashboardScreen>
       (Icons.calendar_today_rounded, strings.tabSchedule),
       (Icons.map_rounded, strings.tabMap),
       (Icons.restaurant_rounded, strings.tabRestaurants),
+      (Icons.hotel_rounded, strings.tabHotels),
       (Icons.account_balance_wallet_rounded, strings.tabCost),
     ];
   }
@@ -58,7 +61,7 @@ class _TripDashboardScreenState extends State<TripDashboardScreen>
   @override
   void initState() {
     super.initState();
-    _tabController = TabController(length: 4, vsync: this);
+    _tabController = TabController(length: 5, vsync: this);
     _trip = widget.trip;
     _loadTripIfNeeded();
   }
@@ -119,6 +122,10 @@ class _TripDashboardScreenState extends State<TripDashboardScreen>
         ),
         BlocProvider(
           create: (_) =>
+              sl<HotelsCubit>()..loadHotels(widget.tripId),
+        ),
+        BlocProvider(
+          create: (_) =>
               sl<BudgetCubit>()..loadBudget(widget.tripId),
         ),
       ],
@@ -162,6 +169,7 @@ class _TripDashboardScreenState extends State<TripDashboardScreen>
                     ItineraryTab(tripId: widget.tripId, countryCode: _trip?.countryCode),
                     MapTab(tripId: widget.tripId),
                     RestaurantsTab(tripId: widget.tripId),
+                    HotelsTab(tripId: widget.tripId),
                     BudgetTab(tripId: widget.tripId, countryCode: _trip?.countryCode),
                   ],
                 ),
@@ -264,12 +272,19 @@ class _TripDashboardScreenState extends State<TripDashboardScreen>
                         crossAxisAlignment: CrossAxisAlignment.start,
                         mainAxisSize: MainAxisSize.min,
                         children: [
-                          // Badges row
-                          Row(
+                          // Badges row — Wrap (not Row) so a narrow available
+                          // width (long destination name, small screen, or a
+                          // wide localized app name) drops the duration pill
+                          // to a second line instead of overflowing the hero
+                          // horizontally. A plain Row here previously painted
+                          // the "RenderFlex overflowed" stripe into the header.
+                          Wrap(
+                            spacing: 8,
+                            runSpacing: 6,
+                            crossAxisAlignment: WrapCrossAlignment.center,
                             children: [
                               const AIBadge(),
-                              const SizedBox(width: 8),
-                              if (trip != null) ...[
+                              if (trip != null)
                                 Container(
                                   padding: const EdgeInsets.symmetric(
                                       horizontal: 10, vertical: 4),
@@ -286,7 +301,6 @@ class _TripDashboardScreenState extends State<TripDashboardScreen>
                                     ),
                                   ),
                                 ),
-                              ],
                             ],
                           ),
                           const SizedBox(height: 8),
