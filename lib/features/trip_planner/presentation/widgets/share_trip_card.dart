@@ -42,45 +42,51 @@ class ShareTripCard extends StatelessWidget {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              // Header
+              // Header — every text is Flexible + single-line ellipsis so a
+              // wider language (e.g. English) can never overflow the fixed
+              // 600px card and paint the yellow overflow stripe into the image.
               Row(
-                mainAxisAlignment: MainAxisAlignment.spaceBetween,
                 children: [
-                  Row(
-                    children: [
-                      Container(
-                        padding: const EdgeInsets.all(8),
-                        decoration: BoxDecoration(
-                          shape: BoxShape.circle,
-                          color: AppColors.accentAmber.withValues(alpha: 0.15),
-                        ),
-                        child: const Text('✈️', style: TextStyle(fontSize: 20)),
-                      ),
-                      const SizedBox(width: 12),
-                      Text(
-                        strings.appName,
-                        style: AppTextStyles.headlineLarge.copyWith(
-                          color: AppColors.accentAmber,
-                          fontWeight: FontWeight.bold,
-                        ),
-                      ),
-                    ],
-                  ),
                   Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                    padding: const EdgeInsets.all(8),
                     decoration: BoxDecoration(
-                      color: AppColors.accentTurquoise.withValues(alpha: 0.15),
-                      borderRadius: BorderRadius.circular(20),
-                      border: Border.all(
-                        color: AppColors.accentTurquoise.withValues(alpha: 0.3),
-                        width: 1,
+                      shape: BoxShape.circle,
+                      color: AppColors.accentAmber.withValues(alpha: 0.15),
+                    ),
+                    child: const Text('✈️', style: TextStyle(fontSize: 20)),
+                  ),
+                  const SizedBox(width: 12),
+                  Flexible(
+                    child: Text(
+                      strings.appName,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: AppTextStyles.headlineLarge.copyWith(
+                        color: AppColors.accentAmber,
+                        fontWeight: FontWeight.bold,
                       ),
                     ),
-                    child: Text(
-                      strings.appTagline,
-                      style: AppTextStyles.labelSmall.copyWith(
-                        color: AppColors.accentTurquoise,
-                        fontSize: 10,
+                  ),
+                  const SizedBox(width: 12),
+                  Flexible(
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                      decoration: BoxDecoration(
+                        color: AppColors.accentTurquoise.withValues(alpha: 0.15),
+                        borderRadius: BorderRadius.circular(20),
+                        border: Border.all(
+                          color: AppColors.accentTurquoise.withValues(alpha: 0.3),
+                          width: 1,
+                        ),
+                      ),
+                      child: Text(
+                        strings.appTagline,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: AppTextStyles.labelSmall.copyWith(
+                          color: AppColors.accentTurquoise,
+                          fontSize: 10,
+                        ),
                       ),
                     ),
                   ),
@@ -88,9 +94,12 @@ class ShareTripCard extends StatelessWidget {
               ),
               const Spacer(),
               
-              // Destination Title
+              // Destination Title — cap at two lines so a very long name
+              // can't push the fixed-height card's content past its bounds.
               Text(
                 trip.destination,
+                maxLines: 2,
+                overflow: TextOverflow.ellipsis,
                 style: AppTextStyles.displayLarge.copyWith(
                   fontSize: 38,
                   fontWeight: FontWeight.w900,
@@ -106,23 +115,30 @@ class ShareTripCard extends StatelessWidget {
               ),
               const SizedBox(height: 12),
 
-              // Stats Row
+              // Stats Row — Flexible items so longer localized labels
+              // ("travelers", "days") shrink instead of overflowing.
               Row(
                 children: [
-                  _buildStatItem(
-                    icon: Icons.calendar_today_rounded,
-                    value: '${trip.durationDays} ${strings.planDurationDays}',
+                  Flexible(
+                    child: _buildStatItem(
+                      icon: Icons.calendar_today_rounded,
+                      value: '${trip.durationDays} ${strings.planDurationDays}',
+                    ),
                   ),
-                  const SizedBox(width: 24),
-                  _buildStatItem(
-                    icon: Icons.people_rounded,
-                    value: '${trip.travelersCount} ${strings.statsTravelers}',
+                  const SizedBox(width: 16),
+                  Flexible(
+                    child: _buildStatItem(
+                      icon: Icons.people_rounded,
+                      value: '${trip.travelersCount} ${strings.statsTravelers}',
+                    ),
                   ),
-                  const SizedBox(width: 24),
-                  _buildStatItem(
-                    icon: Icons.account_balance_wallet_rounded,
-                    value: '\$${trip.budgetTotal.toStringAsFixed(0)}',
-                    color: AppColors.accentAmber,
+                  const SizedBox(width: 16),
+                  Flexible(
+                    child: _buildStatItem(
+                      icon: Icons.account_balance_wallet_rounded,
+                      value: '\$${trip.budgetTotal.toStringAsFixed(0)}',
+                      color: AppColors.accentAmber,
+                    ),
                   ),
                 ],
               ),
@@ -167,12 +183,17 @@ class ShareTripCard extends StatelessWidget {
                     ),
                   ),
                   
+                  const SizedBox(width: 8),
                   // Footer branding tag
-                  Text(
-                    '${strings.aiSmartTip.split(' ').first} ✨',
-                    style: AppTextStyles.bodySmall.copyWith(
-                      color: AppColors.textSecondary,
-                      fontStyle: FontStyle.italic,
+                  Flexible(
+                    child: Text(
+                      '${strings.aiSmartTip.split(' ').first} ✨',
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: AppTextStyles.bodySmall.copyWith(
+                        color: AppColors.textSecondary,
+                        fontStyle: FontStyle.italic,
+                      ),
                     ),
                   ),
                 ],
@@ -190,14 +211,19 @@ class ShareTripCard extends StatelessWidget {
     Color color = AppColors.textPrimary,
   }) {
     return Row(
+      mainAxisSize: MainAxisSize.min,
       children: [
         Icon(icon, color: AppColors.accentAmber, size: 18),
         const SizedBox(width: 8),
-        Text(
-          value,
-          style: AppTextStyles.titleMedium.copyWith(
-            color: color,
-            fontWeight: FontWeight.bold,
+        Flexible(
+          child: Text(
+            value,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: AppTextStyles.titleMedium.copyWith(
+              color: color,
+              fontWeight: FontWeight.bold,
+            ),
           ),
         ),
       ],

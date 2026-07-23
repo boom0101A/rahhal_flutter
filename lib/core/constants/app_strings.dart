@@ -347,9 +347,15 @@ class AppStrings {
          'Map saved for offline use ($tiles tiles).');
   String get nearbyFilterAll => _t('الكل', 'All');
   String get nearbyFilterAttractions => _t('معالم', 'Attractions');
+  String get nearbyFilterHistoric => _t('مواقع تاريخية', 'Historic');
   String get nearbyFilterMuseums => _t('متاحف', 'Museums');
   String get nearbyFilterRestaurants => _t('مطاعم', 'Restaurants');
+  String get nearbyFilterCafes => _t('مقاهي', 'Cafés');
   String get nearbyFilterParks => _t('حدائق', 'Parks');
+  String get nearbyFilterShopping => _t('تسوق', 'Shopping');
+  String get nearbyFilterWorship => _t('دور عبادة', 'Worship');
+  String get nearbyFilterViewpoints => _t('مطلات', 'Viewpoints');
+  String get nearbyFilterOther => _t('أخرى', 'Other');
   String get nearbyNoLocationTitle => _t('تعذّر تحديد موقعك', 'Couldn\'t get your location');
   String get nearbyNoLocationSubtitle =>
       _t('فعّل إذن الموقع لاكتشاف الأماكن القريبة منك.',
