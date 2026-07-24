@@ -2,7 +2,18 @@ import 'package:flutter/foundation.dart';
 import 'package:url_launcher/url_launcher.dart';
 
 class MapLauncherService {
-  /// Opens the location in Google Maps with search query & coordinates
+  /// Opens the location in Google Maps, aiming to land on the actual PLACE CARD
+  /// (name, photos, reviews, hours) rather than a bare coordinate pin.
+  ///
+  /// Resolution order, best → worst:
+  ///   1. `place_id` present → the exact business listing (no ambiguity between
+  ///      branches of a chain). Always preferred.
+  ///   2. name + coordinates → a NAME search centered on the coordinates
+  ///      (`/maps/search/<name>/@lat,lng,zoom`). Google resolves this to the
+  ///      real listing at that spot instead of showing raw coordinates — this
+  ///      is the fix for places we don't have a place_id for.
+  ///   3. name only → a plain name search.
+  ///   4. coordinates only → a coordinate pin (last resort — no card).
   static Future<bool> openInGoogleMaps({
     required String placeName,
     String? city,
@@ -11,22 +22,35 @@ class MapLauncherService {
     String? placeId,
   }) async {
     try {
-      final query = [
-        placeName.trim(),
+      final name = placeName.trim();
+      final hasName = name.isNotEmpty;
+      final hasCoords = lat != null && lon != null && lat != 0.0 && lon != 0.0;
+      // Include the city/area only as extra disambiguation for the name search.
+      final labelledQuery = [
+        if (hasName) name,
         if (city != null && city.trim().isNotEmpty) city.trim(),
-      ].join(', ');
+      ].join('، ');
 
       final String googleMapsUrl;
       if (placeId != null && placeId.trim().isNotEmpty) {
-        // A Places ID resolves to the exact business listing — no ambiguity
-        // between branches of the same chain, unlike a name or coordinate.
+        // Exact listing. `query` is required by the Maps URL API; use the name
+        // when we have it, otherwise the coordinates.
+        final q = hasName ? name : (hasCoords ? '$lat,$lon' : name);
         googleMapsUrl =
-            'https://www.google.com/maps/search/?api=1&query=${Uri.encodeComponent(query)}'
+            'https://www.google.com/maps/search/?api=1&query=${Uri.encodeComponent(q)}'
             '&query_place_id=${Uri.encodeComponent(placeId.trim())}';
-      } else if (lat != null && lon != null && lat != 0.0 && lon != 0.0) {
+      } else if (hasName && hasCoords) {
+        // Search by name, biased to the exact coordinates → opens the place
+        // card, not a coordinate pin.
+        googleMapsUrl =
+            'https://www.google.com/maps/search/${Uri.encodeComponent(labelledQuery)}/@$lat,$lon,17z';
+      } else if (hasName) {
+        googleMapsUrl =
+            'https://www.google.com/maps/search/?api=1&query=${Uri.encodeComponent(labelledQuery)}';
+      } else if (hasCoords) {
         googleMapsUrl = 'https://www.google.com/maps/search/?api=1&query=$lat,$lon';
       } else {
-        googleMapsUrl = 'https://www.google.com/maps/search/?api=1&query=${Uri.encodeComponent(query)}';
+        return false;
       }
 
       final Uri uri = Uri.parse(googleMapsUrl);

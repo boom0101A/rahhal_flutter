@@ -103,5 +103,6 @@ flutter:
   assets:
     - assets/images/
     - assets/lottie/
+    - shorebird.yaml
 
   # Fonts are loaded via Google Fonts package (no local fonts needed)

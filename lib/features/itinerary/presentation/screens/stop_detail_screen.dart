@@ -294,6 +294,7 @@ class _StopDetailScreenState extends State<StopDetailScreen> {
                               placeName: stop.displayName(context),
                               lat: stop.latitude,
                               lon: stop.longitude,
+                              placeId: stop.placeId,
                             ),
                             icon: const Icon(Icons.directions_outlined, size: 18),
                             label: Text(

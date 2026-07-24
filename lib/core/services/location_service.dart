@@ -119,6 +119,85 @@ class LocationService {
     }
   }
 
+  /// Fast, coordinates-only location for latency-sensitive screens (e.g.
+  /// "what's around me"). Returns the LAST KNOWN position instantly when the OS
+  /// has one cached, and only falls back to a fresh (but low-accuracy, short-
+  /// timeout) fix otherwise. Crucially it does NOT block on reverse geocoding —
+  /// callers that need a city label should call [reverseGeocode] separately in
+  /// the background so results can render immediately.
+  Future<({double latitude, double longitude})?> getQuickPosition() async {
+    try {
+      final serviceEnabled = await Geolocator.isLocationServiceEnabled();
+      if (!serviceEnabled) return null;
+
+      LocationPermission permission = await Geolocator.checkPermission();
+      if (permission == LocationPermission.denied) {
+        permission = await Geolocator.requestPermission();
+      }
+      if (permission == LocationPermission.denied ||
+          permission == LocationPermission.deniedForever) {
+        return null;
+      }
+
+      // Last known is essentially instant when available.
+      final last = await Geolocator.getLastKnownPosition();
+      if (last != null) {
+        return (latitude: last.latitude, longitude: last.longitude);
+      }
+
+      // No cached fix — get a fresh one, but keep it fast (low accuracy is
+      // plenty for a ~1.5km "nearby" search and returns much sooner).
+      final pos = await Geolocator.getCurrentPosition(
+        locationSettings: const LocationSettings(
+          accuracy: LocationAccuracy.low,
+          timeLimit: Duration(seconds: 6),
+        ),
+      );
+      return (latitude: pos.latitude, longitude: pos.longitude);
+    } catch (e) {
+      debugPrint('LocationService.getQuickPosition error: $e');
+      return null;
+    }
+  }
+
+  /// Best-effort human label ("City, Country") for a coordinate. Safe to call
+  /// in the background after results already render.
+  Future<String> reverseGeocode(double lat, double lon) async {
+    String cityName = '';
+    String countryName = '';
+    if (!kIsWeb) {
+      try {
+        final placemarks = await placemarkFromCoordinates(lat, lon);
+        if (placemarks.isNotEmpty) {
+          final place = placemarks.first;
+          cityName = _firstNonEmpty([
+            place.locality,
+            place.subAdministrativeArea,
+            place.administrativeArea,
+            place.subLocality,
+            place.name,
+          ]);
+          countryName = (place.country ?? '').trim();
+        }
+      } catch (e) {
+        debugPrint('reverseGeocode native error: $e');
+      }
+    }
+    if (cityName.isEmpty || countryName.isEmpty) {
+      final fb = await _fallbackApiGeocode(lat, lon);
+      if (fb != null) {
+        if (cityName.isEmpty) cityName = fb.cityName;
+        if (countryName.isEmpty) countryName = fb.countryName;
+      }
+    }
+    return UserLocationResult(
+      latitude: lat,
+      longitude: lon,
+      cityName: cityName.isEmpty ? 'الموقع الحالي' : cityName,
+      countryName: countryName,
+    ).fullLocationDisplay;
+  }
+
   String _firstNonEmpty(List<String?> items) {
     for (final item in items) {
       if (item != null && item.trim().isNotEmpty && item.trim() != 'الموقع الحالي') {

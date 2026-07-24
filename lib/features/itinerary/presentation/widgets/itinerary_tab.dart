@@ -567,6 +567,7 @@ class _StopTimelineItem extends StatelessWidget {
                                     placeName: stop.displayName(context),
                                     lat: stop.latitude,
                                     lon: stop.longitude,
+                                    placeId: stop.placeId,
                                   ),
                                   child: Container(
                                     padding: const EdgeInsets.symmetric(vertical: 6, horizontal: 8),

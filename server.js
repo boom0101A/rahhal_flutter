@@ -2183,19 +2183,132 @@ app.get('/api/weather', async (req, res) => {
   }
 });
 
-// ─── GET /api/nearby-places ──────────────────────────────────────────────────
-app.get('/api/nearby-places', async (req, res) => {
-  const { lat, lng, radius = 2000 } = req.query;
+// ─── Nearby places (Google Places primary, OSM/Overpass fallback) ────────────
+//
+// Root fix for the three reported problems with "what's around me":
+//   1. Stale / wrong names  → Google Places is the SAME dataset as Google Maps,
+//      so mosque / restaurant / market names are current (OSM was outdated).
+//   2. Places too far        → rankPreference DISTANCE + a small radius returns
+//      the CLOSEST venues first, each carrying an exact distance.
+//   3. Slowness              → Google searchNearby answers in ~1s vs Overpass's
+//      multi-second (sometimes 20s+) queries.
+// Falls back to Overpass (free, no key) when Places is unconfigured / quota-out.
 
-  if (!lat || !lng) {
-    return res.status(400).json({ error: 'lat and lng are required' });
+const NEARBY_FIELD_MASK = [
+  'places.id',
+  'places.displayName',
+  'places.location',
+  'places.types',
+  'places.primaryType',
+  'places.rating',
+  'places.userRatingCount',
+  'places.formattedAddress',
+  'places.shortFormattedAddress',
+].join(',');
+
+// Category buckets — one searchNearby call each so every category the user
+// cares about (food, worship, shopping/grocery/market, attractions) is
+// represented instead of the single closest type filling every slot.
+const NEARBY_GOOGLE_GROUPS = [
+  ['restaurant', 'cafe', 'bakery', 'meal_takeaway', 'coffee_shop', 'fast_food_restaurant'],
+  ['mosque', 'church', 'hindu_temple', 'synagogue'],
+  ['shopping_mall', 'supermarket', 'grocery_store', 'convenience_store', 'department_store', 'clothing_store', 'store', 'market'],
+  ['tourist_attraction', 'museum', 'park', 'art_gallery', 'historical_landmark'],
+];
+
+// Map a Google place's own types → one of the app's filter categories.
+function nearbyCategorizeGoogle(types, primaryType) {
+  const t = new Set([...(types || []), primaryType].filter(Boolean));
+  const has = (...xs) => xs.some((x) => t.has(x));
+  if (has('mosque', 'church', 'hindu_temple', 'synagogue', 'place_of_worship')) return 'worship';
+  if (has('museum', 'art_gallery')) return 'museum';
+  if (has('park', 'national_park')) return 'park';
+  if (has('cafe', 'coffee_shop', 'bakery')) return 'cafe';
+  if (has('restaurant', 'meal_takeaway', 'meal_delivery', 'fast_food_restaurant', 'food')) return 'restaurant';
+  if (has('shopping_mall', 'supermarket', 'grocery_store', 'convenience_store', 'department_store', 'clothing_store', 'store', 'market', 'marketplace')) return 'shopping';
+  if (has('tourist_attraction', 'historical_landmark', 'historical_place')) return 'attraction';
+  return 'other';
+}
+
+async function nearbySearchGoogleGroup(uLat, uLng, radius, lang, includedTypes) {
+  const body = {
+    includedTypes,
+    maxResultCount: 20,
+    rankPreference: 'DISTANCE',
+    languageCode: lang,
+    locationRestriction: {
+      circle: { center: { latitude: uLat, longitude: uLng }, radius },
+    },
+  };
+  const res = await axios.post(
+    'https://places.googleapis.com/v1/places:searchNearby',
+    body,
+    {
+      headers: {
+        'Content-Type': 'application/json',
+        'X-Goog-Api-Key': process.env.GOOGLE_PLACES_API_KEY,
+        'X-Goog-FieldMask': NEARBY_FIELD_MASK,
+      },
+      timeout: 8000,
+    }
+  );
+  return res.data?.places || [];
+}
+
+// Returns a distance-sorted array, or null when Places is unavailable so the
+// caller can fall back to Overpass.
+async function nearbyViaGoogle(lat, lng, radius, lang) {
+  const placesKey = process.env.GOOGLE_PLACES_API_KEY;
+  if (!placesKey || placesKey === 'your_google_places_api_key_here') return null;
+  if (isPlacesQuotaBlocked()) return null;
+
+  const uLat = parseFloat(lat);
+  const uLng = parseFloat(lng);
+
+  const groups = await Promise.all(
+    NEARBY_GOOGLE_GROUPS.map((types) =>
+      nearbySearchGoogleGroup(uLat, uLng, radius, lang, types).catch((e) => {
+        const m = e.response?.data?.error?.message || e.message;
+        tripPlacesBreaker(m);
+        console.warn('[NEARBY] Google group failed:', m);
+        return [];
+      })
+    )
+  );
+
+  const seen = new Set();
+  const places = [];
+  for (const p of groups.flat()) {
+    if (!p.location || !p.displayName?.text) continue;
+    if (seen.has(p.id)) continue;
+    seen.add(p.id);
+    const distance_m = Math.round(
+      haversineDistance(uLat, uLng, p.location.latitude, p.location.longitude) * 1000
+    );
+    places.push({
+      id: p.id,
+      // displayName is already localized to `lang`, so name_en can stay empty
+      // (the app falls back to `name`); the Maps deep-link uses place_id.
+      name: p.displayName.text,
+      name_en: '',
+      lat: p.location.latitude,
+      lng: p.location.longitude,
+      type: nearbyCategorizeGoogle(p.types, p.primaryType),
+      rating: p.rating || 0,
+      address: p.shortFormattedAddress || p.formattedAddress || '',
+      place_id: p.id,
+      distance_m,
+    });
   }
 
-  // Query nodes AND ways (many parks/museums/malls are mapped as ways/areas,
-  // not single nodes) across a broad set of categories. Restaurants are NOT
-  // required to carry a "cuisine" tag any more — that filter dropped most of
-  // them. `out center` gives ways a lat/lng too. We ask for a generous cap so
-  // the balancing step below has enough of every category to choose from.
+  if (!places.length) return null; // nothing usable — let Overpass try
+  places.sort((a, b) => a.distance_m - b.distance_m);
+  return places.slice(0, 40);
+}
+
+// Free fallback: OpenStreetMap / Overpass. Enriched to the same shape (distance,
+// rating:0, place_id:null) and sorted by distance so the UX is consistent.
+async function nearbyViaOverpass(lat, lng, radius) {
   const overpassQuery = `
     [out:json][timeout:25];
     (
@@ -2209,21 +2322,16 @@ app.get('/api/nearby-places', async (req, res) => {
       nwr["amenity"="place_of_worship"](around:${radius},${lat},${lng});
       nwr["leisure"="park"](around:${radius},${lat},${lng});
       nwr["leisure"="garden"](around:${radius},${lat},${lng});
-      nwr["shop"="mall"](around:${radius},${lat},${lng});
+      nwr["shop"](around:${radius},${lat},${lng});
       nwr["amenity"="marketplace"](around:${radius},${lat},${lng});
     );
-    out center 120;
+    out center 150;
   `;
-
-  // Overpass rejects a raw text/plain body (406) and wants the query as a
-  // form-encoded `data=` field with a real User-Agent. Try the main endpoint,
-  // then a mirror, before giving up.
   const overpassHosts = [
     'https://overpass-api.de/api/interpreter',
     'https://overpass.kumi.systems/api/interpreter',
   ];
-
-  const postOverpass = async (host) => axios.post(
+  const postOverpass = (host) => axios.post(
     host,
     new URLSearchParams({ data: overpassQuery }).toString(),
     {
@@ -2231,96 +2339,94 @@ app.get('/api/nearby-places', async (req, res) => {
         'Content-Type': 'application/x-www-form-urlencoded',
         'User-Agent': 'RahhalAI/1.0 (trip planner nearby-places)',
       },
-      // Public Overpass instances usually answer in ~2s but occasionally 504 /
-      // stall under load; give each host a generous window before failing over.
-      timeout: 28000,
-    },
+      timeout: 15000,
+    }
   );
 
+  let response;
+  let lastErr;
+  for (const host of overpassHosts) {
+    try { response = await postOverpass(host); break; }
+    catch (e) { lastErr = e; console.warn(`[NEARBY] ${host} failed: ${e.response?.status || e.message}`); }
+  }
+  if (!response) throw lastErr || new Error('all-overpass-hosts-failed');
+
+  const uLat = parseFloat(lat);
+  const uLng = parseFloat(lng);
+
+  const categorize = (tags) => {
+    if (tags.tourism === 'museum') return 'museum';
+    if (tags.leisure === 'park' || tags.leisure === 'garden') return 'park';
+    if (tags.amenity === 'restaurant') return 'restaurant';
+    if (tags.amenity === 'cafe') return 'cafe';
+    if (tags.shop || tags.amenity === 'marketplace') return 'shopping';
+    if (tags.amenity === 'place_of_worship') return 'worship';
+    if (tags.tourism === 'viewpoint') return 'viewpoint';
+    if (tags.historic) return 'historic';
+    if (tags.tourism === 'attraction' || tags.tourism === 'artwork') return 'attraction';
+    return 'other';
+  };
+
+  const seenNames = new Set();
+  const normalized = [];
+  for (const el of response.data?.elements || []) {
+    const tags = el.tags;
+    if (!tags) continue;
+    const nameAr = tags['name:ar'] || tags.name || tags['name:en'];
+    if (!nameAr) continue;
+    const plat = el.lat ?? el.center?.lat;
+    const plng = el.lon ?? el.center?.lon;
+    if (plat == null || plng == null) continue;
+    const dedupKey = String(nameAr).trim().toLowerCase();
+    if (seenNames.has(dedupKey)) continue;
+    seenNames.add(dedupKey);
+    normalized.push({
+      id: el.id,
+      name: nameAr,
+      name_en: tags['name:en'] || tags.name || '',
+      lat: plat,
+      lng: plng,
+      type: categorize(tags),
+      rating: 0,
+      address: [tags['addr:street'], tags['addr:city']].filter(Boolean).join('، '),
+      place_id: null,
+      distance_m: Math.round(haversineDistance(uLat, uLng, plat, plng) * 1000),
+    });
+  }
+  normalized.sort((a, b) => a.distance_m - b.distance_m);
+  return normalized.slice(0, 40);
+}
+
+// ─── GET /api/nearby-places ──────────────────────────────────────────────────
+app.get('/api/nearby-places', async (req, res) => {
+  const { lat, lng, radius, lang } = req.query;
+  if (!lat || !lng) {
+    return res.status(400).json({ error: 'lat and lng are required' });
+  }
+
+  // Default to a tight radius so results are genuinely "around me". Clamp so a
+  // bad client value can't request the whole city or a 1m circle.
+  const r = Math.min(Math.max(parseInt(radius, 10) || 1500, 300), 15000);
+  const language = lang === 'en' ? 'en' : 'ar';
+
   try {
-    let response;
-    let lastErr;
-    for (const host of overpassHosts) {
-      try {
-        response = await postOverpass(host);
-        break;
-      } catch (e) {
-        lastErr = e;
-        console.warn(`[NEARBY] ${host} failed: ${e.response?.status || e.message}`);
-      }
+    let places = await nearbyViaGoogle(lat, lng, r, language);
+    let source = 'google';
+    if (!places || !places.length) {
+      places = await nearbyViaOverpass(lat, lng, r);
+      source = 'osm';
     }
-    if (!response) throw lastErr || new Error('all-overpass-hosts-failed');
-
-    const elements = response.data?.elements || [];
-
-    // Collapse each OSM element's raw tags into one of our app categories.
-    const categorize = (tags) => {
-      if (tags.tourism === 'museum') return 'museum';
-      if (tags.leisure === 'park' || tags.leisure === 'garden') return 'park';
-      if (tags.amenity === 'restaurant') return 'restaurant';
-      if (tags.amenity === 'cafe') return 'cafe';
-      if (tags.shop === 'mall' || tags.amenity === 'marketplace') return 'shopping';
-      if (tags.amenity === 'place_of_worship') return 'worship';
-      if (tags.tourism === 'viewpoint') return 'viewpoint';
-      if (tags.historic) return 'historic';
-      if (tags.tourism === 'attraction' || tags.tourism === 'artwork') return 'attraction';
-      return 'other';
-    };
-
-    const seenNames = new Set();
-    const normalized = [];
-    for (const el of elements) {
-      const tags = el.tags;
-      if (!tags) continue;
-      const nameAr = tags['name:ar'] || tags.name || tags['name:en'];
-      if (!nameAr) continue;
-
-      // Coordinates: nodes carry lat/lon; ways/relations carry `center`.
-      const plat = el.lat ?? el.center?.lat;
-      const plng = el.lon ?? el.center?.lon;
-      if (plat == null || plng == null) continue;
-
-      // Dedup by normalized name so the same venue mapped twice (e.g. as a
-      // node and a way) or two branches with the same name appear once.
-      const dedupKey = String(nameAr).trim().toLowerCase();
-      if (seenNames.has(dedupKey)) continue;
-      seenNames.add(dedupKey);
-
-      normalized.push({
-        id: el.id,
-        name: nameAr,
-        name_en: tags['name:en'] || tags.name || '',
-        lat: plat,
-        lng: plng,
-        type: categorize(tags),
-      });
-    }
-
-    // Balance the result so every category that exists is represented instead
-    // of the closest one filling all the slots. Round-robin across categories.
-    const byType = new Map();
-    for (const p of normalized) {
-      if (!byType.has(p.type)) byType.set(p.type, []);
-      byType.get(p.type).push(p);
-    }
-    const buckets = [...byType.values()];
-    const places = [];
-    const MAX = 24;
-    let added = true;
-    while (added && places.length < MAX) {
-      added = false;
-      for (const bucket of buckets) {
-        if (bucket.length === 0) continue;
-        places.push(bucket.shift());
-        added = true;
-        if (places.length >= MAX) break;
-      }
-    }
-
-    return res.status(200).json({ places });
+    return res.status(200).json({ places: places || [], source });
   } catch (error) {
-    console.error('[NEARBY] Overpass API error:', error.message);
-    return res.status(500).json({ error: 'Failed to fetch nearby places', places: [] });
+    console.error('[NEARBY] primary path error:', error.message);
+    // Last resort: try Overpass directly before giving up.
+    try {
+      const places = await nearbyViaOverpass(lat, lng, r);
+      return res.status(200).json({ places, source: 'osm' });
+    } catch (e2) {
+      console.error('[NEARBY] Overpass fallback error:', e2.message);
+      return res.status(500).json({ error: 'Failed to fetch nearby places', places: [] });
+    }
   }
 });
 

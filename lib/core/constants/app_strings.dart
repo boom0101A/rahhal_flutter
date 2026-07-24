@@ -377,6 +377,10 @@ class AppStrings {
   String get nearbyEmptySubtitle =>
       _t('لم نعثر على أماكن مميزة في نطاق قريب منك الآن.',
          'We couldn\'t find notable places within range right now.');
+  String nearbyResultsCount(int n) =>
+      _t('$n مكان قريب منك · الأقرب أولاً', '$n places near you · closest first');
+  String get nearbyLocating => _t('جارٍ تحديد موقعك...', 'Finding your location...');
+  String get nearbyDirections => _t('الاتجاهات', 'Directions');
   String get itineraryStopsTitle => _t('محطات اليوم', 'Today\'s Stops');
   String get markVisited => _t('وضع علامة زُرت', 'Mark as visited');
   String get markNotVisited => _t('إلغاء علامة زُرت', 'Mark as not visited');

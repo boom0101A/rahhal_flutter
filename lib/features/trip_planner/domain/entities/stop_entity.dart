@@ -21,6 +21,7 @@ class StopEntity extends Equatable {
   final String? imageUrl;
   final bool bookingRequired;
   final String? bookingUrl;
+  final String? placeId;
   final bool isVisited;
 
   const StopEntity({
@@ -42,6 +43,7 @@ class StopEntity extends Equatable {
     this.imageUrl,
     required this.bookingRequired,
     this.bookingUrl,
+    this.placeId,
     this.isVisited = false,
   });
 
@@ -64,6 +66,7 @@ class StopEntity extends Equatable {
         imageUrl: imageUrl,
         bookingRequired: bookingRequired,
         bookingUrl: bookingUrl,
+        placeId: placeId,
         isVisited: isVisited ?? this.isVisited,
       );
 

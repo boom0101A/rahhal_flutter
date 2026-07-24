@@ -521,6 +521,8 @@ class TripRepositoryImpl implements TripRepository {
         imageUrl: m['image_url'] as String?,
         bookingRequired: (m['booking_required'] as int? ?? 0) == 1,
         bookingUrl: m['booking_url'] as String?,
+        placeId: m['place_id'] as String?,
+        isVisited: (m['is_visited'] as int? ?? 0) == 1,
       );
 
   String _priceTier(double price) {

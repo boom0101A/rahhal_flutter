@@ -11,9 +11,11 @@ import '../../../../shared/widgets/glass_card.dart';
 import '../../../../shared/widgets/shimmer_loader.dart';
 import '../../data/nearby_service.dart';
 
-/// "What's around me now?" — a live discovery screen that uses the user's
-/// current GPS position to list nearby attractions, museums, restaurants and
-/// parks (OpenStreetMap via the server). Each item deep-links into Google Maps.
+/// "What's around me now?" — a live discovery screen. It grabs a fast GPS fix
+/// (last-known position, so results render immediately), then lists the CLOSEST
+/// attractions, mosques, restaurants, markets, groceries and parks around the
+/// user, sourced from Google Places (current names). Each item deep-links into
+/// Google Maps at its exact listing.
 class NearbyScreen extends StatefulWidget {
   const NearbyScreen({super.key});
 
@@ -28,28 +30,50 @@ class _NearbyScreenState extends State<NearbyScreen> {
   List<NearbyPlace> _places = const [];
   String? _locationLabel;
   String _filter = 'all';
+  String _lang = 'ar';
+  bool _started = false;
 
   @override
-  void initState() {
-    super.initState();
-    _load();
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    if (!_started) {
+      _started = true;
+      _lang = AppStrings.of(context).languageCode;
+      _load();
+    }
   }
 
   Future<void> _load() async {
-    setState(() => _status = _Status.loading);
+    setState(() {
+      _status = _Status.loading;
+      _locationLabel = null;
+    });
     try {
-      final loc = await sl<LocationService>().getCurrentLocation();
-      if (loc == null) {
-        setState(() => _status = _Status.noLocation);
+      // 1. Fast, coordinates-only fix — renders results without waiting on a
+      //    high-accuracy GPS lock or reverse geocoding.
+      final pos = await sl<LocationService>().getQuickPosition();
+      if (pos == null) {
+        if (mounted) setState(() => _status = _Status.noLocation);
         return;
       }
-      _locationLabel = loc.fullLocationDisplay;
-      final places = await sl<NearbyService>()
-          .getNearby(lat: loc.latitude, lng: loc.longitude);
+
+      // 2. Fetch nearby immediately (closest first, localized names).
+      final result = await sl<NearbyService>().getNearby(
+        lat: pos.latitude,
+        lng: pos.longitude,
+        lang: _lang,
+      );
       if (!mounted) return;
       setState(() {
-        _places = places;
-        _status = places.isEmpty ? _Status.empty : _Status.ready;
+        _places = result.places;
+        _status = result.places.isEmpty ? _Status.empty : _Status.ready;
+      });
+
+      // 3. Resolve a friendly location label in the background (non-blocking).
+      sl<LocationService>()
+          .reverseGeocode(pos.latitude, pos.longitude)
+          .then((label) {
+        if (mounted) setState(() => _locationLabel = label);
       });
     } catch (_) {
       if (mounted) setState(() => _status = _Status.error);
@@ -58,14 +82,14 @@ class _NearbyScreenState extends State<NearbyScreen> {
 
   static const _filters = [
     'all',
+    'restaurant',
+    'cafe',
+    'shopping',
+    'worship',
     'attraction',
     'historic',
     'museum',
-    'restaurant',
-    'cafe',
     'park',
-    'shopping',
-    'worship',
   ];
 
   List<NearbyPlace> get _filtered => _filter == 'all'
@@ -86,17 +110,23 @@ class _NearbyScreenState extends State<NearbyScreen> {
         _ => s.nearbyFilterOther,
       };
 
-  IconData _iconFor(String type) => switch (type) {
-        'attraction' => Icons.attractions_rounded,
-        'historic' => Icons.account_balance_rounded,
-        'museum' => Icons.museum_rounded,
-        'restaurant' => Icons.restaurant_rounded,
-        'cafe' => Icons.local_cafe_rounded,
-        'park' => Icons.park_rounded,
-        'shopping' => Icons.local_mall_rounded,
-        'worship' => Icons.mosque_rounded,
-        'viewpoint' => Icons.landscape_rounded,
-        _ => Icons.place_rounded,
+  /// One accent color + icon per category, for a coherent, professional look.
+  (Color, IconData) _catStyle(String type) => switch (type) {
+        'restaurant' => (const Color(0xFFE8734A), Icons.restaurant_rounded),
+        'cafe' => (const Color(0xFFB07A3C), Icons.local_cafe_rounded),
+        'worship' => (const Color(0xFF3E9A78), Icons.mosque_rounded),
+        'shopping' => (const Color(0xFF7E6AD6), Icons.local_mall_rounded),
+        'museum' => (const Color(0xFF4A90D9), Icons.museum_rounded),
+        'park' => (const Color(0xFF4CAF6E), Icons.park_rounded),
+        'attraction' => (AppColors.accentAmber, Icons.attractions_rounded),
+        'historic' => (const Color(0xFF9C7B4A), Icons.account_balance_rounded),
+        'viewpoint' => (const Color(0xFF3FA9B5), Icons.landscape_rounded),
+        _ => (AppColors.accentTurquoise, Icons.place_rounded),
+      };
+
+  IconData _filterIcon(String type) => switch (type) {
+        'all' => Icons.explore_rounded,
+        _ => _catStyle(type).$2,
       };
 
   @override
@@ -123,23 +153,7 @@ class _NearbyScreenState extends State<NearbyScreen> {
       ),
       body: Column(
         children: [
-          if (_locationLabel != null && _status == _Status.ready)
-            Padding(
-              padding: const EdgeInsets.fromLTRB(16, 12, 16, 4),
-              child: Row(
-                children: [
-                  const Icon(Icons.my_location_rounded,
-                      size: 16, color: AppColors.accentAmber),
-                  const SizedBox(width: 6),
-                  Expanded(
-                    child: Text('${strings.nearbyAround} $_locationLabel',
-                        style: AppTextStyles.bodySmall,
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis),
-                  ),
-                ],
-              ),
-            ),
+          if (_status == _Status.ready) _buildHeader(strings),
           if (_status == _Status.ready) _buildFilters(strings),
           Expanded(child: _buildBody(strings)),
         ],
@@ -147,40 +161,91 @@ class _NearbyScreenState extends State<NearbyScreen> {
     );
   }
 
+  Widget _buildHeader(AppStrings strings) {
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(16, 12, 16, 6),
+      child: Row(
+        children: [
+          Container(
+            padding: const EdgeInsets.all(8),
+            decoration: BoxDecoration(
+              color: AppColors.accentTurquoise.withValues(alpha: 0.12),
+              borderRadius: BorderRadius.circular(12),
+            ),
+            child: const Icon(Icons.my_location_rounded,
+                size: 18, color: AppColors.accentTurquoise),
+          ),
+          const SizedBox(width: 10),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  _locationLabel ?? strings.nearbyLocating,
+                  style: AppTextStyles.titleSmall,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                ),
+                const SizedBox(height: 2),
+                Text(
+                  strings.nearbyResultsCount(_filtered.length),
+                  style: AppTextStyles.bodySmall.copyWith(
+                      color: AppColors.adaptiveTextSecondary(context)),
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
   Widget _buildFilters(AppStrings strings) {
+    // Only offer filters for categories that actually have results.
+    final present = _places.map((p) => p.type).toSet();
+    final chips =
+        _filters.where((f) => f == 'all' || present.contains(f)).toList();
     return SizedBox(
-      height: 44,
+      height: 46,
       child: ListView(
         scrollDirection: Axis.horizontal,
         padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-        children: _filters.map((f) {
+        children: chips.map((f) {
           final active = _filter == f;
+          final color = f == 'all' ? AppColors.accentAmber : _catStyle(f).$1;
           return GestureDetector(
             onTap: () {
               Haptics.tap();
               setState(() => _filter = f);
             },
-            child: Container(
+            child: AnimatedContainer(
+              duration: const Duration(milliseconds: 180),
               margin: const EdgeInsets.symmetric(horizontal: 4),
-              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 6),
+              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 7),
               decoration: BoxDecoration(
-                color: active
-                    ? AppColors.accentAmber
-                    : AppColors.adaptiveGlass(context),
+                color: active ? color : AppColors.adaptiveGlass(context),
                 borderRadius: BorderRadius.circular(50),
                 border: Border.all(
-                    color: active
-                        ? AppColors.accentAmber
-                        : AppColors.adaptiveBorder(context)),
+                    color: active ? color : AppColors.adaptiveBorder(context)),
               ),
-              child: Center(
-                child: Text(
-                  _filterLabel(f, strings),
-                  style: AppTextStyles.chip.copyWith(
+              child: Row(
+                children: [
+                  Icon(_filterIcon(f),
+                      size: 15,
                       color: active
-                          ? AppColors.bgPrimary
+                          ? Colors.white
                           : AppColors.adaptiveTextSecondary(context)),
-                ),
+                  const SizedBox(width: 6),
+                  Text(
+                    _filterLabel(f, strings),
+                    style: AppTextStyles.chip.copyWith(
+                        color: active
+                            ? Colors.white
+                            : AppColors.adaptiveTextSecondary(context)),
+                  ),
+                ],
               ),
             ),
           );
@@ -212,7 +277,7 @@ class _NearbyScreenState extends State<NearbyScreen> {
               strings.nearbyEmptySubtitle, null);
         }
         return ListView.builder(
-          padding: const EdgeInsets.fromLTRB(16, 8, 16, 24),
+          padding: const EdgeInsets.fromLTRB(16, 6, 16, 24),
           itemCount: items.length,
           itemBuilder: (context, i) => _placeCard(items[i], strings, i),
         );
@@ -220,57 +285,120 @@ class _NearbyScreenState extends State<NearbyScreen> {
   }
 
   Widget _placeCard(NearbyPlace place, AppStrings strings, int index) {
-    final name = strings.languageCode == 'en' && place.nameEn.isNotEmpty
+    final name = _lang == 'en' && place.nameEn.isNotEmpty
         ? place.nameEn
         : place.name;
-    return Container(
-      margin: const EdgeInsets.only(bottom: 12),
+    final (color, icon) = _catStyle(place.type);
+    final distance = place.distanceLabel(_lang);
+
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 12),
       child: GlassCard(
-        padding: const EdgeInsets.all(14),
-        child: Row(
-          children: [
-            Container(
-              width: 44,
-              height: 44,
-              decoration: BoxDecoration(
-                color: AppColors.accentAmber.withValues(alpha: 0.12),
-                borderRadius: BorderRadius.circular(12),
-              ),
-              child: Icon(_iconFor(place.type), color: AppColors.accentAmber),
+        padding: EdgeInsets.zero,
+        child: InkWell(
+          borderRadius: BorderRadius.circular(16),
+          onTap: () => _openMaps(place, name, strings),
+          child: Padding(
+            padding: const EdgeInsets.all(14),
+            child: Row(
+              children: [
+                Container(
+                  width: 52,
+                  height: 52,
+                  decoration: BoxDecoration(
+                    gradient: LinearGradient(
+                      colors: [
+                        color.withValues(alpha: 0.22),
+                        color.withValues(alpha: 0.10),
+                      ],
+                      begin: Alignment.topLeft,
+                      end: Alignment.bottomRight,
+                    ),
+                    borderRadius: BorderRadius.circular(14),
+                    border: Border.all(color: color.withValues(alpha: 0.25)),
+                  ),
+                  child: Icon(icon, color: color, size: 24),
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(name,
+                          style: AppTextStyles.titleMedium,
+                          maxLines: 2,
+                          overflow: TextOverflow.ellipsis),
+                      const SizedBox(height: 4),
+                      Row(
+                        children: [
+                          Text(_filterLabel(place.type, strings),
+                              style: AppTextStyles.bodySmall.copyWith(
+                                  color:
+                                      AppColors.adaptiveTextSecondary(context))),
+                          if (place.hasRating) ...[
+                            const SizedBox(width: 8),
+                            const Icon(Icons.star_rounded,
+                                size: 13, color: AppColors.accentAmber),
+                            const SizedBox(width: 2),
+                            Text(place.rating.toStringAsFixed(1),
+                                style: AppTextStyles.labelSmall.copyWith(
+                                    color: AppColors.accentAmber)),
+                          ],
+                        ],
+                      ),
+                      if (place.address.isNotEmpty) ...[
+                        const SizedBox(height: 3),
+                        Text(place.address,
+                            style: AppTextStyles.labelSmall.copyWith(
+                                color:
+                                    AppColors.adaptiveTextSecondary(context)),
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis),
+                      ],
+                    ],
+                  ),
+                ),
+                const SizedBox(width: 8),
+                Column(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    if (distance.isNotEmpty)
+                      Container(
+                        padding: const EdgeInsets.symmetric(
+                            horizontal: 8, vertical: 3),
+                        decoration: BoxDecoration(
+                          color:
+                              AppColors.accentTurquoise.withValues(alpha: 0.12),
+                          borderRadius: BorderRadius.circular(50),
+                        ),
+                        child: Text(distance,
+                            style: AppTextStyles.labelSmall.copyWith(
+                                color: AppColors.accentTurquoise,
+                                fontWeight: FontWeight.bold)),
+                      ),
+                    const SizedBox(height: 6),
+                    Icon(Icons.directions_rounded,
+                        color: AppColors.accentTurquoise, size: 22),
+                  ],
+                ),
+              ],
             ),
-            const SizedBox(width: 12),
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(name,
-                      style: AppTextStyles.titleMedium,
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis),
-                  const SizedBox(height: 2),
-                  Text(_filterLabel(place.type, strings),
-                      style: AppTextStyles.bodySmall
-                          .copyWith(color: AppColors.adaptiveTextSecondary(context))),
-                ],
-              ),
-            ),
-            IconButton(
-              tooltip: strings.openInMaps,
-              icon: const Icon(Icons.directions_rounded,
-                  color: AppColors.accentTurquoise),
-              onPressed: () {
-                Haptics.tap();
-                MapLauncherService.openInGoogleMaps(
-                  placeName: name,
-                  lat: place.lat,
-                  lon: place.lng,
-                );
-              },
-            ),
-          ],
+          ),
         ),
       ),
-    ).animate().fadeIn(delay: Duration(milliseconds: 40 * index), duration: 300.ms);
+    ).animate().fadeIn(
+        delay: Duration(milliseconds: 35 * index), duration: 280.ms);
+  }
+
+  Future<void> _openMaps(
+      NearbyPlace place, String name, AppStrings strings) async {
+    Haptics.tap();
+    await MapLauncherService.openInGoogleMaps(
+      placeName: name,
+      lat: place.lat,
+      lon: place.lng,
+      placeId: place.placeId,
+    );
   }
 
   Widget _message(String emoji, String title, String subtitle, String? action) {
