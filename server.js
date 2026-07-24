@@ -61,7 +61,11 @@ if (process.env.FIREBASE_SERVICE_ACCOUNT) {
 // Google Places verification cache: key = "name_en|city", value = { lat, lng, address, placeId, rating }
 // TTL: 24 hours — reduces Places API costs significantly
 const placesCache = new Map();
-const PLACES_CACHE_TTL_MS = 24 * 60 * 60 * 1000; // 24 hours
+// 7 days: a city's landmarks, restaurants and hotels don't change day to day,
+// and Places free tiers are per-month — so a longer TTL directly cuts billable
+// calls. (This cache is in-memory, so it also resets whenever the host
+// restarts the container; the TTL is an upper bound, not a guarantee.)
+const PLACES_CACHE_TTL_MS = 7 * 24 * 60 * 60 * 1000; // 7 days
 
 // Circuit breaker for the Places free tier (100 searches/day). Once the daily
 // quota is gone every further call fails anyway, so a whole trip would spend
@@ -554,6 +558,7 @@ app.use('/api/weather', authenticateFirebaseToken);
 app.use('/api/currency', authenticateFirebaseToken);
 app.use('/api/nearby-places', authenticateFirebaseToken);
 app.use('/api/hotels', authenticateFirebaseToken);
+app.use('/api/resolve-place', authenticateFirebaseToken);
 
 // Health Check Endpoints for cloud hosting services (Render / Railway)
 app.get('/', (req, res) => {
@@ -828,8 +833,13 @@ async function verifyPlaceWithGoogle(nameEn, cityEn, centerLat, centerLng) {
         headers: {
           'Content-Type': 'application/json',
           'X-Goog-Api-Key': placesKey,
+          // Lean field mask ON PURPOSE. Adding rating / phone / website would
+          // push this call into the Enterprise SKU (1,000 free events/month)
+          // instead of Pro (5,000) — and this is the most-called endpoint in
+          // the app (once per stop). The app has no `rating` or phone field on
+          // a stop anyway, so those were fetched and thrown away.
           'X-Goog-FieldMask':
-            'places.id,places.displayName,places.location,places.formattedAddress,places.rating,places.nationalPhoneNumber,places.websiteUri',
+            'places.id,places.displayName,places.location,places.formattedAddress',
         },
         timeout: 6000,
       }
@@ -862,14 +872,13 @@ async function verifyPlaceWithGoogle(nameEn, cityEn, centerLat, centerLng) {
       }
     }
 
+    // Only the fields the lean field mask above actually requests. Rating /
+    // phone / website are intentionally absent — see the field mask comment.
     const verified = {
       lat: top.location.latitude,
       lng: top.location.longitude,
       address: top.formattedAddress || '',
       placeId: top.id,
-      rating: top.rating || null,
-      phoneNumber: top.nationalPhoneNumber || null,
-      website: top.websiteUri || null,
     };
     placesCache.set(cacheKey, { data: verified, timestamp: now });
     console.log(`[PLACES] Verified: "${nameEn}" → lat=${verified.lat}, lng=${verified.lng}, placeId=${verified.placeId}`);
@@ -933,7 +942,14 @@ async function verifyAllPlacesInTrip(tripData, destinationEn, userLat, userLng) 
     }
   }
 
-  // Collect all items to verify: { ref to stop/restaurant, nameEn }
+  // Collect the items to verify: STOPS ONLY.
+  //
+  // Restaurants are deliberately NOT verified here: every restaurant in the
+  // parsed trip is replaced wholesale by applyRealRestaurants() a few lines
+  // later with real Places results, so verifying the model's invented ones
+  // first was ~10-15 wasted Places calls per trip. (And if the Places
+  // restaurant search fails, verification would have failed too — same API —
+  // so nothing is lost in that path either.)
   const tasks = [];
 
   if (Array.isArray(tripData.days)) {
@@ -944,16 +960,6 @@ async function verifyAllPlacesInTrip(tripData, destinationEn, userLat, userLng) 
             tasks.push({ item: stop, nameEn: stop.name_en });
           }
         }
-      }
-      if (day.recommended_restaurant && day.recommended_restaurant.name_en) {
-        tasks.push({ item: day.recommended_restaurant, nameEn: day.recommended_restaurant.name_en });
-      }
-    }
-  }
-  if (Array.isArray(tripData.all_restaurants)) {
-    for (const r of tripData.all_restaurants) {
-      if (r.name_en) {
-        tasks.push({ item: r, nameEn: r.name_en });
       }
     }
   }
@@ -975,12 +981,9 @@ async function verifyAllPlacesInTrip(tripData, destinationEn, userLat, userLng) 
           if (verified.placeId) {
             item.place_id = verified.placeId;
           }
-          if (verified.rating !== null && verified.rating !== undefined) {
-            item.rating = verified.rating; // overwrite Claude's guessed rating
-          }
-          if (verified.website) {
-            item.booking_url = item.booking_url || verified.website;
-          }
+          // Note: rating / website are no longer fetched here (see the lean
+          // field mask in verifyPlaceWithGoogle). Stops have no rating field
+          // in the app, and booking_url keeps whatever the model supplied.
           item.coords_verified = true;
         } else {
           // Place not found in Google — flag it but keep Claude's data
@@ -2547,6 +2550,109 @@ app.get('/api/nearby-places', async (req, res) => {
       console.error('[NEARBY] Overpass fallback error:', e2.message);
       return res.status(500).json({ error: 'Failed to fetch nearby places', places: [] });
     }
+  }
+});
+
+// ─── GET /api/resolve-place ──────────────────────────────────────────────────
+//
+// Resolves ONE place (by name + its coordinates) to its exact Google Places
+// listing, so the app can deep-link straight to that place's card instead of a
+// name search that surfaces similarly-named places in other governorates or
+// countries. This is the fix for "the map shows several similar names, not the
+// actual restaurant in this city".
+//
+// Accuracy comes from searchText with a TIGHT locationBias around the place's
+// own coordinates, plus a hard distance reject: a candidate further than
+// RESOLVE_MAX_KM from those coordinates is NOT this place, so we return null
+// rather than deep-linking to the wrong branch/city.
+const RESOLVE_MAX_KM = 12;
+
+app.get('/api/resolve-place', async (req, res) => {
+  const { name, lat, lng, city } = req.query;
+  if (!name || !lat || !lng) {
+    return res.status(400).json({ error: 'name, lat and lng are required', place_id: null });
+  }
+
+  const placesKey = process.env.GOOGLE_PLACES_API_KEY;
+  if (!placesKey || placesKey === 'your_google_places_api_key_here' || isPlacesQuotaBlocked()) {
+    return res.status(200).json({ place_id: null, reason: 'places-unavailable' });
+  }
+
+  const pLat = parseFloat(lat);
+  const pLng = parseFloat(lng);
+  if (isNaN(pLat) || isNaN(pLng)) {
+    return res.status(400).json({ error: 'invalid coordinates', place_id: null });
+  }
+
+  const cacheKey = `__resolve__|${String(name).toLowerCase().trim()}|${pLat.toFixed(4)},${pLng.toFixed(4)}`;
+  const now = Date.now();
+  if (placesCache.has(cacheKey)) {
+    const cached = placesCache.get(cacheKey);
+    if (now - cached.timestamp < PLACES_CACHE_TTL_MS) {
+      return res.status(200).json(cached.data);
+    }
+    placesCache.delete(cacheKey);
+  }
+
+  try {
+    const searchRes = await axios.post(
+      'https://places.googleapis.com/v1/places:searchText',
+      {
+        textQuery: city ? `${name} ${city}` : String(name),
+        // Tight circle around the place's own coordinates — this is what stops
+        // a same-named place in another city from being returned.
+        locationBias: {
+          circle: {
+            center: { latitude: pLat, longitude: pLng },
+            radius: RESOLVE_MAX_KM * 1000,
+          },
+        },
+        maxResultCount: 5,
+      },
+      {
+        headers: {
+          'Content-Type': 'application/json',
+          'X-Goog-Api-Key': placesKey,
+          'X-Goog-FieldMask': 'places.id,places.displayName,places.location,places.formattedAddress',
+        },
+        timeout: 7000,
+      }
+    );
+
+    // Pick the CLOSEST candidate to the given coordinates, then verify it's
+    // actually near them. locationBias is only a hint, so this check is what
+    // guarantees we never deep-link to a different city's namesake.
+    let best = null;
+    let bestKm = Infinity;
+    for (const p of searchRes.data?.places || []) {
+      if (!p.location) continue;
+      const d = haversineDistance(pLat, pLng, p.location.latitude, p.location.longitude);
+      if (d < bestKm) { bestKm = d; best = p; }
+    }
+
+    const payload = (best && bestKm <= RESOLVE_MAX_KM)
+      ? {
+          place_id: best.id,
+          name: best.displayName?.text || String(name),
+          address: best.formattedAddress || '',
+          lat: best.location.latitude,
+          lng: best.location.longitude,
+          distance_km: Number(bestKm.toFixed(2)),
+        }
+      : { place_id: null, reason: 'no-match-near-coordinates' };
+
+    placesCache.set(cacheKey, { data: payload, timestamp: now });
+    if (payload.place_id) {
+      console.log(`[RESOLVE-PLACE] "${name}" → ${payload.place_id} (${payload.distance_km}km)`);
+    } else {
+      console.warn(`[RESOLVE-PLACE] No match near coordinates for "${name}"`);
+    }
+    return res.status(200).json(payload);
+  } catch (err) {
+    const msg = err.response?.data?.error?.message || err.message;
+    tripPlacesBreaker(msg);
+    console.error('[RESOLVE-PLACE] error:', msg);
+    return res.status(200).json({ place_id: null, reason: 'error' });
   }
 });
 

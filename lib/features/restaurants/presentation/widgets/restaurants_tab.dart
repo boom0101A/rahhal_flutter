@@ -352,6 +352,7 @@ class _MapLocationButton extends StatelessWidget {
       placeName: restaurant.nameEn?.isNotEmpty == true
           ? restaurant.nameEn!
           : restaurant.name,
+      city: restaurant.address,
       lat: restaurant.latitude,
       lon: restaurant.longitude,
       placeId: restaurant.placeId,

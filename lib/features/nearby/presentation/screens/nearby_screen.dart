@@ -32,6 +32,8 @@ class _NearbyScreenState extends State<NearbyScreen> {
   String _filter = 'all';
   String _lang = 'ar';
   bool _started = false;
+  /// Id of the place whose exact Google listing is currently being resolved.
+  String? _openingId;
 
   @override
   void didChangeDependencies() {
@@ -297,7 +299,8 @@ class _NearbyScreenState extends State<NearbyScreen> {
         padding: EdgeInsets.zero,
         child: InkWell(
           borderRadius: BorderRadius.circular(16),
-          onTap: () => _openMaps(place, name, strings),
+          // Ignore repeat taps while this card's listing is being resolved.
+          onTap: _openingId != null ? null : () => _openMaps(place, name, strings),
           child: Padding(
             padding: const EdgeInsets.all(14),
             child: Row(
@@ -377,8 +380,18 @@ class _NearbyScreenState extends State<NearbyScreen> {
                                 fontWeight: FontWeight.bold)),
                       ),
                     const SizedBox(height: 6),
-                    Icon(Icons.directions_rounded,
-                        color: AppColors.accentTurquoise, size: 22),
+                    if (_openingId == place.id)
+                      const SizedBox(
+                        width: 22,
+                        height: 22,
+                        child: CircularProgressIndicator(
+                          strokeWidth: 2,
+                          color: AppColors.accentTurquoise,
+                        ),
+                      )
+                    else
+                      const Icon(Icons.directions_rounded,
+                          color: AppColors.accentTurquoise, size: 22),
                   ],
                 ),
               ],
@@ -393,12 +406,21 @@ class _NearbyScreenState extends State<NearbyScreen> {
   Future<void> _openMaps(
       NearbyPlace place, String name, AppStrings strings) async {
     Haptics.tap();
-    await MapLauncherService.openInGoogleMaps(
-      placeName: name,
-      lat: place.lat,
-      lon: place.lng,
-      placeId: place.placeId,
-    );
+    // Places sourced from OSM carry no place_id, so MapLauncherService resolves
+    // the exact Google listing first — that takes a moment, and without this
+    // indicator the tap looks like it did nothing.
+    setState(() => _openingId = place.id);
+    try {
+      await MapLauncherService.openInGoogleMaps(
+        placeName: name,
+        city: place.address,
+        lat: place.lat,
+        lon: place.lng,
+        placeId: place.placeId,
+      );
+    } finally {
+      if (mounted) setState(() => _openingId = null);
+    }
   }
 
   Widget _message(String emoji, String title, String subtitle, String? action) {

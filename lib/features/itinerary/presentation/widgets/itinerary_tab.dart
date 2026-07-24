@@ -565,6 +565,7 @@ class _StopTimelineItem extends StatelessWidget {
                                 child: GestureDetector(
                                   onTap: () => MapLauncherService.openInGoogleMaps(
                                     placeName: stop.displayName(context),
+                                    city: stop.address,
                                     lat: stop.latitude,
                                     lon: stop.longitude,
                                     placeId: stop.placeId,

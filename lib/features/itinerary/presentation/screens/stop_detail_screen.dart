@@ -292,6 +292,7 @@ class _StopDetailScreenState extends State<StopDetailScreen> {
                           child: ElevatedButton.icon(
                             onPressed: () => MapLauncherService.openInGoogleMaps(
                               placeName: stop.displayName(context),
+                              city: stop.address,
                               lat: stop.latitude,
                               lon: stop.longitude,
                               placeId: stop.placeId,

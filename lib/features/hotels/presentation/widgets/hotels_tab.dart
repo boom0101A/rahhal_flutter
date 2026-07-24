@@ -205,6 +205,7 @@ class _MapLocationButton extends StatelessWidget {
     final launched = await MapLauncherService.openInGoogleMaps(
       placeName:
           hotel.nameEn?.isNotEmpty == true ? hotel.nameEn! : hotel.name,
+      city: hotel.address,
       lat: hotel.latitude,
       lon: hotel.longitude,
       placeId: hotel.placeId,

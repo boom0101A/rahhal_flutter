@@ -8,6 +8,7 @@ import '../../features/currency/data/currency_service.dart';
 import '../../features/nearby/data/nearby_service.dart';
 import '../services/notification_service.dart';
 import '../services/location_service.dart';
+import '../services/place_resolver_service.dart';
 import '../database/database_helper.dart';
 import '../../features/trip_planner/data/trip_repository_impl.dart';
 import '../../features/trip_planner/domain/repositories/trip_repository.dart';
@@ -117,6 +118,8 @@ Future<void> setupDependencies() async {
   sl.registerLazySingleton<CurrencyService>(() => CurrencyService());
 
   sl.registerLazySingleton<NearbyService>(() => NearbyService());
+
+  sl.registerLazySingleton<PlaceResolverService>(() => PlaceResolverService());
 
   sl.registerLazySingleton<ChatRepository>(
     () => ChatRepositoryImpl(
