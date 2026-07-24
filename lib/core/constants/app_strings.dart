@@ -152,6 +152,8 @@ class AppStrings {
 
   // Hotels
   String get hotelsTitle => _t('الفنادق القريبة', 'Nearby Hotels');
+  String get callAction => _t('اتصال', 'Call');
+  String get hotelPricePerNight => _t('السعر/الليلة', 'Price/Night');
   String get noHotelsFound => _t(
       'لم نعثر على فنادق موثّقة لهذه الوجهة',
       'No verified hotels found for this destination');

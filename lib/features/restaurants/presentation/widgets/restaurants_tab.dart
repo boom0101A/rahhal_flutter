@@ -11,6 +11,7 @@ import '../../../../../shared/widgets/glass_card.dart';
 import '../../../../../shared/widgets/cached_hero_image.dart';
 import '../../../../../shared/widgets/shimmer_loader.dart';
 import '../cubit/restaurants_cubit.dart';
+import 'restaurant_detail_sheet.dart';
 import '../../domain/entities/restaurant_entity.dart';
 import '../../../../../shared/widgets/app_error_widget.dart';
 import '../../../favorites/presentation/cubit/favorites_cubit.dart';
@@ -159,7 +160,9 @@ class _RestaurantCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return GlassCard(
+    return GestureDetector(
+      onTap: () => RestaurantDetailSheet.show(context, restaurant),
+      child: GlassCard(
       padding: const EdgeInsets.all(16),
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -320,6 +323,7 @@ class _RestaurantCard extends StatelessWidget {
             ),
           ),
         ],
+      ),
       ),
     )
         .animate()

@@ -372,6 +372,99 @@ function lookupCityDictionary(rawDestination) {
   return null;
 }
 
+// City-center coordinates for every Iraqi governorate capital + major cities.
+// Used as the AUTHORITATIVE anchor for a trip's destination so stop/restaurant
+// verification (and the "same-named place in another governorate" rejection)
+// is measured from the REAL city center — not the average of the AI's stops,
+// which is skewed when the model hallucinates a place in a neighbouring
+// governorate. Keyed by a lowercase substring that appears in the dictionary's
+// English name (e.g. "Mosul (Nineveh)" matches "mosul" and "nineveh").
+const IQ_CITY_CENTERS = {
+  baghdad: { lat: 33.3152, lng: 44.3661 },
+  basra: { lat: 30.5085, lng: 47.7804 },
+  mosul: { lat: 36.3350, lng: 43.1189 },
+  nineveh: { lat: 36.3350, lng: 43.1189 },
+  erbil: { lat: 36.1901, lng: 44.0091 },
+  sulaymaniyah: { lat: 35.5556, lng: 45.4351 },
+  kirkuk: { lat: 35.4681, lng: 44.3922 },
+  najaf: { lat: 31.9960, lng: 44.3150 },
+  karbala: { lat: 32.6160, lng: 44.0242 },
+  hillah: { lat: 32.4637, lng: 44.4200 },
+  babil: { lat: 32.4637, lng: 44.4200 },
+  babylon: { lat: 32.4637, lng: 44.4200 },
+  nasiriyah: { lat: 31.0540, lng: 46.2570 },
+  'dhi qar': { lat: 31.0540, lng: 46.2570 },
+  amarah: { lat: 31.8356, lng: 47.1450 },
+  maysan: { lat: 31.8356, lng: 47.1450 },
+  kut: { lat: 32.5126, lng: 45.8181 },
+  wasit: { lat: 32.5126, lng: 45.8181 },
+  diwaniyah: { lat: 31.9887, lng: 44.9247 },
+  qadisiyyah: { lat: 31.9887, lng: 44.9247 },
+  samawah: { lat: 31.3090, lng: 45.2810 },
+  muthanna: { lat: 31.3090, lng: 45.2810 },
+  ramadi: { lat: 33.4258, lng: 43.3000 },
+  anbar: { lat: 33.4258, lng: 43.3000 },
+  fallujah: { lat: 33.3487, lng: 43.7686 },
+  baqubah: { lat: 33.7500, lng: 44.6440 },
+  diyala: { lat: 33.7500, lng: 44.6440 },
+  tikrit: { lat: 34.6100, lng: 43.6790 },
+  'salah': { lat: 34.6100, lng: 43.6790 }, // Salah al-Din
+  samarra: { lat: 34.1959, lng: 43.8742 },
+  dohuk: { lat: 36.8674, lng: 42.9880 },
+  duhok: { lat: 36.8674, lng: 42.9880 },
+  halabja: { lat: 35.1778, lng: 45.9861 },
+  zakho: { lat: 37.1436, lng: 42.6820 },
+};
+
+// Best-effort city-center lookup by (English) city name substring.
+function iqCenterFor(cityEn) {
+  if (!cityEn) return null;
+  const s = cityEn.toLowerCase();
+  for (const [key, coord] of Object.entries(IQ_CITY_CENTERS)) {
+    if (s.includes(key)) return coord;
+  }
+  return null;
+}
+
+// How far a stop may sit from the resolved destination center before it's
+// treated as belonging to a DIFFERENT governorate and dropped from the trip.
+// Iraqi governorates are compact and close together (neighbouring capitals are
+// ~60-110km apart), so a generous city-scale radius keeps the whole metro area
+// while rejecting a park/museum the model placed in the next governorate over.
+const GOVERNORATE_RADIUS_KM = 70;
+
+// Remove stops (and per-day recommended restaurants) whose coordinates fall
+// outside the destination governorate. Only runs when we have a TRUSTED center
+// (user GPS, a resolved Places coordinate, or an IQ city-center) — never off a
+// possibly-skewed stop centroid. Re-indexes the remaining stops.
+function pruneOutOfGovernorateStops(tripData, centerLat, centerLng, maxKm) {
+  if (centerLat == null || centerLng == null) return tripData;
+  const cLat = parseFloat(centerLat);
+  const cLng = parseFloat(centerLng);
+  if (isNaN(cLat) || isNaN(cLng)) return tripData;
+
+  let dropped = 0;
+  for (const day of tripData.days || []) {
+    if (Array.isArray(day.stops)) {
+      day.stops = day.stops.filter((stop) => {
+        const lat = parseFloat(stop.latitude);
+        const lng = parseFloat(stop.longitude);
+        if (isNaN(lat) || isNaN(lng)) return true; // no coords to judge — keep
+        const distKm = haversineDistance(cLat, cLng, lat, lng);
+        if (distKm > maxKm) {
+          console.warn(`[GOVERNORATE] Dropped "${stop.name_en || stop.name}" — ${distKm.toFixed(0)}km from center (outside governorate)`);
+          dropped++;
+          return false;
+        }
+        return true;
+      });
+      day.stops.forEach((s, i) => { s.order_index = i; });
+    }
+  }
+  if (dropped) console.log(`[GOVERNORATE] Pruned ${dropped} out-of-governorate stop(s).`);
+  return tripData;
+}
+
 const app = express();
 const PORT = process.env.PORT || 3000;
 
@@ -721,7 +814,9 @@ async function verifyPlaceWithGoogle(nameEn, cityEn, centerLat, centerLng) {
       body.locationBias = {
         circle: {
           center: { latitude: parseFloat(centerLat), longitude: parseFloat(centerLng) },
-          radius: 50000, // 50km radius bias
+          // City-scale bias so a same-named place in a neighbouring governorate
+          // isn't returned as the top match (Iraqi governorates are close).
+          radius: 35000,
         },
       };
     }
@@ -1388,7 +1483,16 @@ async function resolveDestinationEN(rawDestination) {
   //    spending any Google Places quota).
   const dict = lookupCityDictionary(rawDestination);
   if (dict) {
-    return { cityEn: dict.en, country: dict.country, countryCode: dict.code, lat: null, lng: null };
+    // Attach the real city-center coordinates (Iraqi governorates) so the trip
+    // is verified against a TRUSTED anchor rather than the AI's stop centroid.
+    const center = iqCenterFor(dict.en);
+    return {
+      cityEn: dict.en,
+      country: dict.country,
+      countryCode: dict.code,
+      lat: center?.lat ?? null,
+      lng: center?.lng ?? null,
+    };
   }
 
   // 2. Latin-script input (any non-Arabic city worldwide): pass it straight
@@ -1471,6 +1575,14 @@ app.post('/api/generate-trip', async (req, res) => {
     ? `\nAUTHORITATIVE DESTINATION: The user's destination "${destination}" refers to the city "${resolved.cityEn}" in ${resolved.country}. You MUST build the ENTIRE itinerary for "${resolved.cityEn}, ${resolved.country}" and nothing else. NEVER substitute a different or more famous city. Every stop and restaurant must be a real place physically located in ${resolved.cityEn}. Set destination_en to "${resolved.cityEn}".\n`
     : '';
 
+  // When we know the destination's real city-center coordinates (Iraqi
+  // governorate or a Places-resolved city), anchor the model so it can't place
+  // parks/museums/stops in a neighbouring governorate. Every coordinate it
+  // emits must sit within GOVERNORATE_RADIUS_KM of this point.
+  const centerAnchor = (resolved && resolved.lat != null && resolved.lng != null)
+    ? `\nCITY CENTER ANCHOR: The center of ${resolved.cityEn} is at latitude ${resolved.lat}, longitude ${resolved.lng}. EVERY stop, park, museum, market and restaurant MUST have coordinates within ${GOVERNORATE_RADIUS_KM}km of this exact point — they must all lie inside ${resolved.cityEn} and its governorate, NOT a neighbouring governorate. Any place whose real location is in a different governorate is FORBIDDEN.\n`
+    : '';
+
   // ── Build GPS context string for the AI ─────────────────────────────────
   // When GPS is available, this dramatically improves location accuracy
   const hasGPS = userLat && userLng &&
@@ -1524,7 +1636,7 @@ EVERY restaurant (recommended_restaurant AND all_restaurants) MUST be physically
 RULE 5 — ACCURATE COORDINATES:
 Every latitude/longitude must be the actual GPS coordinates of that specific real place, located within ${destination}. Google Maps-verifiable coordinates only.
 ${hasGPS ? `All coordinates MUST be within 50km of lat=${parseFloat(userLat).toFixed(4)}, lng=${parseFloat(userLng).toFixed(4)}.` : ''}
-
+${centerAnchor}
 ${gpsContext}
 
 Your output MUST be a single, valid, and minified JSON object matching the schema below.
@@ -1776,6 +1888,14 @@ ${countryCode ? `- Country: ${countryCode}` : ''}`;
     const centerLat = userLat || (resolved && resolved.lat) || null;
     const centerLng = userLng || (resolved && resolved.lng) || null;
     parsedData = await verifyAllPlacesInTrip(parsedData, destinationEn, centerLat, centerLng);
+
+    // Drop any stop that verification left sitting in a DIFFERENT governorate
+    // (the reported bug: a Baghdad trip showing a park/museum from Karbala or
+    // Babil). Only runs when we trust the center (GPS or a real city-center
+    // coordinate) — never off a possibly-skewed stop centroid.
+    parsedData = pruneOutOfGovernorateStops(
+      parsedData, centerLat, centerLng, GOVERNORATE_RADIUS_KM
+    );
 
     // Replace the model's invented restaurants with real, currently-open ones
     // from Places. Runs AFTER verification so the stop centroid is available as

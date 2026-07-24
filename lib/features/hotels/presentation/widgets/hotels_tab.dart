@@ -11,6 +11,7 @@ import '../../../../../shared/widgets/cached_hero_image.dart';
 import '../../../../../shared/widgets/shimmer_loader.dart';
 import '../../../../../shared/widgets/app_error_widget.dart';
 import '../cubit/hotels_cubit.dart';
+import 'hotel_detail_sheet.dart';
 import '../../domain/entities/hotel_entity.dart';
 
 /// Lists the real, currently-operating hotels the server sourced for this trip's
@@ -93,7 +94,9 @@ class _HotelCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final strings = AppStrings.of(context);
-    return GlassCard(
+    return GestureDetector(
+      onTap: () => HotelDetailSheet.show(context, hotel),
+      child: GlassCard(
       padding: const EdgeInsets.all(16),
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -174,6 +177,7 @@ class _HotelCard extends StatelessWidget {
             ),
           ),
         ],
+      ),
       ),
     )
         .animate()
