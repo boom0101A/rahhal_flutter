@@ -180,6 +180,7 @@ class RestaurantResponse {
   final String? imageSearchQuery;
   final String? openingHours;
   final String? placeId;
+  final String? phone;
   final bool coordsVerified;
 
   const RestaurantResponse({
@@ -196,6 +197,7 @@ class RestaurantResponse {
     this.imageSearchQuery,
     this.openingHours,
     this.placeId,
+    this.phone,
     this.coordsVerified = false,
   });
 
@@ -214,6 +216,7 @@ class RestaurantResponse {
       imageSearchQuery: json['image_search_query'] as String?,
       openingHours: json['opening_hours'] as String?,
       placeId: json['place_id'] as String?,
+      phone: json['phone'] as String?,
       coordsVerified: json['coords_verified'] as bool? ?? false,
     );
   }

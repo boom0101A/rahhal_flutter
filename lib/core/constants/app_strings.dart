@@ -68,7 +68,14 @@ class AppStrings {
   String get planTitle => _t('خطط رحلتي', 'Plan My Trip');
   String get planAIGreeting => _t('مرحباً! أخبرني عن رحلتك القادمة 🌍', 'Welcome! Tell me about your next trip 🌍');
   String get planDestination => _t('إلى أين تريد السفر؟', 'Where do you want to travel?');
-  String get planDestinationHint => _t('اكتب اسم المدينة...', 'Type city name...');
+  String get planDestinationHint =>
+      _t('ابحث عن مدينة أو محافظة أو معلم سياحي...',
+         'Search a city, governorate or landmark...');
+  String get searchNoResults =>
+      _t('لا توجد نتائج مطابقة', 'No matching results');
+  String get searchKindGovernorate => _t('محافظة', 'Governorate');
+  String get searchKindCity => _t('مدينة', 'City');
+  String get searchKindLandmark => _t('معلم سياحي', 'Landmark');
   String get planDuration => _t('مدة الرحلة', 'Trip Duration');
   String get planDurationDays => _t('أيام', 'days');
   String get planBudget => _t('الميزانية', 'Budget');
@@ -153,6 +160,16 @@ class AppStrings {
   // Hotels
   String get hotelsTitle => _t('الفنادق القريبة', 'Nearby Hotels');
   String get callAction => _t('اتصال', 'Call');
+
+  // Booking & contact
+  String get bookingSectionTitle => _t('الحجز والتواصل', 'Booking & Contact');
+  String get bookingWhatsApp => _t('واتساب', 'WhatsApp');
+  String get bookingOpenMaps => _t('الخرائط', 'Maps');
+  String get bookingNoContact => _t(
+      'لا تتوفر معلومات تواصل لهذا المكان — يمكنك فتحه في الخرائط للاطلاع على تفاصيله.',
+      'No contact details available for this place — open it in Maps to see more.');
+  String get bookingLaunchFailed =>
+      _t('تعذّر فتح التطبيق', 'Couldn\'t open the app');
   String get hotelPricePerNight => _t('السعر/الليلة', 'Price/Night');
   String get noHotelsFound => _t(
       'لم نعثر على فنادق موثّقة لهذه الوجهة',
@@ -408,22 +425,9 @@ class AppStrings {
     ['Istanbul', 'Dubai', 'Paris', 'Cairo', 'London', 'Tokyo', 'Rome', 'Marrakech']
   );
 
-  String get iraqiGovernoratesLabel => _t('محافظات العراق', 'Iraqi Governorates');
-
-  // All 19 Iraqi governorates (by their common capital/name, which the
-  // destination resolver maps to real places). Tapping one plans a trip for it.
-  List<String> get iraqiGovernorates => _t(
-    [
-      'بغداد', 'البصرة', 'الموصل', 'أربيل', 'كركوك', 'النجف', 'كربلاء',
-      'الحلة', 'الرمادي', 'الناصرية', 'العمارة', 'الديوانية', 'الكوت',
-      'السماوة', 'بعقوبة', 'تكريت', 'دهوك', 'السليمانية', 'حلبجة',
-    ],
-    [
-      'Baghdad', 'Basra', 'Mosul', 'Erbil', 'Kirkuk', 'Najaf', 'Karbala',
-      'Hillah', 'Ramadi', 'Nasiriyah', 'Amarah', 'Diwaniyah', 'Kut',
-      'Samawah', 'Baqubah', 'Tikrit', 'Duhok', 'Sulaymaniyah', 'Halabja',
-    ],
-  );
+  // The Iraqi-governorates quick-pick row was replaced by the offline smart
+  // search in the destination field (lib/core/data/iraq_places.dart), which
+  // covers every governorate, city, district and landmark — not just 19 chips.
 
   // Stop types & category names
   String categoryName(String category) {

@@ -21,6 +21,7 @@ class RestaurantEntity extends Equatable {
   final String? aiDescription;
   final bool isRecommended;
   final String? placeId;
+  final String? phone;
   final bool coordsVerified;
 
   const RestaurantEntity({
@@ -42,6 +43,7 @@ class RestaurantEntity extends Equatable {
     this.aiDescription,
     required this.isRecommended,
     this.placeId,
+    this.phone,
     this.coordsVerified = false,
   });
 
@@ -78,6 +80,6 @@ class RestaurantEntity extends Equatable {
   List<Object?> get props => [
         id, tripId, dayId, name, nameEn, cuisineType, halalCertified, rating,
         pricePerPerson, priceTier, address, latitude, longitude, openingHours,
-        imageUrl, aiDescription, isRecommended, placeId, coordsVerified,
+        imageUrl, aiDescription, isRecommended, placeId, phone, coordsVerified,
       ];
 }

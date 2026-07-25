@@ -17,7 +17,7 @@ class DatabaseHelper {
 
   // ─── Init ─────────────────────────────────────────────────────────────────
 
-  static const int _dbVersion = 7;
+  static const int _dbVersion = 8;
   static const String _dbName = 'rahhal_ai.db';
 
   static final Map<int, List<String>> _migrations = {
@@ -52,6 +52,11 @@ class DatabaseHelper {
     7: [
       _createHotelsTable,
       'CREATE INDEX IF NOT EXISTS idx_hotels_trip_id ON hotels(trip_id)',
+    ],
+    // Restaurant phone number — powers the booking & contact section
+    // (call / WhatsApp). Hotels already carry one.
+    8: [
+      'ALTER TABLE restaurants ADD COLUMN phone TEXT;',
     ],
   };
 
@@ -206,7 +211,8 @@ class DatabaseHelper {
       ai_description    TEXT,
       is_recommended    INTEGER DEFAULT 0,
       place_id          TEXT,
-      coords_verified   INTEGER DEFAULT 0
+      coords_verified   INTEGER DEFAULT 0,
+      phone             TEXT
     )
   ''';
 

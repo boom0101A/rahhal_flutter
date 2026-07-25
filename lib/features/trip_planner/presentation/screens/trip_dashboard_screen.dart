@@ -168,8 +168,12 @@ class _TripDashboardScreenState extends State<TripDashboardScreen>
                   children: [
                     ItineraryTab(tripId: widget.tripId, countryCode: _trip?.countryCode),
                     MapTab(tripId: widget.tripId),
-                    RestaurantsTab(tripId: widget.tripId),
-                    HotelsTab(tripId: widget.tripId),
+                    RestaurantsTab(
+                        tripId: widget.tripId,
+                        countryCode: _trip?.countryCode),
+                    HotelsTab(
+                        tripId: widget.tripId,
+                        countryCode: _trip?.countryCode),
                     BudgetTab(tripId: widget.tripId, countryCode: _trip?.countryCode),
                   ],
                 ),

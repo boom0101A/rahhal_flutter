@@ -1,10 +1,8 @@
 import 'package:flutter/material.dart';
-import 'package:url_launcher/url_launcher.dart';
 import '../../../../../core/constants/app_colors.dart';
 import '../../../../../core/constants/app_strings.dart';
 import '../../../../../core/constants/app_text_styles.dart';
-import '../../../../../core/services/map_launcher_service.dart';
-import '../../../../../core/utils/haptics.dart';
+import '../../../../../shared/widgets/booking_contact_section.dart';
 import '../../../../../shared/widgets/cached_hero_image.dart';
 import '../../domain/entities/hotel_entity.dart';
 
@@ -14,14 +12,19 @@ import '../../domain/entities/hotel_entity.dart';
 class HotelDetailSheet extends StatelessWidget {
   final HotelEntity hotel;
 
-  const HotelDetailSheet({super.key, required this.hotel});
+  /// Trip country (ISO-2) — used to build an international WhatsApp number.
+  final String? countryCode;
 
-  static Future<void> show(BuildContext context, HotelEntity hotel) {
+  const HotelDetailSheet({super.key, required this.hotel, this.countryCode});
+
+  static Future<void> show(BuildContext context, HotelEntity hotel,
+      {String? countryCode}) {
     return showModalBottomSheet(
       context: context,
       isScrollControlled: true,
       backgroundColor: Colors.transparent,
-      builder: (_) => HotelDetailSheet(hotel: hotel),
+      builder: (_) =>
+          HotelDetailSheet(hotel: hotel, countryCode: countryCode),
     );
   }
 
@@ -128,60 +131,16 @@ class HotelDetailSheet extends StatelessWidget {
 
               const SizedBox(height: 24),
 
-              // Primary action: open the exact listing in Google Maps.
-              SizedBox(
-                width: double.infinity,
-                child: ElevatedButton.icon(
-                  onPressed: () {
-                    Haptics.tap();
-                    MapLauncherService.openInGoogleMaps(
-                      placeName: hotel.nameEn?.isNotEmpty == true
-                          ? hotel.nameEn!
-                          : hotel.name,
-                      city: hotel.address,
-                      lat: hotel.latitude,
-                      lon: hotel.longitude,
-                      placeId: hotel.placeId,
-                    );
-                  },
-                  icon: const Icon(Icons.directions_rounded, size: 18),
-                  label: Text(strings.openInMaps),
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: AppColors.accentTurquoise,
-                    foregroundColor: Colors.white,
-                    padding: const EdgeInsets.symmetric(vertical: 14),
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(14),
-                    ),
-                  ),
-                ),
+              BookingContactSection(
+                placeName: hotel.name,
+                placeNameEn: hotel.nameEn,
+                phone: hotel.phone,
+                address: hotel.address,
+                latitude: hotel.latitude,
+                longitude: hotel.longitude,
+                placeId: hotel.placeId,
+                countryCode: countryCode,
               ),
-
-              if (hotel.phone != null && hotel.phone!.isNotEmpty) ...[
-                const SizedBox(height: 10),
-                SizedBox(
-                  width: double.infinity,
-                  child: OutlinedButton.icon(
-                    onPressed: () async {
-                      Haptics.tap();
-                      final uri = Uri.parse('tel:${hotel.phone}');
-                      if (await canLaunchUrl(uri)) {
-                        await launchUrl(uri);
-                      }
-                    },
-                    icon: const Icon(Icons.call_rounded, size: 18),
-                    label: Text(strings.callAction),
-                    style: OutlinedButton.styleFrom(
-                      foregroundColor: AppColors.accentTurquoise,
-                      side: const BorderSide(color: AppColors.accentTurquoise),
-                      padding: const EdgeInsets.symmetric(vertical: 14),
-                      shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(14),
-                      ),
-                    ),
-                  ),
-                ),
-              ],
             ],
           ),
         );

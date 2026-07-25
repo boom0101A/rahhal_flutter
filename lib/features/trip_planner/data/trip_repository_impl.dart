@@ -302,6 +302,7 @@ class TripRepositoryImpl implements TripRepository {
               'is_recommended': 1,
               'image_url': recImageUrl,
               'place_id': rec.placeId,
+              'phone': rec.phone,
               'coords_verified': rec.coordsVerified ? 1 : 0,
             };
           }
@@ -334,6 +335,7 @@ class TripRepositoryImpl implements TripRepository {
               'is_recommended': 0,
               'image_url': rImageUrl,
               'place_id': r.placeId,
+              'phone': r.phone,
               'coords_verified': r.coordsVerified ? 1 : 0,
             };
           }

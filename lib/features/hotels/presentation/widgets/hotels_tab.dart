@@ -20,7 +20,11 @@ import '../../domain/entities/hotel_entity.dart';
 class HotelsTab extends StatelessWidget {
   final String tripId;
 
-  const HotelsTab({super.key, required this.tripId});
+  /// Trip country (ISO-2) — lets the booking section build a valid
+  /// international WhatsApp number from a national phone number.
+  final String? countryCode;
+
+  const HotelsTab({super.key, required this.tripId, this.countryCode});
 
   @override
   Widget build(BuildContext context) {
@@ -71,7 +75,8 @@ class HotelsTab extends StatelessWidget {
         ),
         const SizedBox(height: 12),
         ...state.hotels.asMap().entries.map(
-              (e) => _HotelCard(hotel: e.value, index: e.key),
+              (e) => _HotelCard(
+                  hotel: e.value, index: e.key, countryCode: countryCode),
             ),
       ],
     );
@@ -88,14 +93,17 @@ class HotelsTab extends StatelessWidget {
 class _HotelCard extends StatelessWidget {
   final HotelEntity hotel;
   final int index;
+  final String? countryCode;
 
-  const _HotelCard({required this.hotel, required this.index});
+  const _HotelCard(
+      {required this.hotel, required this.index, this.countryCode});
 
   @override
   Widget build(BuildContext context) {
     final strings = AppStrings.of(context);
     return GestureDetector(
-      onTap: () => HotelDetailSheet.show(context, hotel),
+      onTap: () =>
+          HotelDetailSheet.show(context, hotel, countryCode: countryCode),
       child: GlassCard(
       padding: const EdgeInsets.all(16),
       child: Row(

@@ -1051,6 +1051,10 @@ const RESTAURANT_FIELD_MASK = [
   'places.primaryTypeDisplayName',
   'places.types',
   'places.websiteUri',
+  // Powers the "booking & contact" section (call / WhatsApp). Free to add:
+  // this mask already sits in the Enterprise SKU because of rating/priceLevel,
+  // so one more field costs no extra quota.
+  'places.nationalPhoneNumber',
   'places.regularOpeningHours.weekdayDescriptions',
   'places.editorialSummary',
 ].join(',');
@@ -1180,6 +1184,7 @@ async function fetchRealRestaurants(cityEn, centerLat, centerLng, countryCode, l
       ai_description: editorial ? `${editorial} — ${ratingText}.` : `${ratingText}.`,
       image_search_query: imageQuery,
       booking_url: p.websiteUri || null,
+      phone: p.nationalPhoneNumber || null,
       place_id: p.id,
       coords_verified: true,
     };
@@ -2566,6 +2571,10 @@ app.get('/api/nearby-places', async (req, res) => {
 // RESOLVE_MAX_KM from those coordinates is NOT this place, so we return null
 // rather than deep-linking to the wrong branch/city.
 const RESOLVE_MAX_KM = 12;
+// Half-size of the hard search box, in degrees. ~0.09° ≈ 10km at Iraq's
+// latitude — wide enough to cover a slightly-off coordinate, tight enough that
+// nothing from a neighbouring governorate can be returned.
+const RESOLVE_BOX_DEG = 0.09;
 
 app.get('/api/resolve-place', async (req, res) => {
   const { name, lat, lng, city } = req.query;
@@ -2598,13 +2607,17 @@ app.get('/api/resolve-place', async (req, res) => {
     const searchRes = await axios.post(
       'https://places.googleapis.com/v1/places:searchText',
       {
-        textQuery: city ? `${name} ${city}` : String(name),
-        // Tight circle around the place's own coordinates — this is what stops
-        // a same-named place in another city from being returned.
-        locationBias: {
-          circle: {
-            center: { latitude: pLat, longitude: pLng },
-            radius: RESOLVE_MAX_KM * 1000,
+        // Name only. Appending a long AI-written address made the query noisy
+        // and lowered match quality — the box below is what pins the location.
+        textQuery: String(name),
+        // locationRestriction is a HARD bound (unlike locationBias, which is
+        // only a hint Google may ignore): Places physically cannot return a
+        // result outside this box, so a same-named place in another
+        // governorate or country is impossible here.
+        locationRestriction: {
+          rectangle: {
+            low: { latitude: pLat - RESOLVE_BOX_DEG, longitude: pLng - RESOLVE_BOX_DEG },
+            high: { latitude: pLat + RESOLVE_BOX_DEG, longitude: pLng + RESOLVE_BOX_DEG },
           },
         },
         maxResultCount: 5,

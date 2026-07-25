@@ -2,9 +2,9 @@ import 'package:flutter/material.dart';
 import '../../../../core/constants/app_colors.dart';
 import '../../../../core/constants/app_strings.dart';
 import '../../../../core/constants/app_text_styles.dart';
+import '../../../../shared/widgets/booking_contact_section.dart';
 import '../../../../shared/widgets/cached_hero_image.dart';
 import '../../domain/entities/restaurant_entity.dart';
-import 'restaurant_map_button.dart';
 
 /// Bottom sheet with a restaurant's details plus an "open in Google Maps"
 /// action. Used from Favorites (where there is no trip context to navigate
@@ -12,14 +12,20 @@ import 'restaurant_map_button.dart';
 class RestaurantDetailSheet extends StatelessWidget {
   final RestaurantEntity restaurant;
 
-  const RestaurantDetailSheet({super.key, required this.restaurant});
+  /// Trip country (ISO-2) — used to build an international WhatsApp number.
+  final String? countryCode;
 
-  static Future<void> show(BuildContext context, RestaurantEntity restaurant) {
+  const RestaurantDetailSheet(
+      {super.key, required this.restaurant, this.countryCode});
+
+  static Future<void> show(BuildContext context, RestaurantEntity restaurant,
+      {String? countryCode}) {
     return showModalBottomSheet(
       context: context,
       isScrollControlled: true,
       backgroundColor: Colors.transparent,
-      builder: (_) => RestaurantDetailSheet(restaurant: restaurant),
+      builder: (_) => RestaurantDetailSheet(
+          restaurant: restaurant, countryCode: countryCode),
     );
   }
 
@@ -159,7 +165,16 @@ class RestaurantDetailSheet extends StatelessWidget {
               ],
 
               const SizedBox(height: 24),
-              RestaurantMapButton(restaurant: restaurant, expanded: true),
+              BookingContactSection(
+                placeName: restaurant.name,
+                placeNameEn: restaurant.nameEn,
+                phone: restaurant.phone,
+                address: restaurant.address,
+                latitude: restaurant.latitude,
+                longitude: restaurant.longitude,
+                placeId: restaurant.placeId,
+                countryCode: countryCode,
+              ),
             ],
           ),
         );

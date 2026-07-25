@@ -9,6 +9,7 @@ import '../../../../shared/widgets/glass_card.dart';
 import '../../../../shared/widgets/gradient_button.dart';
 import '../../../../core/di/injection.dart';
 import '../../../../core/services/location_service.dart';
+import '../../../../core/data/iraq_places.dart';
 
 class TripInputScreen extends StatefulWidget {
   const TripInputScreen({super.key});
@@ -31,6 +32,9 @@ class _TripInputScreenState extends State<TripInputScreen> {
   double? _detectedLng;
   String? _detectedCountryCode;
   String? _lastAutoFilledText;
+
+  /// Live offline search results for whatever is typed in the destination box.
+  List<IraqPlace> _suggestions = const [];
 
   Future<void> _detectCurrentLocation() async {
     final strings = AppStrings.of(context);
@@ -229,6 +233,7 @@ class _TripInputScreenState extends State<TripInputScreen> {
                                 TextField(
                                   controller: _destinationCtrl,
                                   style: AppTextStyles.bodyLarge,
+                                  onChanged: _onDestinationChanged,
                                   decoration: InputDecoration(
                                     hintText: strings.planDestinationHint,
                                     prefixIcon: Icon(Icons.search_rounded,
@@ -240,44 +245,23 @@ class _TripInputScreenState extends State<TripInputScreen> {
                                     ),
                                   ),
                                 ),
-                                const SizedBox(height: 12),
-                                Wrap(
-                                  spacing: 8,
-                                  runSpacing: 8,
-                                  children: strings.popularCities
-                                      .map((c) => _buildCityChip(c))
-                                      .toList(),
-                                ),
-                                const SizedBox(height: 14),
-                                // All Iraqi governorates — tap one to plan a
-                                // trip (and see its attractions) for it.
-                                Row(
-                                  children: [
-                                    const Text('🇮🇶',
-                                        style: TextStyle(fontSize: 14)),
-                                    const SizedBox(width: 6),
-                                    Text(
-                                      strings.iraqiGovernoratesLabel,
-                                      style: AppTextStyles.labelMedium.copyWith(
-                                        color: AppColors
-                                            .adaptiveTextSecondary(context),
-                                      ),
-                                    ),
-                                  ],
-                                ),
-                                const SizedBox(height: 8),
-                                SizedBox(
-                                  height: 34,
-                                  child: ListView.separated(
-                                    scrollDirection: Axis.horizontal,
-                                    itemCount:
-                                        strings.iraqiGovernorates.length,
-                                    separatorBuilder: (_, __) =>
-                                        const SizedBox(width: 8),
-                                    itemBuilder: (_, i) => _buildCityChip(
-                                        strings.iraqiGovernorates[i]),
+                                // Smart search results — every Iraqi
+                                // governorate, city, district and landmark,
+                                // matched offline (no API cost, instant).
+                                if (_suggestions.isNotEmpty) ...[
+                                  const SizedBox(height: 8),
+                                  _buildSuggestions(strings),
+                                ],
+                                if (_suggestions.isEmpty) ...[
+                                  const SizedBox(height: 12),
+                                  Wrap(
+                                    spacing: 8,
+                                    runSpacing: 8,
+                                    children: strings.popularCities
+                                        .map((c) => _buildCityChip(c))
+                                        .toList(),
                                   ),
-                                ),
+                                ],
                               ],
                             ),
                           ).animate().fadeIn(delay: 100.ms).slideY(begin: 0.1),
@@ -590,6 +574,109 @@ class _TripInputScreenState extends State<TripInputScreen> {
           const SizedBox(height: 12),
           child,
         ],
+      ),
+    );
+  }
+
+  /// Runs the offline index on every keystroke. Suggestions are hidden once the
+  /// field already holds an exact place name (i.e. the user picked one).
+  void _onDestinationChanged(String value) {
+    final q = value.trim();
+    if (q.isEmpty) {
+      setState(() => _suggestions = const []);
+      return;
+    }
+    final results = searchIraqPlaces(q);
+    final alreadyPicked =
+        results.length == 1 && results.first.ar == q;
+    setState(() => _suggestions = alreadyPicked ? const [] : results);
+  }
+
+  void _pickSuggestion(IraqPlace place) {
+    FocusScope.of(context).unfocus();
+    setState(() {
+      // The Arabic name is what the user sees; the server's dictionary resolves
+      // it to the canonical English city, so no extra plumbing is needed.
+      _destinationCtrl.text = place.ar;
+      _suggestions = const [];
+    });
+  }
+
+  String _kindLabel(IraqPlaceKind kind, AppStrings s) => switch (kind) {
+        IraqPlaceKind.governorate => s.searchKindGovernorate,
+        IraqPlaceKind.city => s.searchKindCity,
+        IraqPlaceKind.landmark => s.searchKindLandmark,
+      };
+
+  (IconData, Color) _kindStyle(IraqPlaceKind kind) => switch (kind) {
+        IraqPlaceKind.governorate => (Icons.account_balance_rounded, AppColors.accentAmber),
+        IraqPlaceKind.city => (Icons.location_city_rounded, AppColors.accentTurquoise),
+        IraqPlaceKind.landmark => (Icons.attractions_rounded, Color(0xFF7E6AD6)),
+      };
+
+  Widget _buildSuggestions(AppStrings strings) {
+    return Container(
+      constraints: const BoxConstraints(maxHeight: 260),
+      decoration: BoxDecoration(
+        color: AppColors.adaptiveGlass(context),
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(color: AppColors.adaptiveBorder(context)),
+      ),
+      child: ListView.separated(
+        shrinkWrap: true,
+        padding: const EdgeInsets.symmetric(vertical: 4),
+        itemCount: _suggestions.length,
+        separatorBuilder: (_, __) => Divider(
+          height: 1,
+          color: AppColors.adaptiveBorder(context).withValues(alpha: 0.4),
+        ),
+        itemBuilder: (_, i) {
+          final p = _suggestions[i];
+          final (icon, color) = _kindStyle(p.kind);
+          return InkWell(
+            onTap: () => _pickSuggestion(p),
+            child: Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+              child: Row(
+                children: [
+                  Container(
+                    width: 32,
+                    height: 32,
+                    decoration: BoxDecoration(
+                      color: color.withValues(alpha: 0.12),
+                      borderRadius: BorderRadius.circular(9),
+                    ),
+                    child: Icon(icon, size: 17, color: color),
+                  ),
+                  const SizedBox(width: 10),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(p.ar,
+                            style: AppTextStyles.titleSmall,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis),
+                        const SizedBox(height: 2),
+                        Text(
+                          '${_kindLabel(p.kind, strings)} · ${p.governorate}',
+                          style: AppTextStyles.labelSmall.copyWith(
+                            color: AppColors.adaptiveTextSecondary(context),
+                          ),
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                      ],
+                    ),
+                  ),
+                  Icon(Icons.north_west_rounded,
+                      size: 15,
+                      color: AppColors.adaptiveTextSecondary(context)),
+                ],
+              ),
+            ),
+          );
+        },
       ),
     );
   }

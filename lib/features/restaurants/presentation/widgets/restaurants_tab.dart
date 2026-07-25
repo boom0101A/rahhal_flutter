@@ -19,7 +19,11 @@ import '../../../favorites/presentation/cubit/favorites_cubit.dart';
 class RestaurantsTab extends StatelessWidget {
   final String tripId;
 
-  const RestaurantsTab({super.key, required this.tripId});
+  /// Trip country (ISO-2) — lets the booking section build a valid
+  /// international WhatsApp number from a national phone number.
+  final String? countryCode;
+
+  const RestaurantsTab({super.key, required this.tripId, this.countryCode});
 
   static const _filters = [
     RestaurantFilter.all,
@@ -138,6 +142,7 @@ class RestaurantsTab extends StatelessWidget {
                 (e) => _RestaurantCard(
                   restaurant: e.value,
                   index: e.key,
+                  countryCode: countryCode,
                 ),
               ),
       ],
@@ -155,13 +160,16 @@ class RestaurantsTab extends StatelessWidget {
 class _RestaurantCard extends StatelessWidget {
   final RestaurantEntity restaurant;
   final int index;
+  final String? countryCode;
 
-  const _RestaurantCard({required this.restaurant, required this.index});
+  const _RestaurantCard(
+      {required this.restaurant, required this.index, this.countryCode});
 
   @override
   Widget build(BuildContext context) {
     return GestureDetector(
-      onTap: () => RestaurantDetailSheet.show(context, restaurant),
+      onTap: () => RestaurantDetailSheet.show(context, restaurant,
+          countryCode: countryCode),
       child: GlassCard(
       padding: const EdgeInsets.all(16),
       child: Row(
