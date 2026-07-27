@@ -519,29 +519,38 @@ const chatLimiter = rateLimit({
 
 // ─── Firebase ID Token Verification Middleware ──────────────────────────────
 // Validates Firebase Auth Bearer Token sent by Flutter app via _FirebaseTokenInterceptor
+//
+// Fails CLOSED: if FIREBASE_SERVICE_ACCOUNT isn't configured, every gated
+// route rejects with 503 instead of silently letting requests through. A
+// misconfigured deployment must break loudly, not become an open quota tap
+// for Groq/Gemini/Places/Unsplash/OpenWeather.
 async function authenticateFirebaseToken(req, res, next) {
-  const authHeader = req.headers.authorization;
-
-  // Only enforce token verification if FIREBASE_SERVICE_ACCOUNT is configured
-  if (process.env.FIREBASE_SERVICE_ACCOUNT && admin) {
-    if (!authHeader || !authHeader.startsWith('Bearer ')) {
-      return res.status(401).json({ error: 'Missing Authorization header' });
-    }
-    const token = authHeader.split('Bearer ')[1].trim();
-    try {
-      if (!admin.apps.length) {
-        const serviceAccount = JSON.parse(process.env.FIREBASE_SERVICE_ACCOUNT);
-        admin.initializeApp({ credential: admin.credential.cert(serviceAccount) });
-      }
-      const decodedToken = await admin.auth().verifyIdToken(token);
-      req.user = decodedToken;
-      return next();
-    } catch (err) {
-      console.error('[AUTH] Token verification failed:', err.message);
-      return res.status(403).json({ error: 'Invalid Firebase ID token' });
-    }
+  if (!process.env.FIREBASE_SERVICE_ACCOUNT || !admin) {
+    console.error(
+      `[AUTH] Rejected ${req.method} ${req.originalUrl} — FIREBASE_SERVICE_ACCOUNT is not configured on this server.`
+    );
+    return res.status(503).json({
+      error: 'Server authentication is not configured. This endpoint is temporarily unavailable.',
+    });
   }
-  next(); // Allow if no service account configured
+
+  const authHeader = req.headers.authorization;
+  if (!authHeader || !authHeader.startsWith('Bearer ')) {
+    return res.status(401).json({ error: 'Missing Authorization header' });
+  }
+  const token = authHeader.split('Bearer ')[1].trim();
+  try {
+    if (!admin.apps.length) {
+      const serviceAccount = JSON.parse(process.env.FIREBASE_SERVICE_ACCOUNT);
+      admin.initializeApp({ credential: admin.credential.cert(serviceAccount) });
+    }
+    const decodedToken = await admin.auth().verifyIdToken(token);
+    req.user = decodedToken;
+    return next();
+  } catch (err) {
+    console.error('[AUTH] Token verification failed:', err.message);
+    return res.status(403).json({ error: 'Invalid Firebase ID token' });
+  }
 }
 
 app.use('/api/', limiter);

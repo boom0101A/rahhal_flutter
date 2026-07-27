@@ -11,8 +11,10 @@ import '../services/location_service.dart';
 import '../services/place_resolver_service.dart';
 import '../services/location_share_service.dart';
 import '../services/offline_prep_service.dart';
+import '../services/storage_service.dart';
+import '../../features/auth/data/profile_stats_service.dart';
+import '../../features/auth/data/local_avatar_service.dart';
 import '../services/trip_notification_scheduler.dart';
-import '../../features/today/data/today_service.dart';
 import '../../features/ai_chat/data/trip_command_executor.dart';
 import '../database/database_helper.dart';
 import '../../features/trip_planner/data/trip_repository_impl.dart';
@@ -136,9 +138,13 @@ Future<void> setupDependencies() async {
     () => TripNotificationScheduler(dbHelper: sl<DatabaseHelper>()),
   );
 
-  sl.registerLazySingleton<TodayService>(
-    () => TodayService(dbHelper: sl<DatabaseHelper>()),
+  sl.registerLazySingleton<StorageService>(() => StorageService());
+
+  sl.registerLazySingleton<ProfileStatsService>(
+    () => ProfileStatsService(dbHelper: sl<DatabaseHelper>()),
   );
+
+  sl.registerLazySingleton<LocalAvatarService>(() => LocalAvatarService());
 
   sl.registerLazySingleton<TripCommandExecutor>(
     () => TripCommandExecutor(dbHelper: sl<DatabaseHelper>()),

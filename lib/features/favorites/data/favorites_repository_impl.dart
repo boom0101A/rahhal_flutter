@@ -4,6 +4,7 @@ import '../../../../core/database/database_helper.dart';
 import '../../../../core/errors/failures.dart';
 import '../../auth/domain/repositories/auth_repository.dart';
 import '../../restaurants/domain/entities/restaurant_entity.dart';
+import '../../hotels/domain/entities/hotel_entity.dart';
 import '../../trip_planner/domain/entities/stop_entity.dart';
 import '../domain/entities/favorite_entity.dart';
 import '../domain/entities/favorite_item.dart';
@@ -33,11 +34,15 @@ class FavoritesRepositoryImpl implements FavoritesRepository {
       );
 
       final List<FavoriteItem> favoriteItems = [];
+      final destinationCache = <String, String?>{};
+
       for (final row in rows) {
         final favEntity = _favoriteFromMap(row);
-        
+
         StopEntity? stop;
         RestaurantEntity? restaurant;
+        HotelEntity? hotel;
+        String? tripId;
 
         if (favEntity.itemType == 'stop') {
           final stopRow = await _dbHelper.queryOne(
@@ -47,6 +52,7 @@ class FavoritesRepositoryImpl implements FavoritesRepository {
           );
           if (stopRow != null) {
             stop = _stopFromMap(stopRow);
+            tripId = stop.tripId;
           }
         } else if (favEntity.itemType == 'restaurant') {
           final restRow = await _dbHelper.queryOne(
@@ -56,16 +62,44 @@ class FavoritesRepositoryImpl implements FavoritesRepository {
           );
           if (restRow != null) {
             restaurant = _restaurantFromMap(restRow);
+            tripId = restaurant.tripId;
+          }
+        } else if (favEntity.itemType == 'hotel') {
+          final hotelRow = await _dbHelper.queryOne(
+            'hotels',
+            where: 'id = ?',
+            whereArgs: [favEntity.itemRefId],
+          );
+          if (hotelRow != null) {
+            hotel = _hotelFromMap(hotelRow);
+            tripId = hotel.tripId;
           }
         }
 
         // Only add if the referenced item still exists in database
-        if (stop != null || restaurant != null) {
+        if (stop != null || restaurant != null || hotel != null) {
+          String? tripDestination;
+          if (tripId != null) {
+            if (destinationCache.containsKey(tripId)) {
+              tripDestination = destinationCache[tripId];
+            } else {
+              final tripRow = await _dbHelper.queryOne(
+                'trips',
+                where: 'id = ?',
+                whereArgs: [tripId],
+              );
+              tripDestination = tripRow?['destination'] as String?;
+              destinationCache[tripId] = tripDestination;
+            }
+          }
+
           favoriteItems.add(
             FavoriteItem(
               favorite: favEntity,
               stop: stop,
               restaurant: restaurant,
+              hotel: hotel,
+              tripDestination: tripDestination,
             ),
           );
         }
@@ -134,6 +168,25 @@ class FavoritesRepositoryImpl implements FavoritesRepository {
     }
   }
 
+  @override
+  Future<Either<Failure, void>> updateNotes(
+    String itemType,
+    String itemRefId,
+    String? notes,
+  ) async {
+    try {
+      await _dbHelper.update(
+        'favorites',
+        {'notes': notes},
+        where: 'item_type = ? AND item_ref_id = ?',
+        whereArgs: [itemType, itemRefId],
+      );
+      return const Right(null);
+    } catch (e) {
+      return Left(DatabaseFailure(e.toString()));
+    }
+  }
+
   FavoriteEntity _favoriteFromMap(Map<String, dynamic> m) => FavoriteEntity(
         id: m['id'] as String,
         userId: m['user_id'] as String?,
@@ -183,5 +236,24 @@ class FavoritesRepositoryImpl implements FavoritesRepository {
         imageUrl: m['image_url'] as String?,
         aiDescription: m['ai_description'] as String?,
         isRecommended: (m['is_recommended'] as int? ?? 0) == 1,
+      );
+
+  HotelEntity _hotelFromMap(Map<String, dynamic> m) => HotelEntity(
+        id: m['id'] as String,
+        tripId: m['trip_id'] as String,
+        name: m['name'] as String,
+        nameEn: m['name_en'] as String?,
+        hotelType: m['hotel_type'] as String?,
+        rating: (m['rating'] as num? ?? 0).toDouble(),
+        pricePerNight: (m['price_per_night'] as num? ?? 0).toDouble(),
+        address: m['address'] as String?,
+        latitude: (m['latitude'] as num? ?? 0).toDouble(),
+        longitude: (m['longitude'] as num? ?? 0).toDouble(),
+        phone: m['phone'] as String?,
+        imageUrl: m['image_url'] as String?,
+        aiDescription: m['ai_description'] as String?,
+        bookingUrl: m['booking_url'] as String?,
+        placeId: m['place_id'] as String?,
+        coordsVerified: (m['coords_verified'] as int? ?? 0) == 1,
       );
 }

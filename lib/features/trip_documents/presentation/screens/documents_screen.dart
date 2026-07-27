@@ -8,6 +8,7 @@ import 'package:uuid/uuid.dart';
 import 'package:intl/intl.dart';
 import '../../../../core/constants/app_colors.dart';
 import '../../../../core/constants/app_strings.dart';
+import '../../../../core/services/notification_preferences.dart';
 import '../../../../core/services/notification_service.dart';
 import '../../../../core/constants/app_text_styles.dart';
 import '../../../../core/di/injection.dart';
@@ -307,6 +308,12 @@ class _DocumentsScreenState extends State<DocumentsScreen> {
   Future<void> _scheduleExpiryReminder(DocumentEntity doc) async {
     final expiry = doc.expiryDate;
     if (expiry == null) return;
+    // Respect the Settings switch — this used to fire regardless of it.
+    if (!await NotificationPreferences.isEnabled(
+        NotificationPreferences.tripReminders)) {
+      return;
+    }
+    if (!mounted) return;
     final strings = AppStrings.of(context);
     await NotificationService.requestPermission();
     await NotificationService.scheduleDocumentExpiryReminder(

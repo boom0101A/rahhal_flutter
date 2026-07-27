@@ -2,6 +2,7 @@ import 'dart:async';
 import 'package:flutter/foundation.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:equatable/equatable.dart';
+import '../../../../core/database/database_helper.dart';
 import '../../../../core/di/injection.dart';
 import '../../../../core/network/cloud_sync_service.dart';
 import '../../domain/entities/user_entity.dart';
@@ -79,6 +80,50 @@ class AuthCubit extends Cubit<AuthState> {
   Future<void> signOut() async {
     await _repository.signOut();
     emit(const AuthInitial());
+  }
+
+  /// Updates the display name and refreshes state so every screen showing it
+  /// (Profile, Settings, the chat header) re-renders with the new value.
+  /// Returns null on success, or a message to show the user on failure.
+  Future<String?> updateDisplayName(String name) async {
+    final result = await _repository.updateDisplayName(name);
+    return result.fold(
+      (failure) => failure.message,
+      (user) {
+        emit(AuthAuthenticated(user));
+        return null;
+      },
+    );
+  }
+
+  /// Deletes the account, its cloud data, and every trip stored on this device.
+  ///
+  /// Returns null on success, or an error code the UI can localize — notably
+  /// `auth/requires-recent-login`, which means the user must sign in again
+  /// before the deletion is permitted.
+  Future<String?> deleteAccount() async {
+    emit(const AuthLoading());
+    final result = await _repository.deleteAccount();
+
+    return result.fold(
+      (failure) {
+        // Keep the user signed in so they can re-authenticate and retry.
+        final user = _repository.getCurrentUser();
+        emit(user != null ? AuthAuthenticated(user) : const AuthInitial());
+        return failure.message;
+      },
+      (_) async {
+        // The cloud copy is gone; leaving local trips behind would resurrect
+        // them on the next sign-in via cloud sync and contradict the deletion.
+        try {
+          await sl<DatabaseHelper>().clearAllData();
+        } catch (e) {
+          debugPrint('[Auth] local data wipe failed: $e');
+        }
+        emit(const AuthInitial());
+        return null;
+      },
+    );
   }
 
   void checkCurrentUser() {

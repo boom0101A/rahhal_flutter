@@ -2,6 +2,7 @@ import 'package:flutter/foundation.dart';
 import '../constants/app_strings.dart';
 import '../database/database_helper.dart';
 import '../utils/opening_hours.dart';
+import 'notification_preferences.dart';
 import 'notification_service.dart';
 
 /// Schedules the contextual reminders for one trip: a morning plan for each
@@ -24,6 +25,14 @@ class TripNotificationScheduler {
     required AppStrings strings,
   }) async {
     try {
+      // The user's switches in Settings gate each category. Checked once here
+      // rather than per-day so a disabled category costs nothing.
+      final dayPlansAllowed =
+          await NotificationPreferences.isEnabled(NotificationPreferences.tripReminders);
+      final suggestionsAllowed =
+          await NotificationPreferences.isEnabled(NotificationPreferences.aiSuggestions);
+      if (!dayPlansAllowed && !suggestionsAllowed) return;
+
       final days = await _dbHelper.query(
         'days',
         where: 'trip_id = ?',
@@ -42,8 +51,12 @@ class TripNotificationScheduler {
         final dayNumber = (day['day_number'] as int?) ?? 0;
         final dayId = day['id'] as String;
 
-        await _scheduleDayPlan(tripId, dayId, dayNumber, date, strings);
-        await _scheduleRestaurant(tripId, dayId, dayNumber, date, strings);
+        if (dayPlansAllowed) {
+          await _scheduleDayPlan(tripId, dayId, dayNumber, date, strings);
+        }
+        if (suggestionsAllowed) {
+          await _scheduleRestaurant(tripId, dayId, dayNumber, date, strings);
+        }
       }
     } catch (e) {
       // Reminders are a convenience — never let them break opening a trip.

@@ -227,6 +227,70 @@ class AuthRepositoryImpl implements AuthRepository {
   }
 
   @override
+  Future<Either<Failure, UserEntity>> updateDisplayName(String name) async {
+    final trimmed = name.trim();
+    if (trimmed.isEmpty) {
+      return Left(AuthFailure('auth/empty-display-name'));
+    }
+    final user = firebase_auth.FirebaseAuth.instance.currentUser;
+    if (user == null) return Left(AuthFailure('auth/no-current-user'));
+
+    try {
+      await user.updateDisplayName(trimmed);
+      // updateDisplayName mutates the SDK's cached user object directly, but
+      // reload() is what makes that change visible to a FRESH read of
+      // currentUser — without it, a caller reading currentUser again later
+      // one gets a stale value.
+      await user.reload();
+      final refreshed = firebase_auth.FirebaseAuth.instance.currentUser!;
+      return Right(UserEntity(
+        uid: refreshed.uid,
+        email: refreshed.email,
+        displayName: refreshed.displayName,
+        photoUrl: refreshed.photoURL,
+        isAnonymous: refreshed.isAnonymous,
+      ));
+    } catch (e) {
+      return Left(AuthFailure('auth/update-name-failed: ${e.toString()}'));
+    }
+  }
+
+  @override
+  Future<Either<Failure, void>> deleteAccount() async {
+    final user = firebase_auth.FirebaseAuth.instance.currentUser;
+    if (user == null) return Left(AuthFailure('auth/no-current-user'));
+
+    try {
+      // Remove the cloud copy FIRST: once the auth account is gone the security
+      // rules no longer match this uid, which would strand the document
+      // undeletable.
+      try {
+        await FirebaseFirestore.instance
+            .collection('users')
+            .doc(user.uid)
+            .delete();
+      } catch (e) {
+        debugPrint('[Auth] cloud data delete failed (continuing): $e');
+      }
+
+      // Also drop the Google session so the next sign-in shows the account
+      // picker instead of silently reusing the deleted one.
+      try {
+        await GoogleSignIn().signOut();
+      } catch (_) {}
+
+      await user.delete();
+      return const Right(null);
+    } on firebase_auth.FirebaseAuthException catch (e) {
+      // Firebase refuses deletion on a stale session — surfaced verbatim so the
+      // UI can tell the user to sign in again rather than showing a generic error.
+      return Left(AuthFailure('auth/${e.code}'));
+    } catch (e) {
+      return Left(AuthFailure('auth/delete-failed: ${e.toString()}'));
+    }
+  }
+
+  @override
   Future<String?> getIdToken() async {
     try {
       final user = firebase_auth.FirebaseAuth.instance.currentUser;

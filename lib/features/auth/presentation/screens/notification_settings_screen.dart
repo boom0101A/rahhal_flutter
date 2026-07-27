@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
-import 'package:shared_preferences/shared_preferences.dart';
 import 'package:go_router/go_router.dart';
+import '../../../../core/services/notification_preferences.dart';
 import '../../../../core/constants/app_colors.dart';
 import '../../../../core/constants/app_text_styles.dart';
 import '../../../../core/constants/app_strings.dart';
@@ -24,28 +24,32 @@ class _NotificationSettingsScreenState extends State<NotificationSettingsScreen>
   }
 
   Future<void> _loadPreferences() async {
-    final prefs = await SharedPreferences.getInstance();
+    final trip =
+        await NotificationPreferences.isEnabled(NotificationPreferences.tripReminders);
+    final ai =
+        await NotificationPreferences.isEnabled(NotificationPreferences.aiSuggestions);
+    if (!mounted) return;
     setState(() {
-      _tripReminders = prefs.getBool('notifications_trip_reminders') ?? true;
-      _aiSuggestions = prefs.getBool('notifications_ai_suggestions') ?? true;
+      _tripReminders = trip;
+      _aiSuggestions = ai;
       _loading = false;
     });
   }
 
   Future<void> _toggleTripReminders(bool value) async {
-    final prefs = await SharedPreferences.getInstance();
-    await prefs.setBool('notifications_trip_reminders', value);
-    setState(() {
-      _tripReminders = value;
-    });
+    // Goes through NotificationPreferences so switching off also cancels
+    // anything already queued — the old code only wrote a flag nobody read.
+    await NotificationPreferences.setEnabled(
+        NotificationPreferences.tripReminders, value);
+    if (!mounted) return;
+    setState(() => _tripReminders = value);
   }
 
   Future<void> _toggleAiSuggestions(bool value) async {
-    final prefs = await SharedPreferences.getInstance();
-    await prefs.setBool('notifications_ai_suggestions', value);
-    setState(() {
-      _aiSuggestions = value;
-    });
+    await NotificationPreferences.setEnabled(
+        NotificationPreferences.aiSuggestions, value);
+    if (!mounted) return;
+    setState(() => _aiSuggestions = value);
   }
 
   @override

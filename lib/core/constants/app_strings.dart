@@ -154,6 +154,24 @@ class AppStrings {
   // Trip Stats
   String get statsDays => _t('أيام', 'Days');
   String get statsPlaces => _t('مكان', 'Places');
+  String get statsMessages => _t('رسالة', 'Messages');
+
+  // Profile editing
+  String get profileEditPhoto => _t('تغيير الصورة الشخصية', 'Change profile photo');
+  String get profileChooseFromGallery => _t('من المعرض', 'From gallery');
+  String get profileTakePhoto => _t('التقاط صورة', 'Take a photo');
+  String get profileRemovePhoto => _t('إزالة الصورة', 'Remove photo');
+  String get profileEditName => _t('تعديل الاسم', 'Edit name');
+  String get profileNameHint => _t('اسمك', 'Your name');
+  String get profileNameEmpty =>
+      _t('الاسم لا يمكن أن يكون فارغاً', 'Name can\'t be empty');
+  String get profileNameUpdated => _t('تم تحديث الاسم ✅', 'Name updated ✅');
+  String get profileUpdateFailed =>
+      _t('تعذّر تحديث الملف الشخصي', 'Couldn\'t update the profile');
+  String get profileQuickFavorites => _t('المفضّلة', 'Favorites');
+  String get profileQuickDocuments => _t('الوثائق', 'Documents');
+  String get profileNoTripForDocuments => _t(
+      'أنشئ رحلة أولاً لإدارة وثائقها', 'Create a trip first to manage its documents');
   String get statsRestaurants => _t('مطعم', 'Restaurants');
   String get statsHotels => _t('فندق', 'Hotels');
 
@@ -263,6 +281,46 @@ class AppStrings {
   String get budgetTransport => _t('المواصلات', 'Transport');
   String get budgetActivities => _t('الزيارات', 'Activities');
   String get budgetShopping => _t('التسوق', 'Shopping');
+  // ── Settings: currency ────────────────────────────────────────────────────
+  String get settingsCurrency => _t('العملة', 'Currency');
+  String get settingsCurrencyAuto => _t('تلقائي (حسب المنطقة)', 'Automatic (by region)');
+  String get settingsCurrencySubtitle => _t(
+      'العملة التي تُعرض بجانب الدولار في كل التكاليف',
+      'Shown next to USD on every price');
+  String get selectCurrencyTitle => _t('اختر عملتك', 'Choose your currency');
+
+  // ── Settings: storage ─────────────────────────────────────────────────────
+  String get settingsStorage => _t('إدارة التخزين', 'Storage');
+  String get storageImages => _t('الصور المحفوظة', 'Cached images');
+  String get storageMapTiles => _t('خرائط دون إنترنت', 'Offline maps');
+  String get storageTotal => _t('الإجمالي', 'Total');
+  String get storageClear => _t('مسح الذاكرة المؤقتة', 'Clear cache');
+  String get storageClearConfirm => _t(
+      'سيُحذف المحتوى المحمّل فقط (الصور والخرائط) — رحلاتك ووثائقك لن تتأثر إطلاقاً. سيُعاد تحميل المحتوى عند الحاجة.',
+      'Only downloaded content (images and maps) is removed — your trips and documents are untouched. It re-downloads when needed.');
+  String get storageCleared => _t('تم مسح الذاكرة المؤقتة ✅', 'Cache cleared ✅');
+  String get storageCalculating => _t('جارٍ الحساب...', 'Calculating...');
+
+  // ── Settings: account & legal ─────────────────────────────────────────────
+  String get accountSection => _t('الحساب', 'Account');
+  String get settingsDeleteAccount => _t('حذف الحساب نهائياً', 'Delete account');
+  String get deleteAccountConfirmTitle => _t('حذف الحساب نهائياً؟', 'Delete account?');
+  String get deleteAccountConfirmBody => _t(
+      'سيُحذف حسابك وكل رحلاتك ووثائقك من هذا الجهاز ومن السحابة نهائياً. لا يمكن التراجع عن هذا الإجراء.',
+      'Your account and every trip and document — on this device and in the cloud — will be permanently deleted. This cannot be undone.');
+  String get deleteAccountConfirmAction => _t('نعم، احذف حسابي', 'Yes, delete my account');
+  String get deleteAccountDone => _t('تم حذف الحساب', 'Account deleted');
+  String get deleteAccountReauth => _t(
+      'لأمانك، سجّل الخروج ثم ادخل مجدداً وأعد المحاولة.',
+      'For your security, please sign out, sign in again, and retry.');
+  String get deleteAccountFailed =>
+      _t('تعذّر حذف الحساب', 'Couldn\'t delete the account');
+  String get settingsPrivacyPolicy => _t('سياسة الخصوصية', 'Privacy policy');
+
+  // ── Settings: about ───────────────────────────────────────────────────────
+  String get aboutSection => _t('عن التطبيق', 'About');
+  String get aboutVersion => _t('الإصدار', 'Version');
+
   String get budgetChartTitle =>
       _t('المخطَّط مقابل الفعلي', 'Planned vs Actual');
   String get budgetPlanned => _t('المخطَّط', 'Planned');
@@ -321,7 +379,6 @@ class AppStrings {
   String get settingsTitle => _t('الإعدادات', 'Settings');
   String get settingsProfile => _t('الملف الشخصي', 'Profile');
   String get settingsLanguage => _t('اللغة', 'Language');
-  String get settingsCurrency => _t('العملة', 'Currency');
   String get settingsDarkMode => _t('الوضع الليلي', 'Dark Mode');
   String get settingsNotifications => _t('الإشعارات', 'Notifications');
   String get settingsLogout => _t('تسجيل الخروج', 'Logout');
@@ -443,26 +500,6 @@ class AppStrings {
   String get nearbyLocating => _t('جارٍ تحديد موقعك...', 'Finding your location...');
   String get nearbyDirections => _t('الاتجاهات', 'Directions');
   String get nearbyOpenNow => _t('مفتوح الآن', 'Open now');
-
-  // Today companion screen
-  String get todayTab => _t('اليوم', 'Today');
-  String get todayTitle => _t('يومك الآن', 'Your day right now');
-  String get todayNow => _t('الآن', 'Now');
-  String get todayNext => _t('التالي', 'Next');
-  String todayEndsAt(String time) => _t('تنتهي $time', 'ends $time');
-  String todayStartsAt(String time) => _t('تبدأ $time', 'starts $time');
-  String todayInMinutes(int m) => _t('بعد $m دقيقة', 'in $m min');
-  String get todayMarkVisited => _t('تم — زُرته', 'Done — visited');
-  String get todayNoTripTitle => _t('لا توجد رحلة اليوم', 'No trip today');
-  String get todayNoTripSubtitle => _t(
-      'عندما تبدأ رحلتك ستجد هنا خطة يومك لحظة بلحظة.',
-      'When your trip starts, your live plan for the day appears here.');
-  String get todayAllDone =>
-      _t('أنجزت كل محطات اليوم! 🎉', 'You\'ve done every stop today! 🎉');
-  String todayDayLabel(int day, String destination) =>
-      _t('اليوم $day · $destination', 'Day $day · $destination');
-  String get todayRestOfDay => _t('بقية اليوم', 'Rest of the day');
-  String get todayOpenTrip => _t('فتح الرحلة', 'Open trip');
 
   // Chat commands that modify the itinerary
   String get cmdConfirmTitle => _t('تأكيد التعديل', 'Confirm change');
@@ -720,14 +757,19 @@ class AppStrings {
   // Favorites
   String get tabFavorites => _t('المفضلة', 'Favorites');
   String get favoritesEmpty => _t('قائمتك المفضلة فارغة حالياً.', 'Your favorites list is empty.');
-  String get favoritesEmptySubtitle => _t('اضغط على رمز القلب في أي مكان أو مطعم لحفظه هنا.', 'Tap the heart icon on any stop or restaurant to save it here.');
+  String get favoritesEmptySubtitle => _t('اضغط على رمز القلب في أي مكان أو مطعم أو فندق لحفظه هنا.', 'Tap the heart icon on any stop, restaurant, or hotel to save it here.');
   String get favoritesStops => _t('الأماكن المميزة', 'Favorite Stops');
   String get favoritesRestaurants => _t('المطاعم المميزة', 'Favorite Restaurants');
+  String get favoritesHotels => _t('الفنادق المميزة', 'Favorite Hotels');
+  String get favoritesOtherDestination => _t('وجهات أخرى', 'Other destinations');
 
   String get favoriteAdded => _t('تمت الإضافة إلى المفضلة', 'Added to favorites');
   String get favoriteRemoved => _t('تمت الإزالة من المفضلة', 'Removed from favorites');
   String get addToFavorites => _t('إضافة إلى المفضلة', 'Add to favorites');
   String get removeFromFavorites => _t('إزالة من المفضلة', 'Remove from favorites');
+  String get undo => _t('تراجع', 'Undo');
+  String get favoriteNoteHint => _t('أضف ملاحظة شخصية...', 'Add a personal note...');
+  String get favoriteEditNote => _t('تعديل الملاحظة', 'Edit note');
   String get myTripsTab => _t('رحلاتي', 'My Trips');
 
   // Trip generation errors

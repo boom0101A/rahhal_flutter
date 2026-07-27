@@ -380,6 +380,41 @@ class DatabaseHelper {
     return db.delete(table, where: where, whereArgs: whereArgs);
   }
 
+  /// Wipes every user row from the device.
+  ///
+  /// Used only when an account is deleted: leaving trips behind would let cloud
+  /// sync resurrect them on the next sign-in, contradicting the deletion the
+  /// user just asked for. Runs in one transaction so a failure part-way can't
+  /// leave a half-erased database.
+  Future<void> clearAllData() async {
+    const tables = [
+      // Children first — even though foreign keys cascade, explicit order keeps
+      // this correct regardless of the PRAGMA state.
+      'stops',
+      'restaurants',
+      'hotels',
+      'budget_items',
+      'chat_messages',
+      'actual_expenses',
+      'trip_documents',
+      'days',
+      'trips',
+      'favorites',
+      'users',
+    ];
+    final db = await database;
+    await db.transaction((txn) async {
+      for (final table in tables) {
+        try {
+          await txn.delete(table);
+        } catch (e) {
+          // A table absent on an older schema must not abort the wipe.
+          debugPrint('[DB] clearAllData: skipping $table — $e');
+        }
+      }
+    });
+  }
+
   Future<Map<String, dynamic>?> queryOne(
     String table, {
     required String where,

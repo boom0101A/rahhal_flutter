@@ -14,6 +14,7 @@ import '../../domain/entities/favorite_item.dart';
 import '../../../../shared/widgets/cached_hero_image.dart';
 import '../../../restaurants/presentation/widgets/restaurant_detail_sheet.dart';
 import '../../../restaurants/presentation/widgets/restaurant_map_button.dart';
+import '../../../hotels/presentation/widgets/hotel_detail_sheet.dart';
 
 class FavoritesScreen extends StatefulWidget {
   const FavoritesScreen({super.key});
@@ -108,6 +109,7 @@ class _FavoritesScreenState extends State<FavoritesScreen> {
 
             final stops = items.where((i) => i.favorite.itemType == 'stop').toList();
             final restaurants = items.where((i) => i.favorite.itemType == 'restaurant').toList();
+            final hotels = items.where((i) => i.favorite.itemType == 'hotel').toList();
 
             return RefreshIndicator(
               color: AppColors.accentAmber,
@@ -116,27 +118,145 @@ class _FavoritesScreenState extends State<FavoritesScreen> {
               child: ListView(
                 padding: const EdgeInsets.all(20),
                 children: [
-                  if (stops.isNotEmpty) ...[
-                    Padding(
-                      padding: const EdgeInsets.symmetric(vertical: 12),
-                      child: Text(strings.favoritesStops, style: AppTextStyles.headlineSmall),
-                    ),
-                    ...stops.map((item) => _buildFavoriteStopCard(context, item)),
-                  ],
-                  if (restaurants.isNotEmpty) ...[
+                  ..._buildSection(
+                    context,
+                    strings.favoritesStops,
+                    stops,
+                    _buildFavoriteStopCard,
+                  ),
+                  if (stops.isNotEmpty && (restaurants.isNotEmpty || hotels.isNotEmpty))
                     const SizedBox(height: 16),
-                    Padding(
-                      padding: const EdgeInsets.symmetric(vertical: 12),
-                      child: Text(strings.favoritesRestaurants, style: AppTextStyles.headlineSmall),
-                    ),
-                    ...restaurants.map((item) => _buildFavoriteRestaurantCard(context, item)),
-                  ],
+                  ..._buildSection(
+                    context,
+                    strings.favoritesRestaurants,
+                    restaurants,
+                    _buildFavoriteRestaurantCard,
+                  ),
+                  if (restaurants.isNotEmpty && hotels.isNotEmpty) const SizedBox(height: 16),
+                  ..._buildSection(
+                    context,
+                    strings.favoritesHotels,
+                    hotels,
+                    _buildFavoriteHotelCard,
+                  ),
                 ],
               ),
             );
           }
           return const SizedBox.shrink();
         },
+      ),
+    );
+  }
+
+  /// Splits [items] into a headline followed by one card per item — grouped
+  /// under a destination subheader when the section spans more than one
+  /// trip destination, otherwise shown as a flat list.
+  List<Widget> _buildSection(
+    BuildContext context,
+    String title,
+    List<FavoriteItem> items,
+    Widget Function(BuildContext, FavoriteItem) cardBuilder,
+  ) {
+    if (items.isEmpty) return [];
+    final strings = AppStrings.of(context);
+
+    final grouped = <String, List<FavoriteItem>>{};
+    for (final item in items) {
+      final dest = item.tripDestination;
+      final key = (dest != null && dest.isNotEmpty) ? dest : strings.favoritesOtherDestination;
+      grouped.putIfAbsent(key, () => []).add(item);
+    }
+
+    final widgets = <Widget>[
+      Padding(
+        padding: const EdgeInsets.symmetric(vertical: 12),
+        child: Text(title, style: AppTextStyles.headlineSmall),
+      ),
+    ];
+
+    if (grouped.length <= 1) {
+      widgets.addAll(items.map((item) => cardBuilder(context, item)));
+    } else {
+      for (final entry in grouped.entries) {
+        widgets.add(
+          Padding(
+            padding: const EdgeInsets.only(bottom: 8, top: 4),
+            child: Text(
+              entry.key,
+              style: AppTextStyles.labelSmall.copyWith(color: AppColors.accentTurquoise),
+            ),
+          ),
+        );
+        widgets.addAll(entry.value.map((item) => cardBuilder(context, item)));
+      }
+    }
+
+    return widgets;
+  }
+
+  Future<void> _showNoteDialog(BuildContext context, FavoriteItem item) async {
+    final strings = AppStrings.of(context);
+    final cubit = context.read<FavoritesCubit>();
+    final controller = TextEditingController(text: item.favorite.notes ?? '');
+
+    final save = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: Text(strings.favoriteEditNote),
+        content: TextField(
+          controller: controller,
+          maxLines: 3,
+          autofocus: true,
+          decoration: InputDecoration(hintText: strings.favoriteNoteHint),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(dialogContext, false),
+            child: Text(strings.cancel),
+          ),
+          TextButton(
+            onPressed: () => Navigator.pop(dialogContext, true),
+            child: Text(strings.save),
+          ),
+        ],
+      ),
+    );
+
+    if (save == true) {
+      final trimmed = controller.text.trim();
+      cubit.updateNotes(
+        item.favorite.itemType,
+        item.favorite.itemRefId,
+        trimmed.isEmpty ? null : trimmed,
+      );
+    }
+  }
+
+  void _removeWithUndo(BuildContext context, FavoriteItem item) {
+    final strings = AppStrings.of(context);
+    final cubit = context.read<FavoritesCubit>();
+    final itemType = item.favorite.itemType;
+    final itemRefId = item.favorite.itemRefId;
+    final destinationName = item.favorite.destinationName;
+    final notes = item.favorite.notes;
+
+    Haptics.toggle();
+    cubit.toggleFavorite(itemType, itemRefId, destinationName: destinationName, notes: notes);
+
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(strings.favoriteRemoved),
+        duration: const Duration(seconds: 3),
+        action: SnackBarAction(
+          label: strings.undo,
+          onPressed: () => cubit.toggleFavorite(
+            itemType,
+            itemRefId,
+            destinationName: destinationName,
+            notes: notes,
+          ),
+        ),
       ),
     );
   }
@@ -193,16 +313,31 @@ class _FavoritesScreenState extends State<FavoritesScreen> {
                         overflow: TextOverflow.ellipsis,
                       ),
                     ],
+                    if (item.favorite.notes != null && item.favorite.notes!.isNotEmpty) ...[
+                      const SizedBox(height: 4),
+                      Text(
+                        item.favorite.notes!,
+                        style: AppTextStyles.bodySmall.copyWith(
+                          fontSize: 10,
+                          fontStyle: FontStyle.italic,
+                          color: AppColors.accentTurquoise,
+                        ),
+                        maxLines: 2,
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                    ],
                   ],
                 ),
               ),
               IconButton(
+                icon: const Icon(Icons.sticky_note_2_outlined, size: 20),
+                tooltip: strings.favoriteEditNote,
+                onPressed: () => _showNoteDialog(context, item),
+              ),
+              IconButton(
                 icon: const Icon(Icons.favorite_rounded, color: AppColors.error),
                 tooltip: strings.removeFromFavorites,
-                onPressed: () {
-                  Haptics.toggle();
-                  context.read<FavoritesCubit>().toggleFavorite('stop', stop.id);
-                },
+                onPressed: () => _removeWithUndo(context, item),
               ),
             ],
           ),
@@ -271,21 +406,120 @@ class _FavoritesScreenState extends State<FavoritesScreen> {
                             overflow: TextOverflow.ellipsis,
                           ),
                         ],
+                        if (item.favorite.notes != null && item.favorite.notes!.isNotEmpty) ...[
+                          const SizedBox(height: 4),
+                          Text(
+                            item.favorite.notes!,
+                            style: AppTextStyles.bodySmall.copyWith(
+                              fontSize: 10,
+                              fontStyle: FontStyle.italic,
+                              color: AppColors.accentTurquoise,
+                            ),
+                            maxLines: 2,
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                        ],
                       ],
                     ),
                   ),
                   IconButton(
+                    icon: const Icon(Icons.sticky_note_2_outlined, size: 20),
+                    tooltip: strings.favoriteEditNote,
+                    onPressed: () => _showNoteDialog(context, item),
+                  ),
+                  IconButton(
                     icon: const Icon(Icons.favorite_rounded, color: AppColors.error),
                     tooltip: strings.removeFromFavorites,
-                    onPressed: () {
-                      Haptics.toggle();
-                      context.read<FavoritesCubit>().toggleFavorite('restaurant', rest.id);
-                    },
+                    onPressed: () => _removeWithUndo(context, item),
                   ),
                 ],
               ),
               const SizedBox(height: 8),
               RestaurantMapButton(restaurant: rest),
+            ],
+          ),
+        ),
+      ),
+    ).animate().fadeIn(duration: 350.ms);
+  }
+
+  Widget _buildFavoriteHotelCard(BuildContext context, FavoriteItem item) {
+    final hotel = item.hotel!;
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    final strings = AppStrings.of(context);
+
+    return Container(
+      margin: const EdgeInsets.only(bottom: 12),
+      child: GestureDetector(
+        onTap: () => HotelDetailSheet.show(context, hotel),
+        child: GlassCard(
+          padding: const EdgeInsets.all(12),
+          child: Row(
+            children: [
+              ClipRRect(
+                borderRadius: BorderRadius.circular(12),
+                child: SizedBox(
+                  width: 44,
+                  height: 44,
+                  child: CachedHeroImage(
+                    url: hotel.displayImageUrl,
+                    height: 44,
+                    fit: BoxFit.cover,
+                    placeholderEmoji: '🏨',
+                  ),
+                ),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      hotel.displayName(context),
+                      style: AppTextStyles.titleMedium.copyWith(
+                        color: isDark ? AppColors.adaptiveTextPrimary(context) : const Color(0xFF0D1B2A),
+                      ),
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                    if (hotel.address != null && hotel.address!.isNotEmpty) ...[
+                      const SizedBox(height: 4),
+                      Text(
+                        hotel.address!,
+                        style: AppTextStyles.bodySmall.copyWith(
+                          fontSize: 10,
+                          color: isDark ? AppColors.adaptiveTextSecondary(context) : const Color(0xFF4B5563),
+                        ),
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                    ],
+                    if (item.favorite.notes != null && item.favorite.notes!.isNotEmpty) ...[
+                      const SizedBox(height: 4),
+                      Text(
+                        item.favorite.notes!,
+                        style: AppTextStyles.bodySmall.copyWith(
+                          fontSize: 10,
+                          fontStyle: FontStyle.italic,
+                          color: AppColors.accentTurquoise,
+                        ),
+                        maxLines: 2,
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                    ],
+                  ],
+                ),
+              ),
+              IconButton(
+                icon: const Icon(Icons.sticky_note_2_outlined, size: 20),
+                tooltip: strings.favoriteEditNote,
+                onPressed: () => _showNoteDialog(context, item),
+              ),
+              IconButton(
+                icon: const Icon(Icons.favorite_rounded, color: AppColors.error),
+                tooltip: strings.removeFromFavorites,
+                onPressed: () => _removeWithUndo(context, item),
+              ),
             ],
           ),
         ),

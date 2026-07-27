@@ -31,4 +31,13 @@ void main() {
     expect(CurrencyService.currencyForCountry(null), isNull);
     expect(CurrencyService.currencyForCountry(''), isNull);
   });
+
+  test('symbolFor returns a bare symbol, never digits or stray punctuation', () {
+    // The picker subtitle uses this directly — it must not carry leftovers
+    // from formatting a zero amount (e.g. "$." or ". ر.س").
+    expect(CurrencyService.symbolFor('IQD'), 'د.ع');
+    expect(CurrencyService.symbolFor('USD'), '\$');
+    expect(CurrencyService.symbolFor('sar'), 'ر.س'); // case-insensitive
+    expect(CurrencyService.symbolFor('XYZ'), 'XYZ'); // unknown falls back to code
+  });
 }

@@ -70,4 +70,16 @@ class FavoritesCubit extends Cubit<FavoritesState> {
     }
     return false;
   }
+
+  Future<void> updateNotes(
+    String itemType,
+    String itemRefId,
+    String? notes,
+  ) async {
+    final result = await _repository.updateNotes(itemType, itemRefId, notes);
+    result.fold(
+      (failure) => emit(FavoritesError(failure.message)),
+      (_) => loadFavorites(),
+    );
+  }
 }

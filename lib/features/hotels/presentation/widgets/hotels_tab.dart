@@ -13,6 +13,7 @@ import '../../../../../shared/widgets/app_error_widget.dart';
 import '../cubit/hotels_cubit.dart';
 import 'hotel_detail_sheet.dart';
 import '../../domain/entities/hotel_entity.dart';
+import '../../../favorites/presentation/cubit/favorites_cubit.dart';
 
 /// Lists the real, currently-operating hotels the server sourced for this trip's
 /// destination (Google Places → OpenStreetMap fallback). Each card deep-links
@@ -127,11 +128,59 @@ class _HotelCard extends StatelessWidget {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text(
-                  hotel.displayName(context),
-                  style: AppTextStyles.titleMedium,
-                  maxLines: 2,
-                  overflow: TextOverflow.ellipsis,
+                Row(
+                  children: [
+                    Expanded(
+                      child: Text(
+                        hotel.displayName(context),
+                        style: AppTextStyles.titleMedium,
+                        maxLines: 2,
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                    ),
+                    const SizedBox(width: 8),
+                    BlocBuilder<FavoritesCubit, FavoritesState>(
+                      builder: (context, state) {
+                        final isFav = context
+                            .read<FavoritesCubit>()
+                            .isKeyFavorite('hotel', hotel.id);
+                        return IconButton(
+                          icon: Icon(
+                            isFav
+                                ? Icons.favorite_rounded
+                                : Icons.favorite_outline_rounded,
+                            color: isFav
+                                ? AppColors.error
+                                : AppColors.adaptiveTextSecondary(context),
+                            size: 20,
+                          ),
+                          tooltip: isFav
+                              ? strings.removeFromFavorites
+                              : strings.addToFavorites,
+                          padding: EdgeInsets.zero,
+                          constraints: const BoxConstraints(),
+                          onPressed: () {
+                            Haptics.toggle();
+                            context.read<FavoritesCubit>().toggleFavorite(
+                                  'hotel',
+                                  hotel.id,
+                                  destinationName: hotel.name,
+                                );
+                            ScaffoldMessenger.of(context).showSnackBar(
+                              SnackBar(
+                                content: Text(
+                                  isFav
+                                      ? strings.favoriteRemoved
+                                      : strings.favoriteAdded,
+                                ),
+                                duration: const Duration(seconds: 1),
+                              ),
+                            );
+                          },
+                        );
+                      },
+                    ),
+                  ],
                 ),
                 if (hotel.hotelType != null && hotel.hotelType!.isNotEmpty) ...[
                   const SizedBox(height: 4),

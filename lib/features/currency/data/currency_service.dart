@@ -72,6 +72,12 @@ class CurrencyService {
     'IQD', 'LBP', 'SYP', 'YER', 'IRR', 'JPY', 'KRW', 'IDR', 'VND', 'UZS',
   };
 
+  /// The bare symbol for a currency code, or the code itself when unknown.
+  /// Unlike [format], this never runs a number through the formatter, so
+  /// there's no stray "0" or decimal point to strip.
+  static String symbolFor(String currencyCode) =>
+      _symbols[currencyCode.toUpperCase()] ?? currencyCode.toUpperCase();
+
   /// Format an amount with its currency symbol. Large numbers get thousands
   /// separators — an Iraqi price like 1309992 is unreadable without them.
   static String format(double amount, String currencyCode) {

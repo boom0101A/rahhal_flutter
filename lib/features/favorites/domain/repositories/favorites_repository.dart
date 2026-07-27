@@ -11,4 +11,9 @@ abstract class FavoritesRepository {
     String? notes,
   });
   Future<Either<Failure, bool>> isFavorite(String itemType, String itemRefId);
+  Future<Either<Failure, void>> updateNotes(
+    String itemType,
+    String itemRefId,
+    String? notes,
+  );
 }

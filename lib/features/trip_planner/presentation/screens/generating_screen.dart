@@ -6,6 +6,7 @@ import 'package:go_router/go_router.dart';
 import '../../../../core/constants/app_colors.dart';
 import '../../../../core/constants/app_text_styles.dart';
 import '../../../../core/constants/app_strings.dart';
+import '../../../../core/services/notification_preferences.dart';
 import '../../../../core/services/notification_service.dart';
 import '../../domain/entities/trip_entity.dart';
 import '../../../../core/config/app_config.dart';
@@ -145,6 +146,12 @@ class _GeneratingScreenBodyState extends State<_GeneratingScreenBody>
   Future<void> _scheduleTripReminder(TripEntity trip) async {
     final start = trip.startDate;
     if (start == null) return;
+    // Respect the Settings switch — this used to fire regardless of it.
+    if (!await NotificationPreferences.isEnabled(
+        NotificationPreferences.tripReminders)) {
+      return;
+    }
+    if (!mounted) return;
     final strings = AppStrings.of(context);
     await NotificationService.requestPermission();
     await NotificationService.scheduleTripReminder(

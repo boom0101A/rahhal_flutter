@@ -10,6 +10,18 @@ abstract class AuthRepository {
   Future<Either<Failure, UserEntity>> signInAnonymously();
   Future<Either<Failure, UserEntity>> signInWithGoogle();
   Future<Either<Failure, void>> signOut();
+
+  /// Permanently deletes the signed-in account and its cloud data.
+  ///
+  /// Required by Google Play's account-deletion policy for any app that lets
+  /// users create an account. Fails with `auth/requires-recent-login` when the
+  /// session is too old — the caller must re-authenticate and retry.
+  Future<Either<Failure, void>> deleteAccount();
+
+  /// Updates the display name shown throughout the app, and returns the
+  /// refreshed user. Rejects a blank name — an empty display name would show
+  /// as nothing everywhere it's rendered.
+  Future<Either<Failure, UserEntity>> updateDisplayName(String name);
   UserEntity? getCurrentUser();
   bool get isAuthenticated;
   Stream<UserEntity?> get authStateChanges;
