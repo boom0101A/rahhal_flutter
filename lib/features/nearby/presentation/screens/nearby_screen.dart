@@ -94,9 +94,24 @@ class _NearbyScreenState extends State<NearbyScreen> {
     'park',
   ];
 
-  List<NearbyPlace> get _filtered => _filter == 'all'
-      ? _places
-      : _places.where((p) => p.type == _filter).toList();
+  /// When on, keeps only places Google reports as open right now. Places with
+  /// UNKNOWN hours are hidden too — the filter promises "open", and a maybe
+  /// isn't one. They stay visible whenever the filter is off.
+  bool _openNowOnly = false;
+
+  List<NearbyPlace> get _filtered {
+    var list = _filter == 'all'
+        ? _places
+        : _places.where((p) => p.type == _filter).toList();
+    if (_openNowOnly) {
+      list = list.where((p) => p.openNow == true).toList();
+    }
+    return list;
+  }
+
+  /// Only offer the toggle when at least one place actually reports its state —
+  /// otherwise it would look broken (tap it, everything disappears).
+  bool get _anyOpenStateKnown => _places.any((p) => p.openNow != null);
 
   String _filterLabel(String id, AppStrings s) => switch (id) {
         'all' => s.nearbyFilterAll,
@@ -214,7 +229,9 @@ class _NearbyScreenState extends State<NearbyScreen> {
       child: ListView(
         scrollDirection: Axis.horizontal,
         padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-        children: chips.map((f) {
+        children: [
+          if (_anyOpenStateKnown) _buildOpenNowChip(strings),
+          ...chips.map((f) {
           final active = _filter == f;
           final color = f == 'all' ? AppColors.accentAmber : _catStyle(f).$1;
           return GestureDetector(
@@ -251,7 +268,46 @@ class _NearbyScreenState extends State<NearbyScreen> {
               ),
             ),
           );
-        }).toList(),
+          }),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildOpenNowChip(AppStrings strings) {
+    const color = Color(0xFF3E9A78);
+    return GestureDetector(
+      onTap: () {
+        Haptics.tap();
+        setState(() => _openNowOnly = !_openNowOnly);
+      },
+      child: AnimatedContainer(
+        duration: const Duration(milliseconds: 180),
+        margin: const EdgeInsets.symmetric(horizontal: 4),
+        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 7),
+        decoration: BoxDecoration(
+          color: _openNowOnly ? color : AppColors.adaptiveGlass(context),
+          borderRadius: BorderRadius.circular(50),
+          border: Border.all(
+              color: _openNowOnly ? color : AppColors.adaptiveBorder(context)),
+        ),
+        child: Row(
+          children: [
+            Icon(Icons.schedule_rounded,
+                size: 15,
+                color: _openNowOnly
+                    ? Colors.white
+                    : AppColors.adaptiveTextSecondary(context)),
+            const SizedBox(width: 6),
+            Text(
+              strings.nearbyOpenNow,
+              style: AppTextStyles.chip.copyWith(
+                  color: _openNowOnly
+                      ? Colors.white
+                      : AppColors.adaptiveTextSecondary(context)),
+            ),
+          ],
+        ),
       ),
     );
   }
@@ -291,7 +347,8 @@ class _NearbyScreenState extends State<NearbyScreen> {
         ? place.nameEn
         : place.name;
     final (color, icon) = _catStyle(place.type);
-    final distance = place.distanceLabel(_lang);
+    // Walking time is more actionable than raw metres when you're on foot.
+    final distance = place.walkLabel(_lang);
 
     return Padding(
       padding: const EdgeInsets.only(bottom: 12),
@@ -346,6 +403,34 @@ class _NearbyScreenState extends State<NearbyScreen> {
                             Text(place.rating.toStringAsFixed(1),
                                 style: AppTextStyles.labelSmall.copyWith(
                                     color: AppColors.accentAmber)),
+                          ],
+                          // Shown only when Google actually knows the state —
+                          // an unknown venue gets no badge rather than a
+                          // misleading "closed".
+                          if (place.openNow != null) ...[
+                            const SizedBox(width: 8),
+                            Container(
+                              padding: const EdgeInsets.symmetric(
+                                  horizontal: 6, vertical: 1),
+                              decoration: BoxDecoration(
+                                color: (place.openNow!
+                                        ? const Color(0xFF3E9A78)
+                                        : AppColors.error)
+                                    .withValues(alpha: 0.14),
+                                borderRadius: BorderRadius.circular(50),
+                              ),
+                              child: Text(
+                                place.openNow!
+                                    ? strings.nearbyOpenNow
+                                    : strings.nearbyClosedNow,
+                                style: AppTextStyles.labelSmall.copyWith(
+                                  color: place.openNow!
+                                      ? const Color(0xFF3E9A78)
+                                      : AppColors.error,
+                                  fontSize: 10,
+                                ),
+                              ),
+                            ),
                           ],
                         ],
                       ),

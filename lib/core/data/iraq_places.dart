@@ -294,4 +294,80 @@ const List<IraqPlace> iraqPlaces = [
 
   // ─── Halabja ──────────────────────────────────────────────────────────────
   IraqPlace(ar: 'حلبجة', en: 'Halabja', governorate: 'حلبجة', kind: IraqPlaceKind.governorate),
+
+  // ══ Beyond Iraq ═══════════════════════════════════════════════════════════
+  // The destinations Iraqi travellers actually go to. `governorate` carries the
+  // country name here, which is what the suggestion subtitle should read.
+
+  // ─── Gulf ─────────────────────────────────────────────────────────────────
+  IraqPlace(ar: 'مكة', en: 'Mecca', governorate: 'السعودية', kind: IraqPlaceKind.governorate, aliases: ['مكه', 'مكة المكرمة']),
+  IraqPlace(ar: 'المدينة المنورة', en: 'Madinah', governorate: 'السعودية', kind: IraqPlaceKind.governorate, aliases: ['المدينه']),
+  IraqPlace(ar: 'الرياض', en: 'Riyadh', governorate: 'السعودية', kind: IraqPlaceKind.governorate),
+  IraqPlace(ar: 'جدة', en: 'Jeddah', governorate: 'السعودية', kind: IraqPlaceKind.city),
+  IraqPlace(ar: 'الدمام', en: 'Dammam', governorate: 'السعودية', kind: IraqPlaceKind.city),
+  IraqPlace(ar: 'الطائف', en: 'Taif', governorate: 'السعودية', kind: IraqPlaceKind.city),
+  IraqPlace(ar: 'أبها', en: 'Abha', governorate: 'السعودية', kind: IraqPlaceKind.city),
+  IraqPlace(ar: 'العلا', en: 'AlUla', governorate: 'السعودية', kind: IraqPlaceKind.landmark),
+  IraqPlace(ar: 'دبي', en: 'Dubai', governorate: 'الإمارات', kind: IraqPlaceKind.governorate),
+  IraqPlace(ar: 'أبوظبي', en: 'Abu Dhabi', governorate: 'الإمارات', kind: IraqPlaceKind.governorate, aliases: ['ابو ظبي']),
+  IraqPlace(ar: 'الشارقة', en: 'Sharjah', governorate: 'الإمارات', kind: IraqPlaceKind.city),
+  IraqPlace(ar: 'رأس الخيمة', en: 'Ras Al Khaimah', governorate: 'الإمارات', kind: IraqPlaceKind.city),
+  IraqPlace(ar: 'الكويت', en: 'Kuwait City', governorate: 'الكويت', kind: IraqPlaceKind.governorate),
+  IraqPlace(ar: 'الدوحة', en: 'Doha', governorate: 'قطر', kind: IraqPlaceKind.governorate),
+  IraqPlace(ar: 'المنامة', en: 'Manama', governorate: 'البحرين', kind: IraqPlaceKind.governorate),
+  IraqPlace(ar: 'مسقط', en: 'Muscat', governorate: 'عُمان', kind: IraqPlaceKind.governorate),
+  IraqPlace(ar: 'صلالة', en: 'Salalah', governorate: 'عُمان', kind: IraqPlaceKind.city),
+
+  // ─── Levant ───────────────────────────────────────────────────────────────
+  IraqPlace(ar: 'دمشق', en: 'Damascus', governorate: 'سوريا', kind: IraqPlaceKind.governorate),
+  IraqPlace(ar: 'حلب', en: 'Aleppo', governorate: 'سوريا', kind: IraqPlaceKind.city),
+  IraqPlace(ar: 'اللاذقية', en: 'Latakia', governorate: 'سوريا', kind: IraqPlaceKind.city),
+  IraqPlace(ar: 'حمص', en: 'Homs', governorate: 'سوريا', kind: IraqPlaceKind.city),
+  IraqPlace(ar: 'طرطوس', en: 'Tartus', governorate: 'سوريا', kind: IraqPlaceKind.city),
+  IraqPlace(ar: 'تدمر', en: 'Palmyra', governorate: 'سوريا', kind: IraqPlaceKind.landmark),
+  IraqPlace(ar: 'السيدة زينب', en: 'Sayyidah Zaynab, Damascus', governorate: 'سوريا', kind: IraqPlaceKind.landmark),
+  IraqPlace(ar: 'بيروت', en: 'Beirut', governorate: 'لبنان', kind: IraqPlaceKind.governorate),
+  IraqPlace(ar: 'طرابلس لبنان', en: 'Tripoli, Lebanon', governorate: 'لبنان', kind: IraqPlaceKind.city),
+  IraqPlace(ar: 'بعلبك', en: 'Baalbek', governorate: 'لبنان', kind: IraqPlaceKind.landmark),
+  IraqPlace(ar: 'جبيل', en: 'Byblos', governorate: 'لبنان', kind: IraqPlaceKind.landmark),
+  IraqPlace(ar: 'عمان', en: 'Amman', governorate: 'الأردن', kind: IraqPlaceKind.governorate, aliases: ['عمّان']),
+  IraqPlace(ar: 'العقبة', en: 'Aqaba', governorate: 'الأردن', kind: IraqPlaceKind.city),
+  IraqPlace(ar: 'البتراء', en: 'Petra', governorate: 'الأردن', kind: IraqPlaceKind.landmark),
+  IraqPlace(ar: 'جرش', en: 'Jerash', governorate: 'الأردن', kind: IraqPlaceKind.landmark),
+  IraqPlace(ar: 'البحر الميت', en: 'Dead Sea', governorate: 'الأردن', kind: IraqPlaceKind.landmark),
+  IraqPlace(ar: 'القدس', en: 'Jerusalem', governorate: 'فلسطين', kind: IraqPlaceKind.governorate),
+  IraqPlace(ar: 'المسجد الأقصى', en: 'Al-Aqsa Mosque, Jerusalem', governorate: 'فلسطين', kind: IraqPlaceKind.landmark),
+  IraqPlace(ar: 'بيت لحم', en: 'Bethlehem', governorate: 'فلسطين', kind: IraqPlaceKind.city),
+
+  // ─── Egypt & North Africa ─────────────────────────────────────────────────
+  IraqPlace(ar: 'القاهرة', en: 'Cairo', governorate: 'مصر', kind: IraqPlaceKind.governorate),
+  IraqPlace(ar: 'الإسكندرية', en: 'Alexandria', governorate: 'مصر', kind: IraqPlaceKind.city, aliases: ['اسكندرية']),
+  IraqPlace(ar: 'الأقصر', en: 'Luxor', governorate: 'مصر', kind: IraqPlaceKind.city),
+  IraqPlace(ar: 'أسوان', en: 'Aswan', governorate: 'مصر', kind: IraqPlaceKind.city),
+  IraqPlace(ar: 'شرم الشيخ', en: 'Sharm El Sheikh', governorate: 'مصر', kind: IraqPlaceKind.city),
+  IraqPlace(ar: 'الغردقة', en: 'Hurghada', governorate: 'مصر', kind: IraqPlaceKind.city),
+  IraqPlace(ar: 'الأهرامات', en: 'Pyramids of Giza', governorate: 'مصر', kind: IraqPlaceKind.landmark, aliases: ['اهرامات الجيزة', 'الجيزة']),
+  IraqPlace(ar: 'مراكش', en: 'Marrakech', governorate: 'المغرب', kind: IraqPlaceKind.governorate),
+  IraqPlace(ar: 'الدار البيضاء', en: 'Casablanca', governorate: 'المغرب', kind: IraqPlaceKind.city),
+  IraqPlace(ar: 'فاس', en: 'Fez', governorate: 'المغرب', kind: IraqPlaceKind.city),
+  IraqPlace(ar: 'طنجة', en: 'Tangier', governorate: 'المغرب', kind: IraqPlaceKind.city),
+  IraqPlace(ar: 'تونس', en: 'Tunis', governorate: 'تونس', kind: IraqPlaceKind.governorate),
+  IraqPlace(ar: 'الجزائر', en: 'Algiers', governorate: 'الجزائر', kind: IraqPlaceKind.governorate),
+
+  // ─── Türkiye & Iran ───────────────────────────────────────────────────────
+  IraqPlace(ar: 'إسطنبول', en: 'Istanbul', governorate: 'تركيا', kind: IraqPlaceKind.governorate, aliases: ['استنبول', 'اسطنبول']),
+  IraqPlace(ar: 'أنقرة', en: 'Ankara', governorate: 'تركيا', kind: IraqPlaceKind.city),
+  IraqPlace(ar: 'طرابزون', en: 'Trabzon', governorate: 'تركيا', kind: IraqPlaceKind.city),
+  IraqPlace(ar: 'أنطاليا', en: 'Antalya', governorate: 'تركيا', kind: IraqPlaceKind.city),
+  IraqPlace(ar: 'بورصة', en: 'Bursa', governorate: 'تركيا', kind: IraqPlaceKind.city),
+  IraqPlace(ar: 'إزمير', en: 'Izmir', governorate: 'تركيا', kind: IraqPlaceKind.city),
+  IraqPlace(ar: 'يلوا', en: 'Yalova', governorate: 'تركيا', kind: IraqPlaceKind.city),
+  IraqPlace(ar: 'صبنجة', en: 'Sapanca', governorate: 'تركيا', kind: IraqPlaceKind.city),
+  IraqPlace(ar: 'كابادوكيا', en: 'Cappadocia', governorate: 'تركيا', kind: IraqPlaceKind.landmark, aliases: ['كبادوكيا']),
+  IraqPlace(ar: 'آيا صوفيا', en: 'Hagia Sophia, Istanbul', governorate: 'تركيا', kind: IraqPlaceKind.landmark, aliases: ['ايا صوفيا']),
+  IraqPlace(ar: 'مشهد', en: 'Mashhad', governorate: 'إيران', kind: IraqPlaceKind.governorate),
+  IraqPlace(ar: 'طهران', en: 'Tehran', governorate: 'إيران', kind: IraqPlaceKind.governorate),
+  IraqPlace(ar: 'قم', en: 'Qom', governorate: 'إيران', kind: IraqPlaceKind.city),
+  IraqPlace(ar: 'شيراز', en: 'Shiraz', governorate: 'إيران', kind: IraqPlaceKind.city),
+  IraqPlace(ar: 'أصفهان', en: 'Isfahan', governorate: 'إيران', kind: IraqPlaceKind.city, aliases: ['اصفهان']),
 ];

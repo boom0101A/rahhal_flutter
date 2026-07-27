@@ -170,6 +170,39 @@ class AppStrings {
       'No contact details available for this place — open it in Maps to see more.');
   String get bookingLaunchFailed =>
       _t('تعذّر فتح التطبيق', 'Couldn\'t open the app');
+
+  // Share my live location
+  String get shareMyLocation => _t('شارك موقعي', 'Share my location');
+  String get shareLocationBody => _t('أنا هنا الآن 📍', 'I\'m here right now 📍');
+  String get shareLocationFailed => _t(
+      'تعذّر تحديد موقعك — فعّل إذن الموقع وحاول مجدداً.',
+      'Couldn\'t get your location — enable location permission and try again.');
+
+  // Offline preparation
+  String get offlinePrepareTitle =>
+      _t('جهّز الرحلة للاستخدام دون إنترنت', 'Prepare trip for offline use');
+  String get offlinePreparing => _t('جارٍ التجهيز...', 'Preparing...');
+  String get offlinePrepareDone => _t(
+      'تم تجهيز الرحلة — تعمل الآن دون إنترنت ✅',
+      'Trip is ready — it now works offline ✅');
+  String get offlinePrepareFailed =>
+      _t('تعذّر تجهيز بعض المحتوى', 'Some content couldn\'t be prepared');
+
+  // Smart contextual notifications
+  String notifyDayPlanTitle(int day) =>
+      _t('خطة اليوم $day ☀️', 'Day $day plan ☀️');
+  String notifyDayPlanBody(String firstStop, int more) => more > 0
+      ? _t('$firstStop و$more محطات أخرى بانتظارك اليوم',
+           '$firstStop and $more more stops await you today')
+      : _t('$firstStop بانتظارك اليوم', '$firstStop awaits you today');
+  String get notifyBookingTitle => _t('احجز مطعم اليوم 🍽️', 'Book today\'s restaurant 🍽️');
+  String notifyBookingBody(String restaurant) =>
+      _t('احجز طاولتك في $restaurant قبل الازدحام',
+         'Reserve your table at $restaurant before it fills up');
+  String get notifyClosingTitle => _t('يغلق قريباً ⏰', 'Closing soon ⏰');
+  String notifyClosingBody(String place) =>
+      _t('$place يغلق خلال ساعة — إن كنت تنوي زيارته فاذهب الآن',
+         '$place closes within an hour — head over now if you plan to visit');
   String get hotelPricePerNight => _t('السعر/الليلة', 'Price/Night');
   String get noHotelsFound => _t(
       'لم نعثر على فنادق موثّقة لهذه الوجهة',
@@ -230,6 +263,15 @@ class AppStrings {
   String get budgetTransport => _t('المواصلات', 'Transport');
   String get budgetActivities => _t('الزيارات', 'Activities');
   String get budgetShopping => _t('التسوق', 'Shopping');
+  String get budgetChartTitle =>
+      _t('المخطَّط مقابل الفعلي', 'Planned vs Actual');
+  String get budgetPlanned => _t('المخطَّط', 'Planned');
+  String get budgetActual => _t('الفعلي', 'Actual');
+  String get budgetNoExpensesYet => _t(
+      'سجّل مصاريفك الفعلية لترى المقارنة هنا',
+      'Log your actual spending to see the comparison here');
+  String budgetOverBy(String amount) =>
+      _t('تجاوزت بـ $amount', 'Over by $amount');
   String get budgetOther => _t('أخرى', 'Other');
   String get budgetPerDay => _t('يومياً', 'Daily');
   String get budgetEstimated => _t('تقديري', 'Estimated');
@@ -400,6 +442,49 @@ class AppStrings {
       _t('$n مكان قريب منك · الأقرب أولاً', '$n places near you · closest first');
   String get nearbyLocating => _t('جارٍ تحديد موقعك...', 'Finding your location...');
   String get nearbyDirections => _t('الاتجاهات', 'Directions');
+  String get nearbyOpenNow => _t('مفتوح الآن', 'Open now');
+
+  // Today companion screen
+  String get todayTab => _t('اليوم', 'Today');
+  String get todayTitle => _t('يومك الآن', 'Your day right now');
+  String get todayNow => _t('الآن', 'Now');
+  String get todayNext => _t('التالي', 'Next');
+  String todayEndsAt(String time) => _t('تنتهي $time', 'ends $time');
+  String todayStartsAt(String time) => _t('تبدأ $time', 'starts $time');
+  String todayInMinutes(int m) => _t('بعد $m دقيقة', 'in $m min');
+  String get todayMarkVisited => _t('تم — زُرته', 'Done — visited');
+  String get todayNoTripTitle => _t('لا توجد رحلة اليوم', 'No trip today');
+  String get todayNoTripSubtitle => _t(
+      'عندما تبدأ رحلتك ستجد هنا خطة يومك لحظة بلحظة.',
+      'When your trip starts, your live plan for the day appears here.');
+  String get todayAllDone =>
+      _t('أنجزت كل محطات اليوم! 🎉', 'You\'ve done every stop today! 🎉');
+  String todayDayLabel(int day, String destination) =>
+      _t('اليوم $day · $destination', 'Day $day · $destination');
+  String get todayRestOfDay => _t('بقية اليوم', 'Rest of the day');
+  String get todayOpenTrip => _t('فتح الرحلة', 'Open trip');
+
+  // Chat commands that modify the itinerary
+  String get cmdConfirmTitle => _t('تأكيد التعديل', 'Confirm change');
+  String cmdDeleteDayBody(int day, int stops) => _t(
+      'سيتم حذف اليوم $day وجميع محطاته ($stops محطة) نهائياً. لا يمكن التراجع.',
+      'Day $day and all $stops of its stops will be permanently deleted. This cannot be undone.');
+  String cmdDeleteStopBody(String name) => _t(
+      'سيتم حذف "$name" من رحلتك نهائياً. لا يمكن التراجع.',
+      '"$name" will be permanently removed from your trip. This cannot be undone.');
+  String cmdMarkVisitedBody(String name) =>
+      _t('سيتم تعليم "$name" كمكان زُرته.',
+         '"$name" will be marked as visited.');
+  String get cmdConfirmDelete => _t('نعم، احذف', 'Yes, delete');
+  String get cmdConfirmApply => _t('تأكيد', 'Confirm');
+  String get cmdDone => _t('تم التعديل ✅', 'Change applied ✅');
+  String get cmdFailed => _t('تعذّر تنفيذ التعديل', 'Couldn\'t apply the change');
+  String cmdNotFound(String target) => _t(
+      'لم أجد "$target" في رحلتك.', 'I couldn\'t find "$target" in your trip.');
+  String cmdAmbiguous(String matches) => _t(
+      'وجدت أكثر من نتيجة ($matches) — حدّد الاسم بدقة أكبر.',
+      'Multiple matches ($matches) — please be more specific.');
+  String get nearbyClosedNow => _t('مغلق', 'Closed');
   String get itineraryStopsTitle => _t('محطات اليوم', 'Today\'s Stops');
   String get markVisited => _t('وضع علامة زُرت', 'Mark as visited');
   String get markNotVisited => _t('إلغاء علامة زُرت', 'Mark as not visited');

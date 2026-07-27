@@ -17,7 +17,7 @@ class DatabaseHelper {
 
   // ─── Init ─────────────────────────────────────────────────────────────────
 
-  static const int _dbVersion = 8;
+  static const int _dbVersion = 9;
   static const String _dbName = 'rahhal_ai.db';
 
   static final Map<int, List<String>> _migrations = {
@@ -57,6 +57,11 @@ class DatabaseHelper {
     // (call / WhatsApp). Hotels already carry one.
     8: [
       'ALTER TABLE restaurants ADD COLUMN phone TEXT;',
+    ],
+    // English opening hours — the parseable copy behind "closes in an hour"
+    // warnings (the displayed Arabic hours use Arabic-Indic digits).
+    9: [
+      'ALTER TABLE restaurants ADD COLUMN opening_hours_en TEXT;',
     ],
   };
 
@@ -212,7 +217,8 @@ class DatabaseHelper {
       is_recommended    INTEGER DEFAULT 0,
       place_id          TEXT,
       coords_verified   INTEGER DEFAULT 0,
-      phone             TEXT
+      phone             TEXT,
+      opening_hours_en  TEXT
     )
   ''';
 

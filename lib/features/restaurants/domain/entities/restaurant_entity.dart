@@ -17,6 +17,10 @@ class RestaurantEntity extends Equatable {
   final double latitude;
   final double longitude;
   final String? openingHours;
+
+  /// English copy of [openingHours] — the parseable one behind closing-time
+  /// warnings (the displayed Arabic hours use Arabic-Indic digits).
+  final String? openingHoursEn;
   final String? imageUrl;
   final String? aiDescription;
   final bool isRecommended;
@@ -39,6 +43,7 @@ class RestaurantEntity extends Equatable {
     required this.latitude,
     required this.longitude,
     this.openingHours,
+    this.openingHoursEn,
     this.imageUrl,
     this.aiDescription,
     required this.isRecommended,
@@ -80,6 +85,7 @@ class RestaurantEntity extends Equatable {
   List<Object?> get props => [
         id, tripId, dayId, name, nameEn, cuisineType, halalCertified, rating,
         pricePerPerson, priceTier, address, latitude, longitude, openingHours,
+        openingHoursEn,
         imageUrl, aiDescription, isRecommended, placeId, phone, coordsVerified,
       ];
 }

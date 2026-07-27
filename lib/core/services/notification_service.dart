@@ -125,6 +125,62 @@ class NotificationService {
     );
   }
 
+  /// Morning briefing on each day of the trip: what today's plan is.
+  /// [dayNumber] keeps the id stable so re-opening a trip replaces rather than
+  /// duplicates the reminder.
+  static Future<void> scheduleDayPlan({
+    required String tripId,
+    required int dayNumber,
+    required String title,
+    required String body,
+    required DateTime dayDate,
+    int hour = 8,
+  }) async {
+    await _scheduleAt(
+      id: _idFor('day_${tripId}_$dayNumber'),
+      title: title,
+      body: body,
+      when: DateTime(dayDate.year, dayDate.month, dayDate.day, hour),
+    );
+  }
+
+  /// Nudge to reserve the day's recommended restaurant, a few hours ahead of
+  /// the meal rather than when the user is already standing at the door.
+  static Future<void> scheduleBookingReminder({
+    required String tripId,
+    required int dayNumber,
+    required String title,
+    required String body,
+    required DateTime dayDate,
+    int hour = 10,
+  }) async {
+    await _scheduleAt(
+      id: _idFor('book_${tripId}_$dayNumber'),
+      title: title,
+      body: body,
+      when: DateTime(dayDate.year, dayDate.month, dayDate.day, hour),
+    );
+  }
+
+  /// "Closes in an hour" warning for a place the plan visits that day.
+  /// [closingTime] must already be a real local DateTime — callers only pass
+  /// one when the venue's hours parsed unambiguously, so an unparsed or odd
+  /// format simply produces no notification instead of a wrong one.
+  static Future<void> scheduleClosingWarning({
+    required String key,
+    required String title,
+    required String body,
+    required DateTime closingTime,
+    Duration before = const Duration(hours: 1),
+  }) async {
+    await _scheduleAt(
+      id: _idFor('close_$key'),
+      title: title,
+      body: body,
+      when: closingTime.subtract(before),
+    );
+  }
+
   static Future<void> cancelTrip(String tripId) => _cancel(_idFor('trip_$tripId'));
   static Future<void> cancelDocument(String documentId) =>
       _cancel(_idFor('doc_$documentId'));

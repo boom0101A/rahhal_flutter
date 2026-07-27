@@ -4,9 +4,16 @@ import '../../core/constants/app_colors.dart';
 import '../../core/di/injection.dart';
 import '../../features/currency/data/currency_service.dart';
 
-/// Widget يعرض مبلغاً بالدولار + العملة المحلية للوجهة
+/// Shows a USD amount alongside the currencies the user actually reasons in:
+///   • their HOME currency (an Iraqi sees dinars on every trip, anywhere), and
+///   • the DESTINATION currency (what they'll hand over at the counter).
+///
+/// Duplicates collapse automatically — a Baghdad trip for an Iraqi user shows
+/// one dinar figure, not two, and a USD-home user on a USD trip sees just "$25".
 class DualCurrencyText extends StatefulWidget {
   final double amountUsd;
+
+  /// ISO-2 country of the trip destination.
   final String? countryCode;
   final TextStyle? primaryStyle;
   final bool compact;
@@ -24,58 +31,80 @@ class DualCurrencyText extends StatefulWidget {
 }
 
 class _DualCurrencyTextState extends State<DualCurrencyText> {
-  double? _rate;
-  String? _localCurrency;
+  /// currency code → rate per 1 USD, in display order.
+  final Map<String, double> _rates = {};
   bool _loading = true;
 
   @override
   void initState() {
     super.initState();
-    _fetchRate();
+    _fetchRates();
   }
 
   @override
   void didUpdateWidget(DualCurrencyText old) {
     super.didUpdateWidget(old);
-    if (old.countryCode != widget.countryCode) _fetchRate();
+    if (old.countryCode != widget.countryCode) _fetchRates();
   }
 
-  Future<void> _fetchRate() async {
-    final currency = CurrencyService.currencyForCountry(widget.countryCode);
-    if (currency == null || currency == 'USD') {
-      if (mounted) setState(() { _loading = false; _localCurrency = null; });
-      return;
+  Future<void> _fetchRates() async {
+    if (mounted) setState(() => _loading = true);
+
+    final home = await CurrencyService.homeCurrency();
+    final destination = CurrencyService.currencyForCountry(widget.countryCode);
+
+    // Ordered + de-duplicated: home first (it's what the user feels), then the
+    // destination. USD is the primary figure, so never repeat it here.
+    final wanted = <String>{
+      if (home != null && home != 'USD') home,
+      if (destination != null && destination != 'USD') destination,
+    };
+
+    final fetched = <String, double>{};
+    for (final code in wanted) {
+      final rate = await sl<CurrencyService>().getRate(code);
+      if (rate != null) fetched[code] = rate;
     }
 
-    setState(() { _loading = true; _localCurrency = currency; });
-    final rate = await sl<CurrencyService>().getRate(currency);
-    if (mounted) setState(() { _rate = rate; _loading = false; });
+    if (!mounted) return;
+    setState(() {
+      _rates
+        ..clear()
+        ..addAll(fetched);
+      _loading = false;
+    });
   }
+
+  String get _primary =>
+      '\$${widget.amountUsd.toStringAsFixed(widget.amountUsd < 10 ? 2 : 0)}';
+
+  List<String> get _converted => _rates.entries
+      .map((e) => CurrencyService.format(widget.amountUsd * e.value, e.key))
+      .toList();
 
   @override
   Widget build(BuildContext context) {
-    final primary = '\$${widget.amountUsd.toStringAsFixed(widget.amountUsd < 10 ? 2 : 0)}';
+    final primaryStyle = widget.primaryStyle ??
+        (widget.compact ? AppTextStyles.bodyMedium : AppTextStyles.titleMedium);
 
-    if (_loading || _rate == null || _localCurrency == null) {
-      return Text(primary, style: widget.primaryStyle ?? AppTextStyles.bodyMedium);
+    // No rates yet (loading, offline with an empty cache, or USD-only user):
+    // show the dollar figure alone rather than a spinner or a gap.
+    if (_loading || _converted.isEmpty) {
+      return Text(_primary, style: primaryStyle);
     }
 
-    final localAmount = widget.amountUsd * _rate!;
-    final localFormatted = CurrencyService.format(localAmount, _localCurrency!);
+    final secondary = _converted.join(' · ');
 
     if (widget.compact) {
-      return Text(
-        '$primary  ≈  $localFormatted',
-        style: widget.primaryStyle ?? AppTextStyles.bodyMedium,
-      );
+      return Text('$_primary  ≈  $secondary', style: primaryStyle);
     }
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Text(primary, style: widget.primaryStyle ?? AppTextStyles.titleMedium),
+        Text(_primary, style: primaryStyle),
         Text(
-          '≈ $localFormatted',
+          '≈ $secondary',
           style: AppTextStyles.bodySmall.copyWith(
             color: AppColors.accentAmber.withValues(alpha: 0.85),
             fontWeight: FontWeight.w500,

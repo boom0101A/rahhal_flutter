@@ -56,6 +56,7 @@ class RestaurantRepositoryImpl implements RestaurantRepository {
         latitude: (m['latitude'] as num? ?? 0).toDouble(),
         longitude: (m['longitude'] as num? ?? 0).toDouble(),
         openingHours: m['opening_hours'] as String?,
+        openingHoursEn: m['opening_hours_en'] as String?,
         imageUrl: m['image_url'] as String?,
         aiDescription: m['ai_description'] as String?,
         isRecommended: (m['is_recommended'] as int? ?? 0) == 1,

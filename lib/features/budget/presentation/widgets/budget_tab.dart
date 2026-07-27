@@ -14,6 +14,7 @@ import '../../../../../shared/widgets/dual_currency_text.dart';
 import '../../../itinerary/domain/entities/day_entity.dart';
 import '../../domain/entities/expense_entity.dart';
 import '../cubit/budget_cubit.dart';
+import 'planned_vs_actual_chart.dart';
 
 class BudgetTab extends StatefulWidget {
   final String tripId;
@@ -136,6 +137,13 @@ class _BudgetTabState extends State<BudgetTab> {
     return ListView(
       padding: const EdgeInsets.fromLTRB(16, 8, 16, 100),
       children: [
+        // Per-category planned vs actual — shows WHERE the budget slipped,
+        // which the totals card above can't.
+        PlannedVsActualChart(
+          planned: state.breakdown,
+          expenses: state.expenses,
+        ),
+        const SizedBox(height: 16),
         // Comparison Total Card
         GlassCard(
           padding: const EdgeInsets.all(20),

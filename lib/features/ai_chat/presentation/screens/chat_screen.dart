@@ -8,6 +8,8 @@ import '../../../../core/di/injection.dart';
 import '../../../../core/constants/app_strings.dart';
 import '../../../../shared/widgets/glass_card.dart';
 import '../cubit/chat_cubit.dart';
+import '../../data/trip_command_executor.dart';
+import '../../domain/trip_command.dart';
 import '../../domain/entities/chat_message_entity.dart';
 import '../../../trip_planner/domain/entities/trip_entity.dart';
 import '../../../trip_planner/domain/repositories/trip_repository.dart';
@@ -124,8 +126,96 @@ class _ChatScreenState extends State<ChatScreen> {
     final text = _msgCtrl.text.trim();
     if (text.isEmpty) return;
     _msgCtrl.clear();
+
+    // Some messages are instructions to change the itinerary rather than
+    // questions. Those are handled locally — and only ever after an explicit
+    // confirmation — instead of being sent to the model.
+    final command = parseTripCommand(text);
+    if (command != null) {
+      _handleCommand(command);
+      return;
+    }
+
     context.read<ChatCubit>().sendMessage(text);
     _scrollToBottom();
+  }
+
+  /// Resolves the command against the real trip, shows exactly what will
+  /// change, and applies it only if the user confirms.
+  Future<void> _handleCommand(TripCommand command) async {
+    // Uses the State's own context so the `mounted` checks below actually
+    // guard it across the awaits.
+    final strings = AppStrings.of(context);
+    final messenger = ScaffoldMessenger.of(context);
+    final executor = sl<TripCommandExecutor>();
+
+    final preview =
+        await executor.preview(tripId: widget.tripId, command: command);
+    if (!mounted) return;
+
+    if (!preview.canRun) {
+      final message = switch (preview.problem) {
+        'ambiguous' => strings.cmdAmbiguous(preview.targetLabel),
+        'not-found' => strings.cmdNotFound(preview.targetLabel),
+        _ => strings.cmdFailed,
+      };
+      messenger.showSnackBar(SnackBar(content: Text(message)));
+      return;
+    }
+
+    final body = switch (command.kind) {
+      TripCommandKind.deleteDay => () {
+          // targetLabel packs "dayNumber|stopCount" from the preview.
+          final parts = preview.targetLabel.split('|');
+          return strings.cmdDeleteDayBody(
+            int.tryParse(parts.first) ?? command.dayNumber ?? 0,
+            parts.length > 1 ? (int.tryParse(parts[1]) ?? 0) : 0,
+          );
+        }(),
+      TripCommandKind.deleteStop =>
+        strings.cmdDeleteStopBody(preview.targetLabel),
+      TripCommandKind.markVisited =>
+        strings.cmdMarkVisitedBody(preview.targetLabel),
+    };
+
+    final confirmed = await showDialog<bool>(
+          context: context,
+          builder: (dialogContext) => AlertDialog(
+            backgroundColor: AppColors.adaptiveBgPopover(dialogContext),
+            title: Text(strings.cmdConfirmTitle,
+                style: AppTextStyles.titleMedium),
+            content: Text(body, style: AppTextStyles.bodyMedium),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.of(dialogContext).pop(false),
+                child: Text(strings.cancel),
+              ),
+              TextButton(
+                onPressed: () => Navigator.of(dialogContext).pop(true),
+                child: Text(
+                  preview.isDestructive
+                      ? strings.cmdConfirmDelete
+                      : strings.cmdConfirmApply,
+                  style: TextStyle(
+                    color: preview.isDestructive
+                        ? AppColors.error
+                        : AppColors.accentTurquoise,
+                    fontWeight: FontWeight.bold,
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ) ??
+        false;
+
+    if (!confirmed || !mounted) return;
+
+    final ok = await executor.apply(preview);
+    if (!mounted) return;
+    messenger.showSnackBar(
+      SnackBar(content: Text(ok ? strings.cmdDone : strings.cmdFailed)),
+    );
   }
 
   void _scrollToBottom() {

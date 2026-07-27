@@ -1181,6 +1181,11 @@ async function fetchRealRestaurants(cityEn, centerLat, centerLng, countryCode, l
       latitude: p.location.latitude,
       longitude: p.location.longitude,
       opening_hours: (p.regularOpeningHours?.weekdayDescriptions || []).join(' • '),
+      // The Arabic hours above are what the UI shows; this English copy is what
+      // the app can actually PARSE for "closes in an hour" warnings (Arabic
+      // hours come back with Arabic-Indic digits and localized day names).
+      // Free — it comes from the English search we already run.
+      opening_hours_en: (en?.regularOpeningHours?.weekdayDescriptions || []).join(' • '),
       ai_description: editorial ? `${editorial} — ${ratingText}.` : `${ratingText}.`,
       image_search_query: imageQuery,
       booking_url: p.websiteUri || null,
@@ -2241,20 +2246,47 @@ app.get('/api/currency', async (req, res) => {
     }
   }
 
-  try {
-    const response = await axios.get(
-      `https://api.frankfurter.app/latest?base=${base}&symbols=${target}`,
-      { timeout: 5000 }
-    );
-    const rate = response.data.rates[target];
-    if (!rate) return res.status(404).json({ error: `No rate found for ${target}` });
+  // open.er-api.com covers 160+ currencies INCLUDING IQD, which the previous
+  // provider (Frankfurter, ECB reference rates) did not carry at all — so an
+  // Iraqi user could never see prices in dinars. Free, no API key.
+  // Frankfurter stays as a fallback for the major currencies it does cover.
+  const providers = [
+    {
+      name: 'open.er-api',
+      url: `https://open.er-api.com/v6/latest/${encodeURIComponent(base)}`,
+      pick: (data) => data?.rates?.[target],
+    },
+    {
+      name: 'frankfurter',
+      url: `https://api.frankfurter.app/latest?base=${encodeURIComponent(base)}&symbols=${encodeURIComponent(target)}`,
+      pick: (data) => data?.rates?.[target],
+    },
+  ];
 
-    currencyCache.set(cacheKey, { rate, timestamp: now });
-    return res.status(200).json({ base, target, rate });
-  } catch (error) {
-    console.error('[CURRENCY ERROR]', error.message);
-    return res.status(500).json({ error: 'Failed to fetch exchange rate' });
+  let lastError;
+  for (const p of providers) {
+    try {
+      const response = await axios.get(p.url, { timeout: 6000 });
+      const rate = p.pick(response.data);
+      if (typeof rate === 'number' && isFinite(rate) && rate > 0) {
+        currencyCache.set(cacheKey, { rate, timestamp: now });
+        return res.status(200).json({ base, target, rate });
+      }
+      lastError = new Error(`${p.name}: no rate for ${target}`);
+    } catch (error) {
+      lastError = error;
+      console.warn(`[CURRENCY] ${p.name} failed:`, error.message);
+    }
   }
+
+  console.error('[CURRENCY ERROR]', lastError?.message || 'all providers failed');
+  // Serve a stale cached rate rather than nothing — an old rate beats no price.
+  if (currencyCache.has(cacheKey)) {
+    return res.status(200).json({
+      base, target, rate: currencyCache.get(cacheKey).rate, cached: true, stale: true,
+    });
+  }
+  return res.status(404).json({ error: `No rate found for ${target}` });
 });
 
 // ─── GET /api/weather ───────────────────────────────────────────────────────
@@ -2332,6 +2364,9 @@ const NEARBY_FIELD_MASK = [
   'places.userRatingCount',
   'places.formattedAddress',
   'places.shortFormattedAddress',
+  // Powers the "open now" filter. Free to add: this mask is already in the
+  // Enterprise SKU because of rating/userRatingCount.
+  'places.currentOpeningHours.openNow',
 ].join(',');
 
 // Category buckets — one searchNearby call each so every category the user
@@ -2426,6 +2461,9 @@ async function nearbyViaGoogle(lat, lng, radius, lang) {
       address: p.shortFormattedAddress || p.formattedAddress || '',
       place_id: p.id,
       distance_m,
+      // null (not false) when Google has no hours for this place — the app
+      // must not claim a venue is closed just because its hours are unknown.
+      open_now: p.currentOpeningHours?.openNow ?? null,
     });
   }
 
@@ -2519,6 +2557,7 @@ async function nearbyViaOverpass(lat, lng, radius) {
       address: [tags['addr:street'], tags['addr:city']].filter(Boolean).join('، '),
       place_id: null,
       distance_m: Math.round(haversineDistance(uLat, uLng, plat, plng) * 1000),
+      open_now: null, // OSM has no reliable live open/closed state
     });
   }
   normalized.sort((a, b) => a.distance_m - b.distance_m);

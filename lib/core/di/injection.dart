@@ -9,6 +9,11 @@ import '../../features/nearby/data/nearby_service.dart';
 import '../services/notification_service.dart';
 import '../services/location_service.dart';
 import '../services/place_resolver_service.dart';
+import '../services/location_share_service.dart';
+import '../services/offline_prep_service.dart';
+import '../services/trip_notification_scheduler.dart';
+import '../../features/today/data/today_service.dart';
+import '../../features/ai_chat/data/trip_command_executor.dart';
 import '../database/database_helper.dart';
 import '../../features/trip_planner/data/trip_repository_impl.dart';
 import '../../features/trip_planner/domain/repositories/trip_repository.dart';
@@ -120,6 +125,24 @@ Future<void> setupDependencies() async {
   sl.registerLazySingleton<NearbyService>(() => NearbyService());
 
   sl.registerLazySingleton<PlaceResolverService>(() => PlaceResolverService());
+
+  sl.registerLazySingleton<LocationShareService>(() => LocationShareService());
+
+  sl.registerLazySingleton<OfflinePrepService>(
+    () => OfflinePrepService(dbHelper: sl<DatabaseHelper>()),
+  );
+
+  sl.registerLazySingleton<TripNotificationScheduler>(
+    () => TripNotificationScheduler(dbHelper: sl<DatabaseHelper>()),
+  );
+
+  sl.registerLazySingleton<TodayService>(
+    () => TodayService(dbHelper: sl<DatabaseHelper>()),
+  );
+
+  sl.registerLazySingleton<TripCommandExecutor>(
+    () => TripCommandExecutor(dbHelper: sl<DatabaseHelper>()),
+  );
 
   sl.registerLazySingleton<ChatRepository>(
     () => ChatRepositoryImpl(

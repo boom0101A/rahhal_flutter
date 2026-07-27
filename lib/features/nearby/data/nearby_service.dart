@@ -18,6 +18,10 @@ class NearbyPlace {
   final String address;
   final String? placeId;
 
+  /// Live open/closed state. **null means unknown**, which is common for Iraqi
+  /// venues — the UI must not render unknown as "closed".
+  final bool? openNow;
+
   const NearbyPlace({
     required this.id,
     required this.name,
@@ -29,9 +33,28 @@ class NearbyPlace {
     this.rating = 0,
     this.address = '',
     this.placeId,
+    this.openNow,
   });
 
   bool get hasRating => rating > 0;
+
+  /// Rough walking time at an average 4.8 km/h pace, with a 1.3× detour factor
+  /// because streets aren't straight lines. Null when there's no distance yet.
+  int? get walkMinutes {
+    if (distanceMeters <= 0) return null;
+    const walkMetersPerMinute = 4.8 * 1000 / 60; // 80 m/min
+    final minutes = (distanceMeters * 1.3) / walkMetersPerMinute;
+    return minutes < 1 ? 1 : minutes.round();
+  }
+
+  /// "٧ د مشياً" / "7 min walk", or a plain distance when it's too far to walk.
+  String walkLabel(String lang) {
+    final mins = walkMinutes;
+    if (mins == null) return '';
+    // Beyond ~40 minutes on foot, a walking time is not useful guidance.
+    if (mins > 40) return distanceLabel(lang);
+    return lang == 'en' ? '$mins min walk' : '$mins د مشياً';
+  }
 
   /// A short, localized distance label: "230 م" / "1.2 كم".
   String distanceLabel(String lang) {
@@ -54,6 +77,7 @@ class NearbyPlace {
         rating: (json['rating'] as num?)?.toDouble() ?? 0,
         address: (json['address'] ?? '').toString(),
         placeId: (json['place_id'] as String?),
+        openNow: json['open_now'] as bool?,
       );
 }
 

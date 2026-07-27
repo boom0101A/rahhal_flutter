@@ -9,6 +9,8 @@ import '../../../../core/constants/app_colors.dart';
 import '../../../../core/constants/app_text_styles.dart';
 import '../../../../core/constants/app_strings.dart';
 import '../../../../core/di/injection.dart';
+import '../../../../core/services/location_share_service.dart';
+import '../../../../core/services/trip_notification_scheduler.dart';
 import '../../../../shared/widgets/app_badges.dart';
 import '../../../../shared/widgets/cached_hero_image.dart';
 import '../../../../shared/widgets/weather_widget.dart';
@@ -46,6 +48,7 @@ class _TripDashboardScreenState extends State<TripDashboardScreen>
   TripEntity? _trip;
   final ScreenshotController _screenshotController = ScreenshotController();
   bool _isSharing = false;
+  bool _isSharingLocation = false;
 
   List<(IconData, String)> _tabs(BuildContext context) {
     final strings = AppStrings.of(context);
@@ -66,9 +69,24 @@ class _TripDashboardScreenState extends State<TripDashboardScreen>
     _loadTripIfNeeded();
   }
 
+  /// Refreshes this trip's contextual reminders (morning plan, restaurant
+  /// booking, closing warning). Runs on open so trips created before the
+  /// feature existed get them too; ids are stable, so re-running replaces
+  /// rather than duplicates.
+  void _scheduleTripNotifications() {
+    if (!mounted) return;
+    final strings = AppStrings.of(context);
+    sl<TripNotificationScheduler>()
+        .scheduleForTrip(tripId: widget.tripId, strings: strings)
+        .catchError((e) {
+      debugPrint('[TripDashboard] notification scheduling failed: $e');
+    });
+  }
+
   Future<void> _loadTripIfNeeded() async {
     // If trip was passed via navigation, skip DB call
     if (_trip != null) {
+      _scheduleTripNotifications();
       return;
     }
 
@@ -85,6 +103,7 @@ class _TripDashboardScreenState extends State<TripDashboardScreen>
       (trip) {
         if (mounted) {
           setState(() => _trip = trip);
+          _scheduleTripNotifications();
         }
       },
     );
@@ -167,7 +186,9 @@ class _TripDashboardScreenState extends State<TripDashboardScreen>
                   controller: _tabController,
                   children: [
                     ItineraryTab(tripId: widget.tripId, countryCode: _trip?.countryCode),
-                    MapTab(tripId: widget.tripId),
+                    MapTab(
+                        tripId: widget.tripId,
+                        countryCode: _trip?.countryCode),
                     RestaurantsTab(
                         tripId: widget.tripId,
                         countryCode: _trip?.countryCode),
@@ -220,6 +241,19 @@ class _TripDashboardScreenState extends State<TripDashboardScreen>
             icon: const Icon(Icons.share_rounded,
                 color: Colors.white, size: 22),
           ),
+        IconButton(
+          tooltip: AppStrings.of(context).shareMyLocation,
+          onPressed: _isSharingLocation ? null : _shareMyLocation,
+          icon: _isSharingLocation
+              ? const SizedBox(
+                  width: 20,
+                  height: 20,
+                  child: CircularProgressIndicator(
+                      strokeWidth: 2, color: AppColors.accentAmber),
+                )
+              : const Icon(Icons.person_pin_circle_rounded,
+                  color: Colors.white, size: 22),
+        ),
         IconButton(
           onPressed: () => context.push('/trip/${widget.tripId}/documents'),
           icon: const Icon(Icons.folder_open_rounded,
@@ -474,6 +508,24 @@ class _TripDashboardScreenState extends State<TripDashboardScreen>
       child: Icon(Icons.smart_toy_rounded,
           color: AppColors.adaptiveBgPrimary(context), size: 26),
     );
+  }
+
+  /// One-shot "here's where I am" share for trip companions.
+  Future<void> _shareMyLocation() async {
+    final strings = AppStrings.of(context);
+    final messenger = ScaffoldMessenger.of(context);
+    setState(() => _isSharingLocation = true);
+    try {
+      final ok = await sl<LocationShareService>()
+          .shareCurrentLocation(message: strings.shareLocationBody);
+      if (!ok && mounted) {
+        messenger.showSnackBar(
+          SnackBar(content: Text(strings.shareLocationFailed)),
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _isSharingLocation = false);
+    }
   }
 
   Future<void> _shareTrip() async {

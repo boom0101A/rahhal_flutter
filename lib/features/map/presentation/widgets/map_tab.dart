@@ -14,7 +14,7 @@ import '../../../../../core/services/location_service.dart';
 import '../../../../../core/di/injection.dart';
 import '../cubit/map_cubit.dart';
 import '../../data/cached_tile_provider.dart';
-import '../../data/offline_map_service.dart';
+import '../../../../core/services/offline_prep_service.dart';
 import '../../../trip_planner/domain/entities/stop_entity.dart';
 import '../../../../core/constants/app_strings.dart';
 import '../../../../../shared/widgets/app_error_widget.dart';
@@ -22,7 +22,11 @@ import '../../../../../shared/widgets/app_error_widget.dart';
 class MapTab extends StatelessWidget {
   final String tripId;
 
-  const MapTab({super.key, required this.tripId});
+  /// Trip country (ISO-2) — lets offline preparation warm the right exchange
+  /// rates alongside the map tiles and photos.
+  final String? countryCode;
+
+  const MapTab({super.key, required this.tripId, this.countryCode});
 
   @override
   Widget build(BuildContext context) {
@@ -40,7 +44,8 @@ class MapTab extends StatelessWidget {
           );
         }
         if (state is MapReady) {
-          return _MapView(state: state, tripId: tripId);
+          return _MapView(
+              state: state, tripId: tripId, countryCode: countryCode);
         }
         return const SizedBox.shrink();
       },
@@ -51,8 +56,10 @@ class MapTab extends StatelessWidget {
 class _MapView extends StatefulWidget {
   final MapReady state;
   final String tripId;
+  final String? countryCode;
 
-  const _MapView({required this.state, required this.tripId});
+  const _MapView(
+      {required this.state, required this.tripId, this.countryCode});
 
   @override
   State<_MapView> createState() => _MapViewState();
@@ -251,15 +258,17 @@ class _MapViewState extends State<_MapView> with WidgetsBindingObserver {
       _offlineProgress = 0;
     });
     messenger.showSnackBar(
-      SnackBar(content: Text(strings.offlineMapDownloading)),
+      SnackBar(content: Text(strings.offlinePreparing)),
     );
 
-    final cached = await OfflineMapService.downloadForStops(
-      stops,
-      onProgress: (done, total) {
-        if (mounted && total > 0) {
-          setState(() => _offlineProgress = done / total);
-        }
+    // Prepares the WHOLE trip for offline use — map tiles, every photo it
+    // shows, and the exchange rates its prices convert with — not just tiles.
+    final result = await sl<OfflinePrepService>().prepareTrip(
+      tripId: widget.tripId,
+      stopCoordinates: stops,
+      countryCode: widget.countryCode,
+      onProgress: (p) {
+        if (mounted) setState(() => _offlineProgress = p);
       },
     );
 
@@ -269,7 +278,11 @@ class _MapViewState extends State<_MapView> with WidgetsBindingObserver {
       _offlineProgress = 0;
     });
     messenger.showSnackBar(
-      SnackBar(content: Text(strings.offlineMapDone(cached))),
+      SnackBar(
+        content: Text(result.isComplete
+            ? strings.offlinePrepareDone
+            : strings.offlinePrepareFailed),
+      ),
     );
   }
 

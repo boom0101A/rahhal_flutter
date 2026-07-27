@@ -179,6 +179,7 @@ class RestaurantResponse {
   final String aiDescription;
   final String? imageSearchQuery;
   final String? openingHours;
+  final String? openingHoursEn;
   final String? placeId;
   final String? phone;
   final bool coordsVerified;
@@ -196,6 +197,7 @@ class RestaurantResponse {
     required this.aiDescription,
     this.imageSearchQuery,
     this.openingHours,
+    this.openingHoursEn,
     this.placeId,
     this.phone,
     this.coordsVerified = false,
@@ -215,6 +217,7 @@ class RestaurantResponse {
       aiDescription: json['ai_description'] as String? ?? '',
       imageSearchQuery: json['image_search_query'] as String?,
       openingHours: json['opening_hours'] as String?,
+      openingHoursEn: json['opening_hours_en'] as String?,
       placeId: json['place_id'] as String?,
       phone: json['phone'] as String?,
       coordsVerified: json['coords_verified'] as bool? ?? false,

@@ -1,0 +1,167 @@
+import 'package:flutter/foundation.dart';
+import '../../../core/database/database_helper.dart';
+import '../domain/trip_command.dart';
+
+/// What a command would do, resolved against the real trip — so the user can be
+/// shown exactly what is about to change *before* anything is written.
+class TripCommandPreview {
+  final TripCommand command;
+
+  /// Human-readable description of the resolved target ("اليوم 3 · 4 محطات").
+  final String targetLabel;
+
+  /// Row ids the command would touch.
+  final List<String> affectedIds;
+
+  /// Set when the command can't be carried out (nothing matched, ambiguous…).
+  final String? problem;
+
+  const TripCommandPreview({
+    required this.command,
+    required this.targetLabel,
+    required this.affectedIds,
+    this.problem,
+  });
+
+  bool get canRun => problem == null && affectedIds.isNotEmpty;
+
+  bool get isDestructive =>
+      command.kind == TripCommandKind.deleteDay ||
+      command.kind == TripCommandKind.deleteStop;
+}
+
+/// Resolves and applies itinerary commands.
+///
+/// Split deliberately into [preview] and [apply]: nothing is ever written
+/// during preview, so the UI can require an explicit confirmation in between.
+/// Deletions are irreversible here, which is exactly why they never happen on
+/// the strength of a parsed sentence alone.
+class TripCommandExecutor {
+  final DatabaseHelper _dbHelper;
+
+  TripCommandExecutor({DatabaseHelper? dbHelper})
+      : _dbHelper = dbHelper ?? DatabaseHelper.instance;
+
+  Future<TripCommandPreview> preview({
+    required String tripId,
+    required TripCommand command,
+  }) async {
+    try {
+      switch (command.kind) {
+        case TripCommandKind.deleteDay:
+          return _previewDeleteDay(tripId, command);
+        case TripCommandKind.deleteStop:
+        case TripCommandKind.markVisited:
+          return _previewStop(tripId, command);
+      }
+    } catch (e) {
+      debugPrint('[TripCommand] preview failed: $e');
+      return TripCommandPreview(
+        command: command,
+        targetLabel: '',
+        affectedIds: const [],
+        problem: 'error',
+      );
+    }
+  }
+
+  Future<TripCommandPreview> _previewDeleteDay(
+      String tripId, TripCommand command) async {
+    final days = await _dbHelper.query(
+      'days',
+      where: 'trip_id = ? AND day_number = ?',
+      whereArgs: [tripId, command.dayNumber],
+    );
+    if (days.isEmpty) {
+      return TripCommandPreview(
+        command: command,
+        targetLabel: '${command.dayNumber}',
+        affectedIds: const [],
+        problem: 'not-found',
+      );
+    }
+    final dayId = days.first['id'] as String;
+    final stops = await _dbHelper
+        .query('stops', where: 'day_id = ?', whereArgs: [dayId]);
+    return TripCommandPreview(
+      command: command,
+      targetLabel: '${command.dayNumber}|${stops.length}',
+      affectedIds: [dayId],
+    );
+  }
+
+  Future<TripCommandPreview> _previewStop(
+      String tripId, TripCommand command) async {
+    final stops = await _dbHelper
+        .query('stops', where: 'trip_id = ?', whereArgs: [tripId]);
+
+    final query = command.target!.toLowerCase();
+    final matches = stops.where((s) {
+      final name = ((s['name'] as String?) ?? '').toLowerCase();
+      final nameEn = ((s['name_en'] as String?) ?? '').toLowerCase();
+      return name.contains(query) ||
+          query.contains(name) ||
+          (nameEn.isNotEmpty && (nameEn.contains(query) || query.contains(nameEn)));
+    }).toList();
+
+    if (matches.isEmpty) {
+      return TripCommandPreview(
+        command: command,
+        targetLabel: command.target!,
+        affectedIds: const [],
+        problem: 'not-found',
+      );
+    }
+    // More than one place matches: acting on the wrong one is worse than
+    // asking the user to be specific.
+    if (matches.length > 1) {
+      return TripCommandPreview(
+        command: command,
+        targetLabel: matches.map((m) => m['name'] as String).join('، '),
+        affectedIds: const [],
+        problem: 'ambiguous',
+      );
+    }
+
+    return TripCommandPreview(
+      command: command,
+      targetLabel: matches.first['name'] as String,
+      affectedIds: [matches.first['id'] as String],
+    );
+  }
+
+  /// Applies a previously previewed command. Returns false if it no longer
+  /// applies (the data changed between preview and confirmation).
+  Future<bool> apply(TripCommandPreview preview) async {
+    if (!preview.canRun) return false;
+    try {
+      switch (preview.command.kind) {
+        case TripCommandKind.deleteDay:
+          // Stops cascade via the days foreign key, but delete them explicitly
+          // so the result is the same regardless of PRAGMA foreign_keys state.
+          final dayId = preview.affectedIds.first;
+          await _dbHelper
+              .delete('stops', where: 'day_id = ?', whereArgs: [dayId]);
+          await _dbHelper.delete('days', where: 'id = ?', whereArgs: [dayId]);
+          return true;
+
+        case TripCommandKind.deleteStop:
+          await _dbHelper.delete('stops',
+              where: 'id = ?', whereArgs: [preview.affectedIds.first]);
+          return true;
+
+        case TripCommandKind.markVisited:
+          await _dbHelper.update(
+            'stops',
+            {'is_visited': 1},
+            where: 'id = ?',
+            whereArgs: [preview.affectedIds.first],
+          );
+          return true;
+      }
+    } catch (e) {
+      debugPrint('[TripCommand] apply failed: $e');
+      return false;
+    }
+  }
+}

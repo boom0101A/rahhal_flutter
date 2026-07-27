@@ -15,6 +15,7 @@ import '../../features/nearby/presentation/screens/nearby_screen.dart';
 import '../../features/auth/presentation/screens/profile_screen.dart';
 import '../../features/itinerary/presentation/screens/stop_detail_screen.dart';
 import '../../features/favorites/presentation/screens/favorites_screen.dart';
+import '../../features/today/presentation/screens/today_screen.dart';
 import '../../features/trip_documents/presentation/screens/documents_screen.dart';
 import '../../features/trip_planner/domain/entities/trip_entity.dart';
 import '../../shared/widgets/main_navigation_layout.dart';
@@ -103,6 +104,17 @@ class AppRouter {
                 path: '/plan',
                 name: 'plan',
                 builder: (context, state) => const TripInputScreen(),
+              ),
+            ],
+          ),
+          // Live travel companion — placed third so it sits in the middle of
+          // the bar, where it's reachable mid-walk with one thumb.
+          StatefulShellBranch(
+            routes: [
+              GoRoute(
+                path: '/today',
+                name: 'today',
+                builder: (context, state) => const TodayScreen(),
               ),
             ],
           ),
