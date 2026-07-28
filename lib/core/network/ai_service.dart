@@ -396,6 +396,7 @@ class AITravelService {
     double? userLat,
     double? userLng,
     String? countryCode,
+    double? targetBudgetUsd,
   }) async {
     try {
       final response = await _dio.post(
@@ -410,6 +411,7 @@ class AITravelService {
           'userLat': userLat,
           'userLng': userLng,
           'countryCode': countryCode,
+          'targetBudgetUsd': targetBudgetUsd,
         },
       );
 

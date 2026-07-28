@@ -22,6 +22,7 @@ class TripPlannerCubit extends Cubit<TripPlannerState> {
     double? userLat,
     double? userLng,
     String? countryCode,
+    double? targetBudgetUsd,
   }) async {
     emit(const TripPlannerGenerating());
 
@@ -35,6 +36,7 @@ class TripPlannerCubit extends Cubit<TripPlannerState> {
       userLat: userLat,
       userLng: userLng,
       countryCode: countryCode,
+      targetBudgetUsd: targetBudgetUsd,
     );
 
     if (isClosed) return;

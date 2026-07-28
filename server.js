@@ -1581,7 +1581,11 @@ app.post('/api/generate-trip', async (req, res) => {
     userLat,        // ← GPS latitude from user device
     userLng,        // ← GPS longitude from user device
     countryCode,    // ← ISO country code e.g. "IQ", "SA"
+    targetBudgetUsd, // ← optional user-set total budget cap in USD
   } = req.body;
+
+  const budgetCap = Number(targetBudgetUsd);
+  const hasBudgetCap = Number.isFinite(budgetCap) && budgetCap > 0;
 
   if (!destination || !durationDays || !budgetTier) {
     return res.status(400).json({ error: 'Missing required parameters' });
@@ -1748,6 +1752,7 @@ Required JSON Schema:
 - Destination: ${destination}
 - Duration: ${durationDays} days
 - Budget Tier: ${budgetTier} (economy / mid / luxury)
+${hasBudgetCap ? `- TOTAL BUDGET CAP: The grand total cost of this ENTIRE trip (all days, all stops, all restaurants, hotel nights combined) MUST NOT exceed $${budgetCap} USD. Choose cheaper stops, restaurants and hotels as needed to stay within this cap — do not ignore it. Reflect the real total in "budget_total_usd", and it must be <= ${budgetCap}.` : ''}
 - Travel Styles: ${travelStyles ? travelStyles.join(', ') : 'any'}
 - Travelers Count: ${travelersCount || 1}
 ${startDate ? `- Start Date: ${startDate}` : ''}

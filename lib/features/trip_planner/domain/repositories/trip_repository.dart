@@ -16,6 +16,7 @@ abstract class TripRepository {
     double? userLat,
     double? userLng,
     String? countryCode,
+    double? targetBudgetUsd,
   });
 
   /// Get all trips for the current user.

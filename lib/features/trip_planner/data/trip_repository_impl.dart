@@ -43,6 +43,7 @@ class TripRepositoryImpl implements TripRepository {
     double? userLat,
     double? userLng,
     String? countryCode,
+    double? targetBudgetUsd,
   }) async {
     try {
       // Wake up server first if it may be sleeping (Render free tier)
@@ -61,6 +62,7 @@ class TripRepositoryImpl implements TripRepository {
         userLat: userLat,
         userLng: userLng,
         countryCode: countryCode,
+        targetBudgetUsd: targetBudgetUsd,
       );
 
       // Fetch hero image URL from search service

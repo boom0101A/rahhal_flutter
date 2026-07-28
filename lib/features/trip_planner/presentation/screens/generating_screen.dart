@@ -113,6 +113,7 @@ class _GeneratingScreenBodyState extends State<_GeneratingScreenBody>
       userLat: widget.params['userLat'] as double?,
       userLng: widget.params['userLng'] as double?,
       countryCode: widget.params['countryCode'] as String?,
+      targetBudgetUsd: widget.params['targetBudgetUsd'] as double?,
     );
   }
 

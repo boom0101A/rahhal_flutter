@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:flutter_animate/flutter_animate.dart';
@@ -26,6 +27,124 @@ class SavedTripsScreen extends StatefulWidget {
 
 class _SavedTripsScreenState extends State<SavedTripsScreen> {
   bool _isLocating = false;
+  late final TextEditingController _searchCtrl;
+  String _searchQuery = '';
+
+  // Delete is deferred: the trip is hidden immediately and a SnackBar offers
+  // "Undo" for a few seconds before the actual (cascading, unrecoverable)
+  // database delete runs. Nothing is destroyed until the timer fires.
+  final Set<String> _pendingDeleteIds = {};
+  final Map<String, Timer> _deleteTimers = {};
+
+  @override
+  void initState() {
+    super.initState();
+    _searchCtrl = TextEditingController();
+  }
+
+  @override
+  void dispose() {
+    for (final timer in _deleteTimers.values) {
+      timer.cancel();
+    }
+    _searchCtrl.dispose();
+    super.dispose();
+  }
+
+  /// Derives the trip's real-world status from its dates rather than the
+  /// stored `status` column, which is set to 'planned' at creation and never
+  /// transitions automatically — so it would otherwise never show as
+  /// "ongoing" or "completed" no matter how much time has passed.
+  String _effectiveStatus(TripEntity trip) {
+    final start = trip.startDate;
+    if (start == null) return trip.status;
+
+    final today = DateTime.now();
+    final todayDate = DateTime(today.year, today.month, today.day);
+    final startDate = DateTime(start.year, start.month, start.day);
+    final end = trip.endDate ?? start.add(Duration(days: trip.durationDays - 1));
+    final endDate = DateTime(end.year, end.month, end.day);
+
+    if (todayDate.isBefore(startDate)) return 'planned';
+    if (todayDate.isAfter(endDate)) return 'completed';
+    return 'active';
+  }
+
+  Future<bool> _confirmDeleteDialog(BuildContext context, TripEntity trip) async {
+    final strings = AppStrings.of(context);
+    final result = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        backgroundColor: AppColors.adaptiveBgCard(context),
+        title: Text(strings.deleteTripTitle, style: AppTextStyles.headlineSmall),
+        content: Text(
+          strings.deleteTripConfirm(trip.displayDestination(context)),
+          style: AppTextStyles.bodyMedium,
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: Text(strings.cancel),
+          ),
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, true),
+            style: TextButton.styleFrom(foregroundColor: AppColors.error),
+            child: Text(strings.delete),
+          ),
+        ],
+      ),
+    );
+    return result ?? false;
+  }
+
+  void _scheduleDelete(TripEntity trip) {
+    Haptics.warning();
+    final strings = AppStrings.of(context);
+    final cubit = context.read<SavedTripsCubit>();
+
+    setState(() => _pendingDeleteIds.add(trip.id));
+
+    _deleteTimers[trip.id]?.cancel();
+    _deleteTimers[trip.id] = Timer(const Duration(seconds: 4), () {
+      _deleteTimers.remove(trip.id);
+      cubit.deleteTrip(trip.id);
+    });
+
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(strings.tripDeleted),
+        duration: const Duration(seconds: 4),
+        action: SnackBarAction(
+          label: strings.undo,
+          onPressed: () {
+            _deleteTimers[trip.id]?.cancel();
+            _deleteTimers.remove(trip.id);
+            if (mounted) setState(() => _pendingDeleteIds.remove(trip.id));
+          },
+        ),
+      ),
+    );
+  }
+
+  Widget _buildSearchField(AppStrings strings) {
+    return TextField(
+      controller: _searchCtrl,
+      onChanged: (v) => setState(() => _searchQuery = v),
+      style: AppTextStyles.bodyMedium,
+      decoration: InputDecoration(
+        hintText: strings.savedSearchHint,
+        prefixIcon: Icon(Icons.search_rounded,
+            color: AppColors.adaptiveTextSecondary(context), size: 20),
+        filled: true,
+        fillColor: AppColors.adaptiveGlass(context),
+        border: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(14),
+          borderSide: BorderSide(color: AppColors.adaptiveBorder(context)),
+        ),
+        contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
+      ),
+    );
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -255,7 +374,43 @@ class _SavedTripsScreenState extends State<SavedTripsScreen> {
     );
   }
 
-  Widget _buildTripList(BuildContext context, List<TripEntity> trips) {
+  Widget _buildTripList(BuildContext context, List<TripEntity> allTrips) {
+    final strings = AppStrings.of(context);
+
+    final visible = allTrips.where((t) => !_pendingDeleteIds.contains(t.id)).toList();
+    final query = _searchQuery.trim().toLowerCase();
+    final filtered = query.isEmpty
+        ? visible
+        : visible
+            .where((t) => t.displayDestination(context).toLowerCase().contains(query))
+            .toList();
+
+    final ongoing = <TripEntity>[];
+    final upcoming = <TripEntity>[];
+    final completed = <TripEntity>[];
+    for (final t in filtered) {
+      switch (_effectiveStatus(t)) {
+        case 'active':
+          ongoing.add(t);
+          break;
+        case 'completed':
+          completed.add(t);
+          break;
+        default:
+          upcoming.add(t);
+      }
+    }
+    final farFuture = DateTime(2100);
+    ongoing.sort((a, b) => (a.startDate ?? farFuture).compareTo(b.startDate ?? farFuture));
+    upcoming.sort((a, b) => (a.startDate ?? farFuture).compareTo(b.startDate ?? farFuture));
+    completed.sort((a, b) => (b.startDate ?? b.createdAt).compareTo(a.startDate ?? a.createdAt));
+
+    final sections = <(String, List<TripEntity>)>[
+      if (ongoing.isNotEmpty) (strings.savedSectionOngoing, ongoing),
+      if (upcoming.isNotEmpty) (strings.savedSectionUpcoming, upcoming),
+      if (completed.isNotEmpty) (strings.savedSectionCompleted, completed),
+    ];
+
     return RefreshIndicator(
       color: AppColors.accentAmber,
       backgroundColor: AppColors.adaptiveBgCard(context),
@@ -263,17 +418,55 @@ class _SavedTripsScreenState extends State<SavedTripsScreen> {
         context.read<SavedTripsCubit>().loadTrips();
         await Future.delayed(const Duration(milliseconds: 500));
       },
-      child: ListView.builder(
+      child: ListView(
         padding: const EdgeInsets.fromLTRB(20, 0, 20, 100),
-        itemCount: trips.length,
-        itemBuilder: (ctx, i) {
-          final trip = trips[i];
-          return _TripCard(
-            trip: trip,
-            index: i,
-            onTap: () => context.push('/trip/${trip.id}', extra: trip),
-            onDelete: () => context.read<SavedTripsCubit>().deleteTrip(trip.id),
-          );
+        children: [
+          _buildSearchField(strings),
+          const SizedBox(height: 12),
+          if (filtered.isEmpty)
+            Padding(
+              padding: const EdgeInsets.symmetric(vertical: 40),
+              child: Center(
+                child: Text(strings.savedNoSearchResults, style: AppTextStyles.bodyMedium),
+              ),
+            )
+          else
+            for (final section in sections) ...[
+              Text(section.$1, style: AppTextStyles.headlineSmall),
+              const SizedBox(height: 8),
+              for (final entry in section.$2.asMap().entries)
+                _buildDismissibleCard(context, entry.value, entry.key),
+              const SizedBox(height: 8),
+            ],
+        ],
+      ),
+    );
+  }
+
+  Widget _buildDismissibleCard(BuildContext context, TripEntity trip, int index) {
+    return Dismissible(
+      key: ValueKey(trip.id),
+      direction: DismissDirection.endToStart,
+      confirmDismiss: (_) => _confirmDeleteDialog(context, trip),
+      onDismissed: (_) => _scheduleDelete(trip),
+      background: Container(
+        alignment: AlignmentDirectional.centerEnd,
+        padding: const EdgeInsetsDirectional.only(end: 24),
+        margin: const EdgeInsets.only(bottom: 16),
+        decoration: BoxDecoration(
+          color: AppColors.error,
+          borderRadius: BorderRadius.circular(20),
+        ),
+        child: const Icon(Icons.delete_rounded, color: Colors.white, size: 28),
+      ),
+      child: _TripCard(
+        trip: trip,
+        effectiveStatus: _effectiveStatus(trip),
+        index: index,
+        onTap: () => context.push('/trip/${trip.id}', extra: trip),
+        onDeleteRequested: () async {
+          final confirmed = await _confirmDeleteDialog(context, trip);
+          if (confirmed) _scheduleDelete(trip);
         },
       ),
     );
@@ -282,15 +475,17 @@ class _SavedTripsScreenState extends State<SavedTripsScreen> {
 
 class _TripCard extends StatelessWidget {
   final TripEntity trip;
+  final String effectiveStatus;
   final int index;
   final VoidCallback onTap;
-  final VoidCallback onDelete;
+  final Future<void> Function() onDeleteRequested;
 
   const _TripCard({
     required this.trip,
+    required this.effectiveStatus,
     required this.index,
     required this.onTap,
-    required this.onDelete,
+    required this.onDeleteRequested,
   });
 
   @override
@@ -343,7 +538,7 @@ class _TripCard extends StatelessWidget {
                   Positioned(
                     top: 12,
                     left: 12,
-                    child: StatusBadge(status: trip.status),
+                    child: StatusBadge(status: effectiveStatus),
                   ),
                 ],
               ),
@@ -385,13 +580,17 @@ class _TripCard extends StatelessWidget {
                             ),
                           ],
                         ),
+                        if (_buildDateInfo(context) case final dateInfo?) ...[
+                          const SizedBox(height: 4),
+                          dateInfo,
+                        ],
                       ],
                     ),
                   ),
                   // Delete
                   IconButton(
                     tooltip: AppStrings.of(context).delete,
-                    onPressed: () => _confirmDelete(context),
+                    onPressed: onDeleteRequested,
                     icon: const Icon(Icons.delete_outline_rounded,
                         color: AppColors.error, size: 20),
                   ),
@@ -422,32 +621,38 @@ class _TripCard extends StatelessWidget {
     );
   }
 
-  void _confirmDelete(BuildContext context) {
-    showDialog(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        backgroundColor: AppColors.adaptiveBgCard(context),
-        title: Text(AppStrings.of(context).deleteTripTitle, style: AppTextStyles.headlineSmall),
-        content: Text(
-          AppStrings.of(context).deleteTripConfirm(trip.displayDestination(context)),
-          style: AppTextStyles.bodyMedium,
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(ctx),
-            child: Text(AppStrings.of(context).cancel),
+  /// Start-date-derived line under the day/budget row: a countdown for an
+  /// upcoming trip, "Day N of M" while it's ongoing, or the start date once
+  /// it's over. Returns null when there's no start date to work with.
+  Widget? _buildDateInfo(BuildContext context) {
+    final start = trip.startDate;
+    if (start == null) return null;
+    final strings = AppStrings.of(context);
+    final today = DateTime.now();
+    final todayDate = DateTime(today.year, today.month, today.day);
+    final startDate = DateTime(start.year, start.month, start.day);
+
+    switch (effectiveStatus) {
+      case 'active':
+        final currentDay = todayDate.difference(startDate).inDays + 1;
+        final clamped = currentDay.clamp(1, trip.durationDays);
+        return Text(
+          strings.savedDayOfTotal(clamped, trip.durationDays),
+          style: AppTextStyles.labelSmall.copyWith(color: AppColors.accentAmber),
+        );
+      case 'planned':
+        final daysUntil = startDate.difference(todayDate).inDays;
+        return Text(
+          strings.savedDaysUntil(daysUntil),
+          style: AppTextStyles.labelSmall.copyWith(color: AppColors.accentTurquoise),
+        );
+      default:
+        return Text(
+          '${start.day}/${start.month}/${start.year}',
+          style: AppTextStyles.labelSmall.copyWith(
+            color: AppColors.adaptiveTextSecondary(context),
           ),
-          TextButton(
-            onPressed: () {
-              Haptics.warning();
-              Navigator.pop(ctx);
-              onDelete();
-            },
-            style: TextButton.styleFrom(foregroundColor: AppColors.error),
-            child: Text(AppStrings.of(context).delete),
-          ),
-        ],
-      ),
-    );
+        );
+    }
   }
 }

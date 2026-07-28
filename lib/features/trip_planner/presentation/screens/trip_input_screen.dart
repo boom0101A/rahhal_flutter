@@ -19,7 +19,11 @@ class TripInputScreen extends StatefulWidget {
 }
 
 class _TripInputScreenState extends State<TripInputScreen> {
+  static const int _maxAdults = 12;
+  static const int _maxChildren = 10;
+
   late final TextEditingController _destinationCtrl;
+  late final TextEditingController _targetBudgetCtrl;
   bool _isDetectingLocation = false;
   int _days = 7;
   String _budget = 'mid';
@@ -100,7 +104,9 @@ class _TripInputScreenState extends State<TripInputScreen> {
   void initState() {
     super.initState();
     _destinationCtrl = TextEditingController();
+    _targetBudgetCtrl = TextEditingController();
     _initDestination();
+    _restoreLastSettings();
 
     _destinationCtrl.addListener(() {
       if (_detectedLat != null) {
@@ -126,9 +132,45 @@ class _TripInputScreenState extends State<TripInputScreen> {
     }
   }
 
+  /// Restores the traveler-preference part of the form (duration, budget
+  /// tier, travel styles, party size) from the last successful generation —
+  /// the destination itself is intentionally left for the user to type,
+  /// since it's the one field that usually differs trip to trip.
+  Future<void> _restoreLastSettings() async {
+    final prefs = await SharedPreferences.getInstance();
+    if (!mounted) return;
+    final days = prefs.getInt('last_duration_days');
+    final budget = prefs.getString('last_budget_tier');
+    final styles = prefs.getStringList('last_travel_styles');
+    final adults = prefs.getInt('last_adults_count');
+    final children = prefs.getInt('last_children_count');
+
+    setState(() {
+      if (days != null) _days = days.clamp(2, 21);
+      if (budget != null) _budget = budget;
+      if (styles != null && styles.isNotEmpty) {
+        _styles
+          ..clear()
+          ..addAll(styles);
+      }
+      if (adults != null) _adults = adults.clamp(1, _maxAdults);
+      if (children != null) _children = children.clamp(0, _maxChildren);
+    });
+  }
+
+  Future<void> _saveLastSettings() async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setInt('last_duration_days', _days);
+    await prefs.setString('last_budget_tier', _budget);
+    await prefs.setStringList('last_travel_styles', _styles.toList());
+    await prefs.setInt('last_adults_count', _adults);
+    await prefs.setInt('last_children_count', _children);
+  }
+
   @override
   void dispose() {
     _destinationCtrl.dispose();
+    _targetBudgetCtrl.dispose();
     super.dispose();
   }
 
@@ -439,6 +481,7 @@ class _TripInputScreenState extends State<TripInputScreen> {
                                   label: strings.planAdults,
                                   value: _adults,
                                   min: 1,
+                                  max: _maxAdults,
                                   onChange: (v) => setState(() => _adults = v),
                                 ),
                                 const SizedBox(height: 12),
@@ -446,12 +489,42 @@ class _TripInputScreenState extends State<TripInputScreen> {
                                   label: strings.planChildren,
                                   value: _children,
                                   min: 0,
+                                  max: _maxChildren,
                                   onChange: (v) =>
                                       setState(() => _children = v),
                                 ),
                               ],
                             ),
                           ).animate().fadeIn(delay: 300.ms).slideY(begin: 0.1),
+
+                          const SizedBox(height: 16),
+
+                          // Optional total budget cap
+                          _buildSectionCard(
+                            title: strings.planTargetBudgetLabel,
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                TextField(
+                                  controller: _targetBudgetCtrl,
+                                  keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                                  style: AppTextStyles.bodyLarge,
+                                  decoration: InputDecoration(
+                                    hintText: strings.planTargetBudgetHint,
+                                    prefixIcon: Icon(Icons.attach_money_rounded,
+                                        color: AppColors.adaptiveTextSecondary(context), size: 20),
+                                  ),
+                                ),
+                                const SizedBox(height: 6),
+                                Text(
+                                  strings.planTargetBudgetHelper,
+                                  style: AppTextStyles.bodySmall.copyWith(
+                                    color: AppColors.adaptiveTextSecondary(context),
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ).animate().fadeIn(delay: 320.ms).slideY(begin: 0.1),
                         ],
                       ),
                     ),
@@ -754,6 +827,7 @@ class _TripInputScreenState extends State<TripInputScreen> {
     required String label,
     required int value,
     required int min,
+    required int max,
     required void Function(int) onChange,
   }) {
     return Row(
@@ -776,7 +850,7 @@ class _TripInputScreenState extends State<TripInputScreen> {
             ),
             _stepperBtn(
               icon: Icons.add_rounded,
-              onTap: () => onChange(value + 1),
+              onTap: value < max ? () => onChange(value + 1) : null,
               filled: true,
             ),
           ],
@@ -819,16 +893,30 @@ class _TripInputScreenState extends State<TripInputScreen> {
   }
 
   Widget _buildBottomCTA() {
+    final strings = AppStrings.of(context);
     return Container(
       padding: const EdgeInsets.fromLTRB(20, 12, 20, 24),
       decoration: BoxDecoration(
         color: AppColors.adaptiveBgPrimary(context).withValues(alpha: 0.95),
         border: Border(top: BorderSide(color: AppColors.adaptiveBorder(context))),
       ),
-      child: GradientButton(
-        label: AppStrings.of(context).planGenerateButton,
-        icon: Icons.auto_awesome_rounded,
-        onPressed: _generate,
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Text(
+            strings.planGenerationTimeHint,
+            textAlign: TextAlign.center,
+            style: AppTextStyles.bodySmall.copyWith(
+              color: AppColors.adaptiveTextSecondary(context),
+            ),
+          ),
+          const SizedBox(height: 10),
+          GradientButton(
+            label: strings.planGenerateButton,
+            icon: Icons.auto_awesome_rounded,
+            onPressed: _generate,
+          ),
+        ],
       ),
     );
   }
@@ -873,10 +961,27 @@ class _TripInputScreenState extends State<TripInputScreen> {
       return;
     }
 
-    // Save last destination
+    final targetBudgetText = _targetBudgetCtrl.text.trim();
+    double? targetBudgetUsd;
+    if (targetBudgetText.isNotEmpty) {
+      targetBudgetUsd = double.tryParse(targetBudgetText);
+      if (targetBudgetUsd == null || targetBudgetUsd <= 0) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(strings.validationInvalidBudget),
+            backgroundColor: AppColors.error,
+            behavior: SnackBarBehavior.floating,
+          ),
+        );
+        return;
+      }
+    }
+
+    // Save last destination and the rest of the form for next time
     SharedPreferences.getInstance().then((prefs) {
       prefs.setString('last_destination', destination);
     });
+    _saveLastSettings();
 
     // Navigate to generating screen (which runs the AI generation)
     context.push('/plan/generating', extra: {
@@ -889,6 +994,7 @@ class _TripInputScreenState extends State<TripInputScreen> {
       'userLat': _detectedLat,
       'userLng': _detectedLng,
       'countryCode': _detectedCountryCode,
+      'targetBudgetUsd': targetBudgetUsd,
     });
   }
 }

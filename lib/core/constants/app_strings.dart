@@ -90,6 +90,11 @@ class AppStrings {
   String get planAdults => _t('بالغون', 'Adults');
   String get planChildren => _t('أطفال', 'Children');
   String get planGenerateButton => _t('خطط رحلتي بالذكاء الاصطناعي', 'Plan My Trip with AI');
+  String get planTargetBudgetLabel => _t('سقف الميزانية الكلي (اختياري)', 'Total budget cap (optional)');
+  String get planTargetBudgetHint => _t('مثال: 500', 'e.g. 500');
+  String get planTargetBudgetHelper => _t('سيحاول الذكاء الاصطناعي التخطيط ضمن هذا المبلغ بالدولار لكامل الرحلة', 'The AI will try to plan the whole trip within this amount in USD');
+  String get validationInvalidBudget => _t('الرجاء إدخال مبلغ صحيح أكبر من صفر', 'Please enter a valid amount greater than zero');
+  String get planGenerationTimeHint => _t('قد يستغرق التوليد حتى دقيقتين إذا كان الخادم في وضع السكون', 'Generation may take up to two minutes if the server was asleep');
   String get defaultDestination => _t('إسطنبول', 'Istanbul');
   String get startDateTitle => _t('تاريخ بدء الرحلة', 'Trip Start Date');
   String get startDateHint => _t('اختر تاريخ البدء (اختياري)', 'Select start date (optional)');
@@ -351,6 +356,23 @@ class AppStrings {
 
   String deleteTripConfirm(String destination) {
     return _t('هل تريد حذف رحلة $destination؟', 'Do you want to delete the trip to $destination?');
+  }
+
+  String get savedSearchHint => _t('ابحث عن رحلة...', 'Search trips...');
+  String get savedNoSearchResults => _t('لا توجد رحلات مطابقة', 'No matching trips');
+  String get savedSectionOngoing => _t('جارية الآن', 'Ongoing');
+  String get savedSectionUpcoming => _t('القادمة', 'Upcoming');
+  String get savedSectionCompleted => _t('المنتهية', 'Completed');
+  String get tripDeleted => _t('تم حذف الرحلة', 'Trip deleted');
+
+  String savedDaysUntil(int days) {
+    if (days <= 0) return _t('اليوم', 'Today');
+    if (days == 1) return _t('غداً', 'Tomorrow');
+    return _t('بعد $days يوم', 'in $days days');
+  }
+
+  String savedDayOfTotal(int day, int total) {
+    return _t('اليوم $day من $total', 'Day $day of $total');
   }
 
   // AI Chat
