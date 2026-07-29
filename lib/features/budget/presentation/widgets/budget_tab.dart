@@ -193,7 +193,7 @@ class _BudgetTabState extends State<BudgetTab> {
                 child: Container(
                   height: 10,
                   decoration: BoxDecoration(
-                    color: Colors.white.withValues(alpha: 0.06),
+                    color: AppColors.adaptiveGlass(context),
                   ),
                   child: FractionallySizedBox(
                     alignment: AlignmentDirectional.centerStart,
@@ -757,7 +757,7 @@ class _AddExpenseBottomSheetState extends State<_AddExpenseBottomSheet> {
                   height: 4,
                   margin: const EdgeInsets.only(bottom: 20),
                   decoration: BoxDecoration(
-                    color: Colors.white.withValues(alpha: 0.15),
+                    color: AppColors.adaptiveBorder(context),
                     borderRadius: BorderRadius.circular(10),
                   ),
                 ),

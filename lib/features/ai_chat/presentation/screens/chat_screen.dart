@@ -478,9 +478,12 @@ class _ChatScreenState extends State<ChatScreen> {
                     : null,
                 boxShadow: isTyping ? null : AppColors.amberGlow,
               ),
-              child: const Icon(
+              child: Icon(
                 Icons.send_rounded,
-                color: Colors.white,
+                // Matches the rest of the app's convention of dark text/icons
+                // on the amber gradient (white on amber fails contrast) —
+                // white is fine on the gray "disabled while typing" state.
+                color: isTyping ? Colors.white : AppColors.bgPrimary,
                 size: 22,
               ),
             ),

@@ -130,43 +130,50 @@ class MainNavigationLayout extends StatelessWidget {
             ? AppColors.adaptiveTextSecondary(context) 
             : const Color(0xFF6B7280));
 
-    return GestureDetector(
-      onTap: () => _onItemTapped(context, index),
-      behavior: HitTestBehavior.opaque,
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        mainAxisAlignment: MainAxisAlignment.center,
-        children: [
-          AnimatedContainer(
-            duration: const Duration(milliseconds: 200),
-            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
-            decoration: BoxDecoration(
-              color: isSelected 
-                  ? AppColors.accentAmber.withValues(alpha: 0.12) 
-                  : Colors.transparent,
-              borderRadius: BorderRadius.circular(20),
-            ),
-            child: AnimatedScale(
-              scale: isSelected ? 1.15 : 1.0,
-              duration: const Duration(milliseconds: 350),
-              curve: Curves.easeOutBack,
-              child: Icon(
-                isSelected ? activeIcon : icon,
-                color: color,
-                size: isCenter ? 26 : 24,
+    return Semantics(
+      button: true,
+      selected: isSelected,
+      label: label,
+      child: GestureDetector(
+        onTap: () => _onItemTapped(context, index),
+        behavior: HitTestBehavior.opaque,
+        child: ExcludeSemantics(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              AnimatedContainer(
+                duration: const Duration(milliseconds: 200),
+                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
+                decoration: BoxDecoration(
+                  color: isSelected
+                      ? AppColors.accentAmber.withValues(alpha: 0.12)
+                      : Colors.transparent,
+                  borderRadius: BorderRadius.circular(20),
+                ),
+                child: AnimatedScale(
+                  scale: isSelected ? 1.15 : 1.0,
+                  duration: const Duration(milliseconds: 350),
+                  curve: Curves.easeOutBack,
+                  child: Icon(
+                    isSelected ? activeIcon : icon,
+                    color: color,
+                    size: isCenter ? 26 : 24,
+                  ),
+                ),
               ),
-            ),
+              const SizedBox(height: 2),
+              Text(
+                label,
+                style: AppTextStyles.labelSmall.copyWith(
+                  fontSize: 10,
+                  fontWeight: isSelected ? FontWeight.bold : FontWeight.normal,
+                  color: color,
+                ),
+              ),
+            ],
           ),
-          const SizedBox(height: 2),
-          Text(
-            label,
-            style: AppTextStyles.labelSmall.copyWith(
-              fontSize: 10,
-              fontWeight: isSelected ? FontWeight.bold : FontWeight.normal,
-              color: color,
-            ),
-          ),
-        ],
+        ),
       ),
     );
   }

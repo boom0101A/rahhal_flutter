@@ -24,7 +24,8 @@ class MapFullScreen extends StatelessWidget {
           elevation: 0,
           leading: IconButton(
             onPressed: () => context.pop(),
-            icon: const Icon(Icons.arrow_back_ios_new_rounded, color: Colors.white, size: 20),
+            icon: Icon(Icons.arrow_back_ios_new_rounded,
+                color: AppColors.adaptiveTextPrimary(context), size: 20),
           ),
           title: Text(
             AppStrings.of(context).fullRouteTitle,

@@ -1665,6 +1665,9 @@ ${hasGPS ? `All coordinates MUST be within 50km of lat=${parseFloat(userLat).toF
 ${centerAnchor}
 ${gpsContext}
 
+RULE 6 — MANDATORY ENGLISH NAMES:
+EVERY single stop, recommended_restaurant, and all_restaurants entry MUST include a "name_en" field with a real, non-empty, accurate English (Latin-script) name for that exact place — never leave it empty, never omit it, and never copy the Arabic name into it unchanged unless the place's real name genuinely has no English form (e.g. it is only ever written in Arabic — this should be rare). The app switches its entire UI language using this field, so a missing name_en means that place permanently displays in the wrong language for English-reading users.
+
 Your output MUST be a single, valid, and minified JSON object matching the schema below.
 You must NOT include any conversational filler, markdown formatting (do NOT wrap in \`\`\`json ... \`\`\`), or extra text explanation before or after the JSON.
 The text values inside the JSON (such as themes, summaries, addresses, descriptions, tips, and names) MUST be in ARABIC (except for English name fields or URLs).

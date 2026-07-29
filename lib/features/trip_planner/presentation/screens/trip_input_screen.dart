@@ -638,10 +638,19 @@ class _TripInputScreenState extends State<TripInputScreen> {
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            crossAxisAlignment: CrossAxisAlignment.center,
             children: [
-              Text(title, style: AppTextStyles.titleMedium),
-              if (trailing != null) trailing,
+              // Expanded so a long trailing control (e.g. the English
+              // "Explore My Current City" pill) can never push the title off
+              // the edge of the screen — the title wraps instead of
+              // overflowing.
+              Expanded(
+                child: Text(title, style: AppTextStyles.titleMedium),
+              ),
+              if (trailing != null) ...[
+                const SizedBox(width: 8),
+                trailing,
+              ],
             ],
           ),
           const SizedBox(height: 12),

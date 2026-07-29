@@ -85,7 +85,7 @@ class RestaurantDetailSheet extends StatelessWidget {
                 Text(
                   restaurant.cuisineType!,
                   style: AppTextStyles.bodySmall
-                      .copyWith(color: AppColors.textSecondary),
+                      .copyWith(color: AppColors.adaptiveTextSecondary(context)),
                 ),
               ],
 
@@ -103,7 +103,7 @@ class RestaurantDetailSheet extends StatelessWidget {
                     icon: Icons.attach_money_rounded,
                     label:
                         '~\$${restaurant.pricePerPerson.toStringAsFixed(0)}/${strings.perPerson}',
-                    color: AppColors.textSecondary,
+                    color: AppColors.adaptiveTextSecondary(context),
                   ),
                   if (restaurant.halalCertified)
                     _chip(
@@ -120,14 +120,14 @@ class RestaurantDetailSheet extends StatelessWidget {
                 Row(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    const Icon(Icons.place_rounded,
-                        size: 16, color: AppColors.textSecondary),
+                    Icon(Icons.place_rounded,
+                        size: 16, color: AppColors.adaptiveTextSecondary(context)),
                     const SizedBox(width: 6),
                     Expanded(
                       child: Text(
                         restaurant.address!,
                         style: AppTextStyles.bodySmall
-                            .copyWith(color: AppColors.textSecondary),
+                            .copyWith(color: AppColors.adaptiveTextSecondary(context)),
                       ),
                     ),
                   ],
@@ -140,14 +140,14 @@ class RestaurantDetailSheet extends StatelessWidget {
                 Row(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    const Icon(Icons.schedule_rounded,
-                        size: 16, color: AppColors.textSecondary),
+                    Icon(Icons.schedule_rounded,
+                        size: 16, color: AppColors.adaptiveTextSecondary(context)),
                     const SizedBox(width: 6),
                     Expanded(
                       child: Text(
                         restaurant.openingHours!,
                         style: AppTextStyles.bodySmall
-                            .copyWith(color: AppColors.textSecondary),
+                            .copyWith(color: AppColors.adaptiveTextSecondary(context)),
                       ),
                     ),
                   ],
@@ -160,7 +160,7 @@ class RestaurantDetailSheet extends StatelessWidget {
                 Text(
                   restaurant.aiDescription!,
                   style: AppTextStyles.bodyMedium
-                      .copyWith(color: AppColors.textSecondary),
+                      .copyWith(color: AppColors.adaptiveTextSecondary(context)),
                 ),
               ],
 

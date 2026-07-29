@@ -234,6 +234,11 @@ class _NearbyScreenState extends State<NearbyScreen> {
           ...chips.map((f) {
           final active = _filter == f;
           final color = f == 'all' ? AppColors.accentAmber : _catStyle(f).$1;
+          // Amber is too light for white text/icons to read on (fails
+          // contrast, same issue fixed elsewhere in the app) — every other
+          // category color here is dark/saturated enough for white to work.
+          final activeContentColor =
+              color == AppColors.accentAmber ? AppColors.bgPrimary : Colors.white;
           return GestureDetector(
             onTap: () {
               Haptics.tap();
@@ -254,14 +259,14 @@ class _NearbyScreenState extends State<NearbyScreen> {
                   Icon(_filterIcon(f),
                       size: 15,
                       color: active
-                          ? Colors.white
+                          ? activeContentColor
                           : AppColors.adaptiveTextSecondary(context)),
                   const SizedBox(width: 6),
                   Text(
                     _filterLabel(f, strings),
                     style: AppTextStyles.chip.copyWith(
                         color: active
-                            ? Colors.white
+                            ? activeContentColor
                             : AppColors.adaptiveTextSecondary(context)),
                   ),
                 ],

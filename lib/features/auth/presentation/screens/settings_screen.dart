@@ -396,10 +396,14 @@ class _SettingsScreenState extends State<SettingsScreen> {
     ));
   }
 
-  Future<void> _openPrivacyPolicy() async {
+  Future<void> _openPrivacyPolicy() => _openUrl(AppInfo.privacyPolicyUrl);
+
+  Future<void> _openTermsOfService() => _openUrl(AppInfo.termsOfServiceUrl);
+
+  Future<void> _openUrl(String url) async {
     final strings = AppStrings.of(context);
     final messenger = ScaffoldMessenger.of(context);
-    final uri = Uri.parse(AppInfo.privacyPolicyUrl);
+    final uri = Uri.parse(url);
     try {
       final ok = await launchUrl(uri, mode: LaunchMode.externalApplication);
       if (!ok && mounted) {
@@ -607,6 +611,11 @@ class _SettingsScreenState extends State<SettingsScreen> {
                   icon: Icons.privacy_tip_outlined,
                   title: AppStrings.of(context).settingsPrivacyPolicy,
                   onTap: _openPrivacyPolicy,
+                ),
+                _buildSettingTile(
+                  icon: Icons.description_outlined,
+                  title: AppStrings.of(context).settingsTermsOfService,
+                  onTap: _openTermsOfService,
                 ),
                 // Only signed-in users have an account to delete; a guest
                 // session has nothing on the server.

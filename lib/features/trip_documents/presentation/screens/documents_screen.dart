@@ -430,11 +430,12 @@ class _DocumentsScreenState extends State<DocumentsScreen> {
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Row(
-                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
                       children: [
-                        Text(
-                          AppStrings.of(context).documentAddTitle,
-                          style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+                        Expanded(
+                          child: Text(
+                            AppStrings.of(context).documentAddTitle,
+                            style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+                          ),
                         ),
                         IconButton(
                           icon: const Icon(Icons.close_rounded),
@@ -490,6 +491,7 @@ class _DocumentsScreenState extends State<DocumentsScreen> {
                           firstDate: DateTime.now().subtract(const Duration(days: 365)),
                           lastDate: DateTime.now().add(const Duration(days: 365 * 10)),
                         );
+                        if (!context.mounted) return;
                         if (picked != null) {
                           setSheetState(() => expiryDate = picked);
                         }
@@ -537,6 +539,7 @@ class _DocumentsScreenState extends State<DocumentsScreen> {
                                   source: ImageSource.gallery,
                                   imageQuality: 85,
                                 );
+                                if (!context.mounted) return;
                                 if (file != null) {
                                   setSheetState(() => selectedFilePath = file.path);
                                 }
@@ -553,6 +556,7 @@ class _DocumentsScreenState extends State<DocumentsScreen> {
                                   source: ImageSource.camera,
                                   imageQuality: 85,
                                 );
+                                if (!context.mounted) return;
                                 if (file != null) {
                                   setSheetState(() => selectedFilePath = file.path);
                                 }

@@ -51,3 +51,9 @@ node_modules/
 # Firebase configuration files containing sensitive API keys
 android/app/google-services.json
 ios/Runner/GoogleService-Info.plist
+
+# Firebase CLI local deploy cache
+.firebase/
+
+# JVM heap dumps (e.g. from a Gradle/R8 OutOfMemoryError) — can be gigabytes
+*.hprof

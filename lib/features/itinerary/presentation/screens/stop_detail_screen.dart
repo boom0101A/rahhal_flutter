@@ -29,14 +29,35 @@ class StopDetailScreen extends StatefulWidget {
 }
 
 class _StopDetailScreenState extends State<StopDetailScreen> {
+  static const double _heroHeight = 240;
+
   bool _isLoading = true;
   String? _errorMessage;
   StopEntity? _stop;
+  bool _heroCollapsed = false;
+  late final ScrollController _scrollController;
 
   @override
   void initState() {
     super.initState();
     _loadStopDetails();
+    _scrollController = ScrollController()..addListener(_handleScroll);
+  }
+
+  // Once the sliver collapses past the hero image, only the flat
+  // adaptiveBgPrimary background remains behind the app bar icons — they
+  // must switch off white then, or they disappear in light mode.
+  void _handleScroll() {
+    final collapsed = _scrollController.offset > (_heroHeight - kToolbarHeight);
+    if (collapsed != _heroCollapsed) {
+      setState(() => _heroCollapsed = collapsed);
+    }
+  }
+
+  @override
+  void dispose() {
+    _scrollController.dispose();
+    super.dispose();
   }
 
   Future<void> _loadStopDetails() async {
@@ -87,19 +108,23 @@ class _StopDetailScreenState extends State<StopDetailScreen> {
 
   Widget _buildContentView() {
     final stop = _stop!;
+    final iconColor = _heroCollapsed
+        ? AppColors.adaptiveTextPrimary(context)
+        : Colors.white;
     return Stack(
       children: [
         // Custom Scroll View for smooth scrolling behavior
         CustomScrollView(
+          controller: _scrollController,
           slivers: [
             // Sliver App Bar with Image
             SliverAppBar(
-              expandedHeight: 240,
+              expandedHeight: _heroHeight,
               pinned: true,
               backgroundColor: AppColors.adaptiveBgPrimary(context),
               leading: IconButton(
                 onPressed: () => context.pop(),
-                icon: const Icon(Icons.close_rounded, color: Colors.white, size: 24),
+                icon: Icon(Icons.close_rounded, color: iconColor, size: 24),
               ),
               actions: [
                 if (_stop != null)
@@ -109,7 +134,7 @@ class _StopDetailScreenState extends State<StopDetailScreen> {
                       return IconButton(
                         icon: Icon(
                           isFav ? Icons.favorite_rounded : Icons.favorite_outline_rounded,
-                          color: isFav ? AppColors.error : Colors.white,
+                          color: isFav ? AppColors.error : iconColor,
                         ),
                         tooltip: isFav
                             ? AppStrings.of(context).removeFromFavorites

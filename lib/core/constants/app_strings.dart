@@ -321,6 +321,7 @@ class AppStrings {
   String get deleteAccountFailed =>
       _t('تعذّر حذف الحساب', 'Couldn\'t delete the account');
   String get settingsPrivacyPolicy => _t('سياسة الخصوصية', 'Privacy policy');
+  String get settingsTermsOfService => _t('شروط الاستخدام', 'Terms of service');
 
   // ── Settings: about ───────────────────────────────────────────────────────
   String get aboutSection => _t('عن التطبيق', 'About');

@@ -3,6 +3,7 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter_localizations/flutter_localizations.dart';
 import 'package:firebase_core/firebase_core.dart';
 import 'package:firebase_app_check/firebase_app_check.dart';
+import 'package:firebase_crashlytics/firebase_crashlytics.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'firebase_options.dart';
 import 'core/di/injection.dart';
@@ -21,15 +22,27 @@ void main() async {
   WidgetsFlutterBinding.ensureInitialized();
   Bloc.observer = AppBlocObserver();
 
+  // Crashlytics can only be called once Firebase.initializeApp() below has
+  // actually succeeded — if it failed (caught in the try/catch), calling
+  // FirebaseCrashlytics.instance here would itself throw and mask the
+  // original error, so every report is gated on this flag.
+  var firebaseReady = false;
+
   // Catch unhandled Flutter errors
   FlutterError.onError = (FlutterErrorDetails details) {
     debugPrint('🔴 Flutter Error: ${details.exception}');
     debugPrint('Stack: ${details.stack}');
+    if (firebaseReady) {
+      FirebaseCrashlytics.instance.recordFlutterFatalError(details);
+    }
   };
 
   // Catch unexpected asynchronous Dart errors
   PlatformDispatcher.instance.onError = (error, stack) {
     debugPrint('🔴 Platform Error: $error');
+    if (firebaseReady) {
+      FirebaseCrashlytics.instance.recordError(error, stack, fatal: true);
+    }
     return true; // handled
   };
 
@@ -42,14 +55,17 @@ void main() async {
     await Firebase.initializeApp(
       options: DefaultFirebaseOptions.currentPlatform,
     );
-    // في وضع Debug: AppCheck غير مفعّل تماماً → لا حجب للطلبات
-    // في وضع Production: AppCheck مفعّل بالمزودين الرسميين
+    firebaseReady = true;
+    // في وضع Debug: AppCheck وCrashlytics غير مفعّلين تماماً
+    // في وضع Production: كلاهما مفعّل
     if (!kDebugMode) {
       await FirebaseAppCheck.instance.activate(
         androidProvider: AndroidProvider.playIntegrity,
         appleProvider: AppleProvider.appAttest,
       );
     }
+    await FirebaseCrashlytics.instance
+        .setCrashlyticsCollectionEnabled(!kDebugMode);
   } catch (e) {
     debugPrint('⚠️ Firebase initialization failed: $e');
     debugPrint('App will continue without Firebase services.');

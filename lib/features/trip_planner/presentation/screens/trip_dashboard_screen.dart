@@ -211,6 +211,13 @@ class _TripDashboardScreenState extends State<TripDashboardScreen>
   Widget _buildHeroSliver(
       BuildContext context, bool innerIsScrolled) {
     final trip = _trip;
+    // While expanded, the bar sits over the hero photo — white reads well on
+    // any photo. Once collapsed/pinned, only the flat adaptiveBgPrimary
+    // background remains behind the icons, so they must switch to an
+    // adaptive color or they disappear against a light background.
+    final iconColor = innerIsScrolled
+        ? AppColors.adaptiveTextPrimary(context)
+        : Colors.white;
 
     return SliverAppBar(
       expandedHeight: 260,
@@ -219,8 +226,8 @@ class _TripDashboardScreenState extends State<TripDashboardScreen>
       backgroundColor: AppColors.adaptiveBgPrimary(context),
       leading: IconButton(
         onPressed: () => context.go('/home'),
-        icon: const Icon(Icons.arrow_back_ios_new_rounded,
-            color: Colors.white, size: 20),
+        icon: Icon(Icons.arrow_back_ios_new_rounded,
+            color: iconColor, size: 20),
       ),
       actions: [
         if (_isSharing)
@@ -238,8 +245,8 @@ class _TripDashboardScreenState extends State<TripDashboardScreen>
         else
           IconButton(
             onPressed: _shareTrip,
-            icon: const Icon(Icons.share_rounded,
-                color: Colors.white, size: 22),
+            icon: Icon(Icons.share_rounded,
+                color: iconColor, size: 22),
           ),
         IconButton(
           tooltip: AppStrings.of(context).shareMyLocation,
@@ -251,18 +258,18 @@ class _TripDashboardScreenState extends State<TripDashboardScreen>
                   child: CircularProgressIndicator(
                       strokeWidth: 2, color: AppColors.accentAmber),
                 )
-              : const Icon(Icons.person_pin_circle_rounded,
-                  color: Colors.white, size: 22),
+              : Icon(Icons.person_pin_circle_rounded,
+                  color: iconColor, size: 22),
         ),
         IconButton(
           onPressed: () => context.push('/trip/${widget.tripId}/documents'),
-          icon: const Icon(Icons.folder_open_rounded,
-              color: Colors.white, size: 22),
+          icon: Icon(Icons.folder_open_rounded,
+              color: iconColor, size: 22),
         ),
         IconButton(
           onPressed: () => context.push('/trip/${widget.tripId}/chat'),
-          icon: const Icon(Icons.chat_bubble_outline_rounded,
-              color: Colors.white, size: 22),
+          icon: Icon(Icons.chat_bubble_outline_rounded,
+              color: iconColor, size: 22),
         ),
         const SizedBox(width: 8),
       ],

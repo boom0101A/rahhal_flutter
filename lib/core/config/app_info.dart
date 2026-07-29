@@ -12,14 +12,19 @@ class AppInfo {
   /// The build number from pubspec.yaml (after the `+`). Shorebird patches ride
   /// on top of a release with this build number, so it identifies which native
   /// binary is installed.
-  static const String buildNumber = '2';
+  static const String buildNumber = '3';
 
   static String get fullVersion => '$version+$buildNumber';
 
   /// Where the privacy policy lives. Required by Google Play for any app that
-  /// signs users in — replace with the real URL before publishing.
+  /// signs users in. Hosted on Firebase Hosting (project: rahhal-ai) — see
+  /// public/privacy.html; deploy updates with `firebase deploy --only hosting`.
   static const String privacyPolicyUrl =
-      'https://rahhal-ai.com/privacy';
+      'https://rahhal-ai.web.app/privacy.html';
 
-  static const String supportEmail = 'support@rahhal-ai.com';
+  /// Same hosting setup as [privacyPolicyUrl] — see public/terms.html.
+  static const String termsOfServiceUrl =
+      'https://rahhal-ai.web.app/terms.html';
+
+  static const String supportEmail = 'ah0450278@gmail.com';
 }

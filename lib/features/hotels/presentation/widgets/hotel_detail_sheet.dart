@@ -84,7 +84,7 @@ class HotelDetailSheet extends StatelessWidget {
                 Text(
                   hotel.hotelType!,
                   style: AppTextStyles.bodySmall
-                      .copyWith(color: AppColors.textSecondary),
+                      .copyWith(color: AppColors.adaptiveTextSecondary(context)),
                 ),
               ],
 
@@ -104,19 +104,19 @@ class HotelDetailSheet extends StatelessWidget {
                       icon: Icons.attach_money_rounded,
                       label:
                           '~\$${hotel.pricePerNight.toStringAsFixed(0)}/${strings.perNight}',
-                      color: AppColors.textSecondary,
+                      color: AppColors.adaptiveTextSecondary(context),
                     ),
                 ],
               ),
 
               if (hotel.address != null && hotel.address!.isNotEmpty) ...[
                 const SizedBox(height: 16),
-                _infoRow(Icons.place_rounded, hotel.address!),
+                _infoRow(context, Icons.place_rounded, hotel.address!),
               ],
 
               if (hotel.phone != null && hotel.phone!.isNotEmpty) ...[
                 const SizedBox(height: 8),
-                _infoRow(Icons.call_rounded, hotel.phone!),
+                _infoRow(context, Icons.call_rounded, hotel.phone!),
               ],
 
               if (hotel.aiDescription != null &&
@@ -125,7 +125,7 @@ class HotelDetailSheet extends StatelessWidget {
                 Text(
                   hotel.aiDescription!,
                   style: AppTextStyles.bodyMedium
-                      .copyWith(color: AppColors.textSecondary),
+                      .copyWith(color: AppColors.adaptiveTextSecondary(context)),
                 ),
               ],
 
@@ -148,17 +148,17 @@ class HotelDetailSheet extends StatelessWidget {
     );
   }
 
-  Widget _infoRow(IconData icon, String text) {
+  Widget _infoRow(BuildContext context, IconData icon, String text) {
     return Row(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Icon(icon, size: 16, color: AppColors.textSecondary),
+        Icon(icon, size: 16, color: AppColors.adaptiveTextSecondary(context)),
         const SizedBox(width: 6),
         Expanded(
           child: Text(
             text,
-            style:
-                AppTextStyles.bodySmall.copyWith(color: AppColors.textSecondary),
+            style: AppTextStyles.bodySmall
+                .copyWith(color: AppColors.adaptiveTextSecondary(context)),
           ),
         ),
       ],
