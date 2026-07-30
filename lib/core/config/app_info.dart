@@ -12,7 +12,7 @@ class AppInfo {
   /// The build number from pubspec.yaml (after the `+`). Shorebird patches ride
   /// on top of a release with this build number, so it identifies which native
   /// binary is installed.
-  static const String buildNumber = '3';
+  static const String buildNumber = '5';
 
   static String get fullVersion => '$version+$buildNumber';
 

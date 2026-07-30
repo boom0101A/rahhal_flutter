@@ -262,9 +262,19 @@ class _TripInputScreenState extends State<TripInputScreen> {
                                     else
                                       const Icon(Icons.my_location_rounded, size: 14, color: AppColors.accentAmber),
                                     const SizedBox(width: 4),
-                                    Text(
-                                      strings.discoverCurrentCityButton,
-                                      style: AppTextStyles.labelSmall.copyWith(color: AppColors.accentAmber),
+                                    // Flexible + ellipsis: when the outer
+                                    // Flexible above compresses this pill
+                                    // below its natural width (long English
+                                    // strings on a narrow screen), the text
+                                    // truncates instead of overflowing past
+                                    // the edge of the screen.
+                                    Flexible(
+                                      child: Text(
+                                        strings.discoverCurrentCityButton,
+                                        style: AppTextStyles.labelSmall.copyWith(color: AppColors.accentAmber),
+                                        overflow: TextOverflow.ellipsis,
+                                        maxLines: 1,
+                                      ),
                                     ),
                                   ],
                                 ),
@@ -651,7 +661,11 @@ class _TripInputScreenState extends State<TripInputScreen> {
               ),
               if (trailing != null) ...[
                 const SizedBox(width: 8),
-                trailing,
+                // Flexible so trailing itself is also allowed to shrink below
+                // its natural width when the row is tight — its own content
+                // (below) must in turn know how to truncate under that
+                // constraint, or this alone just moves the overflow inward.
+                Flexible(child: trailing),
               ],
             ],
           ),
