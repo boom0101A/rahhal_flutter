@@ -44,6 +44,8 @@ class AppStrings {
   String get authRegister => _t('إنشاء حساب', 'Register');
   String get authEmail => _t('البريد الإلكتروني', 'Email Address');
   String get authPassword => _t('كلمة المرور', 'Password');
+  String get authShowPassword => _t('إظهار كلمة المرور', 'Show password');
+  String get authHidePassword => _t('إخفاء كلمة المرور', 'Hide password');
   String get authName => _t('الاسم الكامل', 'Full Name');
   String get authGoogleSignIn => _t('الدخول بـ Google', 'Sign in with Google');
   String get authGuestMode => _t('تصفح كضيف', 'Browse as Guest');
@@ -394,6 +396,7 @@ class AppStrings {
   String get chatQuickReply6 =>
       _t('كيف أوفّر في الميزانية؟', 'How can I save on budget?');
   String get chatOnlineStatus => _t('متصل الآن', 'Online');
+  String get chatClearHistory => _t('مسح المحادثة', 'Clear conversation');
   String get chatIntroTitle => _t('أهلاً! أنا مساعد رحّال', 'Hi! I\'m Rahhal Assistant');
   String get chatIntroSubtitle => _t('اسألني عن أي شيء يتعلق برحلتك وسأساعدك فوراً', 'Ask me anything about your trip and I\'ll help you');
   String get chatSuggestions => _t('اقتراحات:', 'Suggestions:');
@@ -562,6 +565,7 @@ class AppStrings {
   String get back => _t('رجوع', 'Back');
   String get confirm => _t('تأكيد', 'Confirm');
   String get cancel => _t('إلغاء', 'Cancel');
+  String get close => _t('إغلاق', 'Close');
   String get total => _t('الإجمالي', 'Total');
 
   // Popular cities
@@ -846,6 +850,7 @@ class AppStrings {
       'Could not access your location. Enable the permission in Settings.');
   String stopsCount(int count) => _t('$count محطة', '$count stops');
   String get fullRouteTitle => _t('مسار الرحلة الكامل', 'Full trip route');
+  String get mapMyLocation => _t('موقعي الحالي', 'My current location');
   String locationDetected(String location) =>
       _t('📍 تم تحديد موقعك: $location', '📍 Location detected: $location');
 

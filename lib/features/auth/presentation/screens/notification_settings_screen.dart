@@ -62,8 +62,9 @@ class _NotificationSettingsScreenState extends State<NotificationSettingsScreen>
         backgroundColor: AppColors.adaptiveBgPrimary(context),
         elevation: 0,
         leading: IconButton(
+          tooltip: strings.back,
           onPressed: () => context.pop(),
-          icon: Icon(Icons.arrow_back_ios_new_rounded, 
+          icon: Icon(Icons.arrow_back_ios_new_rounded,
             color: AppColors.adaptiveTextPrimary(context), size: 20),
         ),
         title: Text(

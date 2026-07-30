@@ -42,6 +42,7 @@ class _FavoritesScreenState extends State<FavoritesScreen> {
         backgroundColor: Theme.of(context).appBarTheme.backgroundColor,
         elevation: 0,
         leading: IconButton(
+          tooltip: strings.back,
           onPressed: () => context.go('/home'),
           icon: Icon(
             Icons.arrow_back_ios_new_rounded,

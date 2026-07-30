@@ -123,6 +123,7 @@ class _StopDetailScreenState extends State<StopDetailScreen> {
               pinned: true,
               backgroundColor: AppColors.adaptiveBgPrimary(context),
               leading: IconButton(
+                tooltip: AppStrings.of(context).close,
                 onPressed: () => context.pop(),
                 icon: Icon(Icons.close_rounded, color: iconColor, size: 24),
               ),

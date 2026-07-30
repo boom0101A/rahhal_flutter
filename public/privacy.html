@@ -41,6 +41,7 @@
     <li><strong>بيانات الرحلات:</strong> الوجهة، التواريخ، تفضيلات السفر، والميزانية التي تُدخلها لتوليد خطة الرحلة.</li>
     <li><strong>رسائل المحادثة:</strong> الأسئلة التي ترسلها للمساعد الذكي داخل التطبيق.</li>
     <li><strong>صورة الملف الشخصي:</strong> إن اخترت إضافة صورة، تُحفظ محلياً على جهازك فقط ولا تُرفع لأي خادم.</li>
+    <li><strong>تقارير الأعطال والتشخيص:</strong> إذا تعطّل التطبيق، نستخدم Firebase Crashlytics لجمع تقرير فني تلقائي (نوع الخطأ، تتبّع الاستدعاءات البرمجية، طراز الجهاز ونسخة نظام التشغيل) لمساعدتنا على إصلاح الأعطال — لا يحتوي هذا التقرير على محتوى رحلاتك أو رسائلك.</li>
   </ul>
 
   <h2>كيف نستخدم بياناتك</h2>
@@ -49,6 +50,7 @@
     <li>التحقق من الأماكن الحقيقية عبر Google Places، وجلب صور تعبيرية عبر Unsplash/Pexels، وبيانات الطقس عبر OpenWeatherMap — تُرسَل فقط أسماء الوجهات/الإحداثيات، دون ربطها بهويتك.</li>
     <li>حفظ نسخة احتياطية من رحلاتك في السحابة (Firebase) إن كنت مسجّلاً بحساب حقيقي (غير ضيف)، لاستعادتها عند تغيير جهازك.</li>
     <li>إرسال تنبيهات محلية على جهازك (تذكير برحلة، انتهاء وثيقة سفر) — تُعالَج بالكامل على جهازك، لا تُرسَل لأي خادم.</li>
+    <li>اكتشاف الأعطال وإصلاحها عبر Firebase Crashlytics — معطَّل أثناء التطوير، ومفعَّل فقط في النسخة المنشورة للمستخدمين.</li>
   </ul>
 
   <h2>أين تُخزَّن بياناتك</h2>
@@ -58,7 +60,7 @@
   <p>يمكنك حذف حسابك وكل بياناتك نهائياً في أي وقت من داخل التطبيق: <strong>الإعدادات ← الحساب ← حذف الحساب</strong>. هذا الإجراء فوري ونهائي ولا يمكن التراجع عنه.</p>
 
   <h2>مشاركة البيانات مع أطراف ثالثة</h2>
-  <p>لا نبيع بياناتك لأي جهة. تُشارَك بيانات محدودة فقط مع مزوّدي الخدمة اللازمين لتشغيل الميزات المذكورة أعلاه (Google Firebase، Groq، Google Gemini، Google Places، Unsplash، Pexels، OpenWeatherMap)، وضمن الحد الأدنى اللازم لعمل كل ميزة.</p>
+  <p>لا نبيع بياناتك لأي جهة. تُشارَك بيانات محدودة فقط مع مزوّدي الخدمة اللازمين لتشغيل الميزات المذكورة أعلاه (Google Firebase بما فيها Crashlytics، Groq، Google Gemini، Google Places، Unsplash، Pexels، OpenWeatherMap)، وضمن الحد الأدنى اللازم لعمل كل ميزة.</p>
 
   <h2>الأطفال</h2>
   <p>هذا التطبيق غير موجَّه للأطفال دون سن 13 عاماً، ولا نجمع بيانات عن علم من هذه الفئة العمرية.</p>
@@ -82,6 +84,7 @@
     <li><strong>Trip data:</strong> destination, dates, travel preferences, and budget you enter to generate a trip plan.</li>
     <li><strong>Chat messages:</strong> questions you send to the in-app AI assistant.</li>
     <li><strong>Profile photo:</strong> if you add one, it is stored locally on your device only and never uploaded to any server.</li>
+    <li><strong>Crash and diagnostic reports:</strong> if the app crashes, we use Firebase Crashlytics to collect an automatic technical report (error type, code stack trace, device model, OS version) to help us fix the crash — this report never contains your trip content or messages.</li>
   </ul>
 
   <h2>How We Use Your Data</h2>
@@ -90,6 +93,7 @@
     <li>Verifying real places via Google Places, fetching representative photos via Unsplash/Pexels, and weather data via OpenWeatherMap — only destination names/coordinates are sent, never linked to your identity.</li>
     <li>Backing up your trips to the cloud (Firebase) if you're signed in with a real account (not a guest), so you can restore them on a new device.</li>
     <li>Sending local notifications on your device (trip reminders, document expiry) — processed entirely on-device, never sent to any server.</li>
+    <li>Detecting and fixing crashes via Firebase Crashlytics — disabled during development, enabled only in the published release users install.</li>
   </ul>
 
   <h2>Where Your Data Is Stored</h2>
@@ -99,7 +103,7 @@
   <p>You can permanently delete your account and all your data at any time from within the app: <strong>Settings → Account → Delete Account</strong>. This action is immediate and irreversible.</p>
 
   <h2>Third-Party Sharing</h2>
-  <p>We do not sell your data to anyone. Limited data is shared only with the service providers required to run the features above (Google Firebase, Groq, Google Gemini, Google Places, Unsplash, Pexels, OpenWeatherMap), and only to the extent each feature requires.</p>
+  <p>We do not sell your data to anyone. Limited data is shared only with the service providers required to run the features above (Google Firebase including Crashlytics, Groq, Google Gemini, Google Places, Unsplash, Pexels, OpenWeatherMap), and only to the extent each feature requires.</p>
 
   <h2>Children</h2>
   <p>This app is not directed at children under 13, and we do not knowingly collect data from this age group.</p>

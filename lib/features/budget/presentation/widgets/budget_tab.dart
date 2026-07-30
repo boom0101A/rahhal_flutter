@@ -772,6 +772,7 @@ class _AddExpenseBottomSheetState extends State<_AddExpenseBottomSheet> {
                     style: AppTextStyles.displaySmall,
                   ),
                   IconButton(
+                    tooltip: strings.close,
                     onPressed: () => Navigator.pop(context),
                     icon: Icon(Icons.close_rounded, color: AppColors.adaptiveTextSecondary(context)),
                   ),

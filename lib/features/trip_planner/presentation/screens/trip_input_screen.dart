@@ -205,6 +205,7 @@ class _TripInputScreenState extends State<TripInputScreen> {
                       child: Row(
                         children: [
                           IconButton(
+                            tooltip: strings.back,
                             onPressed: () => context.go('/home'),
                             icon: Icon(Icons.arrow_back_ios_new_rounded,
                                 color: AppColors.adaptiveTextPrimary(context), size: 20),
@@ -282,6 +283,7 @@ class _TripInputScreenState extends State<TripInputScreen> {
                                         color: AppColors.adaptiveTextSecondary(context),
                                         size: 20),
                                     suffixIcon: IconButton(
+                                      tooltip: strings.discoverCurrentCityButton,
                                       icon: const Icon(Icons.gps_fixed_rounded, color: AppColors.accentAmber, size: 20),
                                       onPressed: _isDetectingLocation ? null : _detectCurrentLocation,
                                     ),

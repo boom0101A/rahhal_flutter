@@ -305,6 +305,7 @@ class _ChatScreenState extends State<ChatScreen> {
       child: Row(
         children: [
           IconButton(
+            tooltip: AppStrings.of(context).back,
             onPressed: () => context.pop(),
             icon: Icon(Icons.arrow_back_ios_new_rounded,
                 color: AppColors.adaptiveTextPrimary(context), size: 20),
@@ -340,6 +341,7 @@ class _ChatScreenState extends State<ChatScreen> {
           ),
           BlocBuilder<ChatCubit, ChatState>(
             builder: (context, state) => IconButton(
+              tooltip: AppStrings.of(context).chatClearHistory,
               onPressed: state.messages.isEmpty
                   ? null
                   : () => context.read<ChatCubit>().clearHistory(),

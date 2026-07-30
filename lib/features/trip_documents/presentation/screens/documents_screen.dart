@@ -67,6 +67,7 @@ class _DocumentsScreenState extends State<DocumentsScreen> {
               backgroundColor: Theme.of(context).appBarTheme.backgroundColor,
               elevation: 0,
               leading: IconButton(
+                tooltip: AppStrings.of(context).back,
                 onPressed: () => context.go('/trip/${widget.tripId}'),
                 icon: Icon(
                   Icons.arrow_back_ios_new_rounded,
@@ -219,6 +220,7 @@ class _DocumentsScreenState extends State<DocumentsScreen> {
                   ),
                 ),
                 IconButton(
+                  tooltip: AppStrings.of(context).delete,
                   icon: const Icon(Icons.delete_outline_rounded, color: AppColors.error),
                   onPressed: () => _confirmDelete(context, doc),
                 ),
@@ -347,6 +349,7 @@ class _DocumentsScreenState extends State<DocumentsScreen> {
               child: CircleAvatar(
                 backgroundColor: Colors.black54,
                 child: IconButton(
+                  tooltip: AppStrings.of(ctx).close,
                   icon: const Icon(Icons.close_rounded, color: Colors.white),
                   onPressed: () => Navigator.pop(ctx),
                 ),
@@ -438,6 +441,7 @@ class _DocumentsScreenState extends State<DocumentsScreen> {
                           ),
                         ),
                         IconButton(
+                          tooltip: AppStrings.of(context).close,
                           icon: const Icon(Icons.close_rounded),
                           onPressed: () => Navigator.pop(ctx),
                         ),
@@ -520,6 +524,7 @@ class _DocumentsScreenState extends State<DocumentsScreen> {
                             child: CircleAvatar(
                               backgroundColor: Colors.black54,
                               child: IconButton(
+                                tooltip: AppStrings.of(context).delete,
                                 icon: const Icon(Icons.delete_outline_rounded, color: Colors.white),
                                 onPressed: () {
                                   setSheetState(() => selectedFilePath = null);

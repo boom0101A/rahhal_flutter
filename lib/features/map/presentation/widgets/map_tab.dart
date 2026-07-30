@@ -437,6 +437,7 @@ class _MapViewState extends State<_MapView> with WidgetsBindingObserver {
               boxShadow: AppColors.cardShadow,
             ),
             child: IconButton(
+              tooltip: AppStrings.of(context).mapMyLocation,
               onPressed: _isLocatingUser ? null : _goToMyLocation,
               icon: _isLocatingUser
                   ? const SizedBox(
@@ -626,6 +627,7 @@ class _StopBottomCard extends StatelessWidget {
                   ),
                 ),
                 IconButton(
+                  tooltip: AppStrings.of(context).close,
                   onPressed: onClose,
                   icon: Icon(Icons.close_rounded,
                       color: AppColors.adaptiveTextSecondary(context), size: 20),

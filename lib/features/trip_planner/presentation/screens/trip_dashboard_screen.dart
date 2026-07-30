@@ -225,6 +225,7 @@ class _TripDashboardScreenState extends State<TripDashboardScreen>
       elevation: 0,
       backgroundColor: AppColors.adaptiveBgPrimary(context),
       leading: IconButton(
+        tooltip: AppStrings.of(context).back,
         onPressed: () => context.go('/home'),
         icon: Icon(Icons.arrow_back_ios_new_rounded,
             color: iconColor, size: 20),
@@ -244,6 +245,7 @@ class _TripDashboardScreenState extends State<TripDashboardScreen>
           )
         else
           IconButton(
+            tooltip: AppStrings.of(context).share,
             onPressed: _shareTrip,
             icon: Icon(Icons.share_rounded,
                 color: iconColor, size: 22),
@@ -262,11 +264,13 @@ class _TripDashboardScreenState extends State<TripDashboardScreen>
                   color: iconColor, size: 22),
         ),
         IconButton(
+          tooltip: AppStrings.of(context).documentsTitle,
           onPressed: () => context.push('/trip/${widget.tripId}/documents'),
           icon: Icon(Icons.folder_open_rounded,
               color: iconColor, size: 22),
         ),
         IconButton(
+          tooltip: AppStrings.of(context).chatTitle,
           onPressed: () => context.push('/trip/${widget.tripId}/chat'),
           icon: Icon(Icons.chat_bubble_outline_rounded,
               color: iconColor, size: 22),

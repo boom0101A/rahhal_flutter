@@ -171,6 +171,9 @@ class _AuthScreenState extends State<AuthScreen> {
                                   maxLength: 64,
                                   obscureText: _obscurePassword,
                                   suffix: IconButton(
+                                    tooltip: _obscurePassword
+                                        ? strings.authShowPassword
+                                        : strings.authHidePassword,
                                     icon: Icon(
                                       _obscurePassword
                                           ? Icons.visibility_outlined

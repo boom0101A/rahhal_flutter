@@ -23,6 +23,7 @@ class MapFullScreen extends StatelessWidget {
           backgroundColor: AppColors.adaptiveBgPrimary(context),
           elevation: 0,
           leading: IconButton(
+            tooltip: AppStrings.of(context).back,
             onPressed: () => context.pop(),
             icon: Icon(Icons.arrow_back_ios_new_rounded,
                 color: AppColors.adaptiveTextPrimary(context), size: 20),
