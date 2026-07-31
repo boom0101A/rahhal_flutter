@@ -367,7 +367,7 @@ function isLatinScriptDestination(s) {
 // first, then tries each known Arabic name as a substring (handles inputs
 // like "كربلاء، العراق" or "مدينة النجف").
 function lookupCityDictionary(rawDestination) {
-  if (!rawDestination) return null;
+  if (typeof rawDestination !== 'string' || !rawDestination) return null;
   const q = rawDestination.trim();
   if (AR_CITY_DICTIONARY[q]) return AR_CITY_DICTIONARY[q];
   for (const [ar, info] of Object.entries(AR_CITY_DICTIONARY)) {
@@ -925,6 +925,27 @@ function tripStopCentroid(tripData) {
   };
 }
 
+// Maps the app's controlled stop `category` vocabulary to Google Places
+// (New) `includedTypes` values, used to find a REAL replacement nearby when
+// a stop fails verification (see findReplacementStop below). A handful of
+// these (beach, palace, viewpoint) have no exact Google type — they fall
+// back to the closest attraction-ish types. An invalid type just 400s the
+// single searchNearby call, which is treated as "no replacement found" (see
+// findReplacementStop's catch block) — never a crash.
+const CATEGORY_TO_GOOGLE_TYPES = {
+  museum: ['museum', 'art_gallery'],
+  restaurant: ['restaurant', 'cafe', 'bakery', 'meal_takeaway', 'coffee_shop', 'fast_food_restaurant'],
+  park: ['park', 'national_park'],
+  shopping: ['shopping_mall', 'market', 'store', 'department_store', 'clothing_store'],
+  landmark: ['tourist_attraction', 'historical_landmark'],
+  beach: ['beach'],
+  mosque: ['mosque', 'church', 'hindu_temple', 'synagogue'],
+  palace: ['historical_landmark', 'tourist_attraction', 'museum'],
+  market: ['market', 'supermarket', 'grocery_store', 'shopping_mall'],
+  viewpoint: ['tourist_attraction', 'park'],
+  other: ['tourist_attraction', 'point_of_interest'],
+};
+
 // ─── Verify ALL stops & restaurants in a parsed Claude trip response ──────────
 //
 // Runs Google Places verification in parallel (with concurrency cap of 5)
@@ -973,6 +994,12 @@ async function verifyAllPlacesInTrip(tripData, destinationEn, userLat, userLng) 
     }
   }
 
+  // Tracks place_ids already claimed in this trip (by successful
+  // verification OR replacement) so findReplacementStop doesn't hand two
+  // different fictional stops the same real place. Best-effort only — see
+  // dedupeTripByPlaceId for the guaranteed final backstop.
+  const seenPlaceIds = new Set();
+
   // Process in batches of 5 concurrent requests
   const CONCURRENCY = 8;
   for (let i = 0; i < tasks.length; i += CONCURRENCY) {
@@ -989,18 +1016,45 @@ async function verifyAllPlacesInTrip(tripData, destinationEn, userLat, userLng) 
           }
           if (verified.placeId) {
             item.place_id = verified.placeId;
+            seenPlaceIds.add(verified.placeId);
           }
           // Note: rating / website are no longer fetched here (see the lean
           // field mask in verifyPlaceWithGoogle). Stops have no rating field
           // in the app, and booking_url keeps whatever the model supplied.
           item.coords_verified = true;
         } else {
-          // Place not found in Google — flag it but keep Claude's data
-          item.coords_verified = false;
-          console.warn(`[PLACES] Using unverified coords for: ${nameEn}`);
+          // Place not found in Google — this is a fictional/hallucinated
+          // stop. Try to find a REAL alternative nearby in the same
+          // category rather than showing the AI's invented place to the
+          // user; if no real alternative exists either, drop the stop.
+          const replacement = await findReplacementStop(item, centerLat, centerLng, seenPlaceIds);
+          if (replacement) {
+            item.name = replacement.name;
+            item.name_en = replacement.name_en;
+            item.latitude = replacement.latitude;
+            item.longitude = replacement.longitude;
+            item.google_address = replacement.address;
+            item.place_id = replacement.place_id;
+            item.coords_verified = true;
+            seenPlaceIds.add(replacement.place_id);
+            console.log(`[PLACES] Replaced fictional stop "${nameEn}" → "${replacement.name_en}"`);
+          } else {
+            item.coords_verified = false;
+            item._dropCandidate = true;
+            console.warn(`[PLACES] No real alternative for "${nameEn}" — dropping stop`);
+          }
         }
       })
     );
+  }
+
+  // Drop stops that failed verification AND had no real replacement, then
+  // re-index each day's remaining stops (mirrors pruneOutOfGovernorateStops).
+  for (const day of tripData.days || []) {
+    if (Array.isArray(day.stops)) {
+      day.stops = day.stops.filter((s) => !s._dropCandidate);
+      day.stops.forEach((s, i) => { s.order_index = i; });
+    }
   }
 
   const verifiedCount = tasks.filter(({ item }) => item.coords_verified).length;
@@ -1009,6 +1063,63 @@ async function verifyAllPlacesInTrip(tripData, destinationEn, userLat, userLng) 
   );
 
   return tripData;
+}
+
+// Finds a REAL nearby place to replace a stop that failed Google Places
+// verification (i.e. the AI likely invented it). Searches the same category
+// as the fictional stop, anchored near where the stop was supposed to be.
+async function findReplacementStop(stop, centerLat, centerLng, seenPlaceIds) {
+  if (isPlacesQuotaBlocked()) return null;
+  const placesKey = process.env.GOOGLE_PLACES_API_KEY;
+  if (!placesKey || placesKey === 'your_google_places_api_key_here') return null;
+
+  const includedTypes = CATEGORY_TO_GOOGLE_TYPES[stop.category] || CATEGORY_TO_GOOGLE_TYPES.other;
+
+  // Anchor on the stop's own (possibly fictional) coordinates when they're
+  // at least in the right city — keeps the replacement in the neighborhood
+  // the model intended. Otherwise recenter on the trip's trusted center
+  // with a wider radius.
+  let anchorLat = parseFloat(stop.latitude);
+  let anchorLng = parseFloat(stop.longitude);
+  let radius = 5000;
+  const validOwnCoords = !isNaN(anchorLat) && !isNaN(anchorLng);
+  if (validOwnCoords && centerLat && centerLng &&
+      haversineDistance(centerLat, centerLng, anchorLat, anchorLng) > GOVERNORATE_RADIUS_KM) {
+    anchorLat = centerLat; anchorLng = centerLng; radius = 15000;
+  } else if (!validOwnCoords) {
+    if (!centerLat || !centerLng) return null; // no usable anchor at all
+    anchorLat = centerLat; anchorLng = centerLng; radius = 15000;
+  }
+
+  try {
+    // Two calls (ar + en) merged by id, matching the searchRestaurantsInLanguage
+    // convention — stop.name (Arabic) and stop.name_en (English) are both
+    // required fields, unlike nearbyViaGoogle which only needs one language.
+    const [arResults, enResults] = await Promise.all([
+      nearbySearchGoogleGroup(anchorLat, anchorLng, radius, 'ar', includedTypes),
+      nearbySearchGoogleGroup(anchorLat, anchorLng, radius, 'en', includedTypes),
+    ]);
+    const enById = new Map(enResults.map((p) => [p.id, p]));
+    // rankPreference: DISTANCE already sorts closest-first, so the first
+    // not-yet-used candidate is both the closest AND non-duplicate choice.
+    const candidate = arResults.find(
+      (p) => p.location && p.displayName?.text && !seenPlaceIds.has(p.id)
+    );
+    if (!candidate) return null;
+    const en = enById.get(candidate.id);
+    return {
+      name: candidate.displayName.text,
+      name_en: en?.displayName?.text || candidate.displayName.text,
+      latitude: candidate.location.latitude,
+      longitude: candidate.location.longitude,
+      address: candidate.formattedAddress || candidate.shortFormattedAddress || '',
+      place_id: candidate.id,
+    };
+  } catch (err) {
+    const message = err.response?.data?.error?.message || err.message;
+    tripPlacesBreaker(message);
+    return null;
+  }
 }
 
 // ─── Real restaurants, sourced from Google Places (not from the LLM) ─────────
@@ -1501,6 +1612,14 @@ function applyHotels(tripData, hotels) {
 // the Places lookups later. Returns null if Places isn't configured or the
 // destination can't be resolved.
 async function resolveDestinationEN(rawDestination) {
+  // Defense-in-depth: this is called from more than one route, and every
+  // path below eventually calls a string method (.trim(), regex .test()
+  // against the raw value further down) on rawDestination. A non-string
+  // (number/array/object) must resolve to "can't resolve" here rather than
+  // throw — undoing this guard reopens the same unhandled-rejection
+  // process-crash class of bug this function exists to fix on the caller side.
+  if (typeof rawDestination !== 'string' || !rawDestination.trim()) return null;
+
   // 1. Zero-cost static dictionary first (covers common destinations without
   //    spending any Google Places quota).
   const dict = lookupCityDictionary(rawDestination);
@@ -1587,7 +1706,17 @@ app.post('/api/generate-trip', async (req, res) => {
   const budgetCap = Number(targetBudgetUsd);
   const hasBudgetCap = Number.isFinite(budgetCap) && budgetCap > 0;
 
-  if (!destination || !durationDays || !budgetTier) {
+  // typeof checks matter here, not just truthiness: a non-string destination
+  // (e.g. the client sends a number or array) is still "truthy" and would
+  // otherwise reach resolveDestinationEN() -> lookupCityDictionary(), which
+  // calls .trim() on it. That throw happens inside an async function with no
+  // enclosing try/catch at the call site, so it becomes an unhandled promise
+  // rejection — which crashes the entire Node process for every concurrent
+  // user, not just this request.
+  if (
+    typeof destination !== 'string' || !destination.trim() ||
+    !durationDays || !budgetTier
+  ) {
     return res.status(400).json({ error: 'Missing required parameters' });
   }
 
@@ -1919,6 +2048,11 @@ ${countryCode ? `- Country: ${countryCode}` : ''}`;
     const centerLng = userLng || (resolved && resolved.lng) || null;
     parsedData = await verifyAllPlacesInTrip(parsedData, destinationEn, centerLat, centerLng);
 
+    // Catches a subtler duplicate than the name-based dedup above: two
+    // differently-named AI stops that both verified/resolved to the SAME
+    // real place_id (e.g. "Grand Bazaar" and "Kapalıçarşı" for one place).
+    parsedData = dedupeTripByPlaceId(parsedData);
+
     // Drop any stop that verification left sitting in a DIFFERENT governorate
     // (the reported bug: a Baghdad trip showing a park/museum from Karbala or
     // Babil). Only runs when we trust the center (GPS or a real city-center
@@ -2051,6 +2185,31 @@ function deduplicateTripPlan(plan) {
   console.log(`[DEDUP] Final: ${totalStops} unique stops, ${(plan.all_restaurants || []).length} restaurants`);
 
   return plan;
+}
+
+// Second dedup pass, run AFTER Places verification/replacement — catches
+// stops that deduplicateTripPlan's name-based check couldn't: two
+// differently-named AI stops (or one AI stop + one replacement) that
+// resolved to the exact same real place_id.
+function dedupeTripByPlaceId(tripData) {
+  const seenPlaceIds = new Set();
+  let dropped = 0;
+  for (const day of tripData.days || []) {
+    if (!Array.isArray(day.stops)) continue;
+    day.stops = day.stops.filter((stop) => {
+      if (!stop.place_id) return true; // never verified — nothing to compare
+      if (seenPlaceIds.has(stop.place_id)) {
+        console.warn(`[DEDUP] Removed place_id-duplicate stop: ${stop.name_en || stop.name}`);
+        dropped++;
+        return false;
+      }
+      seenPlaceIds.add(stop.place_id);
+      return true;
+    });
+    day.stops.forEach((s, i) => { s.order_index = i; });
+  }
+  if (dropped) console.log(`[DEDUP] Removed ${dropped} place_id duplicate stop(s).`);
+  return tripData;
 }
 
 // Helper to translate Arabic city names to English for better stock photo search results
