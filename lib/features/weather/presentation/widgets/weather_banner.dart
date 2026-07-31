@@ -4,6 +4,7 @@ import '../../../../core/constants/app_strings.dart';
 import '../../../../core/di/injection.dart';
 import '../../../../core/constants/app_colors.dart';
 import '../../../../core/constants/app_text_styles.dart';
+import '../../../../shared/widgets/glass_card.dart';
 import '../../domain/entities/weather_entity.dart';
 import '../../data/weather_repository.dart';
 
@@ -48,15 +49,27 @@ class _WeatherBannerState extends State<WeatherBanner> {
         lon: widget.lon!,
         lang: widget.lang,
       );
-      if (mounted) setState(() { _forecast = result; _loading = false; });
+      if (mounted) {
+        setState(() {
+          _forecast = result;
+          _loading = false;
+        });
+      }
     } catch (e) {
-      if (mounted) setState(() { _loading = false; _noKey = e.toString().contains('501'); });
+      if (mounted) {
+        setState(() {
+          _loading = false;
+          _noKey = e.toString().contains('501');
+        });
+      }
     }
   }
 
   @override
   Widget build(BuildContext context) {
-    if (widget.lat == null || widget.lon == null) return const SizedBox.shrink();
+    if (widget.lat == null || widget.lon == null) {
+      return const SizedBox.shrink();
+    }
     if (_loading) return _buildSkeleton();
     if (_noKey || _forecast == null || _forecast!.forecast.isEmpty) {
       return const SizedBox.shrink();
@@ -85,8 +98,9 @@ class _WeatherBannerState extends State<WeatherBanner> {
 
     return Container(
       margin: const EdgeInsets.only(bottom: 16),
-      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
-      decoration: BoxDecoration(
+      child: GlassCard(
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+        borderRadius: BorderRadius.circular(16),
         gradient: LinearGradient(
           colors: isDark
               ? [
@@ -100,7 +114,6 @@ class _WeatherBannerState extends State<WeatherBanner> {
           begin: Alignment.topLeft,
           end: Alignment.bottomRight,
         ),
-        borderRadius: BorderRadius.circular(16),
         border: Border.all(
           color: isDark
               ? Colors.white.withValues(alpha: 0.08)
@@ -113,67 +126,70 @@ class _WeatherBannerState extends State<WeatherBanner> {
             offset: const Offset(0, 4),
           ),
         ],
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
-            children: [
-              Icon(Icons.cloud_outlined, size: 14, color: onBannerFaint),
-              const SizedBox(width: 4),
-              Expanded(
-                child: Text(
-                  _forecast!.city.isNotEmpty
-                      ? '${_forecast!.city} — ${AppStrings.of(context).weatherForecast}'
-                      : AppStrings.of(context).weatherForecast,
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: AppTextStyles.labelSmall.copyWith(
-                    color: onBannerFaint,
-                    letterSpacing: 0.5,
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                Icon(Icons.cloud_outlined, size: 14, color: onBannerFaint),
+                const SizedBox(width: 4),
+                Expanded(
+                  child: Text(
+                    _forecast!.city.isNotEmpty
+                        ? '${_forecast!.city} — ${AppStrings.of(context).weatherForecast}'
+                        : AppStrings.of(context).weatherForecast,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: AppTextStyles.labelSmall.copyWith(
+                      color: onBannerFaint,
+                      letterSpacing: 0.5,
+                    ),
                   ),
                 ),
-              ),
-              if (_forecast!.isMock) ...[
-                Tooltip(
-                  message: AppStrings.of(context).weatherApproximate,
-                  child: Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-                    decoration: BoxDecoration(
-                      color: Colors.amber.withValues(alpha: 0.2),
-                      borderRadius: BorderRadius.circular(6),
-                      border: Border.all(color: Colors.amber.withValues(alpha: 0.4)),
-                    ),
-                    child: Row(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        const Icon(Icons.info_outline_rounded, size: 11, color: Colors.amber),
-                        const SizedBox(width: 3),
-                        Text(
-                          AppStrings.of(context).weatherSimulatedBadge,
-                          style: AppTextStyles.labelSmall.copyWith(
-                            color: Colors.amber,
-                            fontSize: 9,
+                if (_forecast!.isMock) ...[
+                  Tooltip(
+                    message: AppStrings.of(context).weatherApproximate,
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: 6, vertical: 2),
+                      decoration: BoxDecoration(
+                        color: Colors.amber.withValues(alpha: 0.2),
+                        borderRadius: BorderRadius.circular(6),
+                        border: Border.all(
+                            color: Colors.amber.withValues(alpha: 0.4)),
+                      ),
+                      child: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          const Icon(Icons.info_outline_rounded,
+                              size: 11, color: Colors.amber),
+                          const SizedBox(width: 3),
+                          Text(
+                            AppStrings.of(context).weatherSimulatedBadge,
+                            style: AppTextStyles.labelSmall.copyWith(
+                              color: Colors.amber,
+                              fontSize: 9,
+                            ),
                           ),
-                        ),
-                      ],
+                        ],
+                      ),
                     ),
                   ),
-                ),
+                ],
               ],
-            ],
-          ),
-          const SizedBox(height: 8),
-          SizedBox(
-            height: 70,
-            child: ListView.builder(
-              scrollDirection: Axis.horizontal,
-              itemCount: _forecast!.forecast.length,
-              itemBuilder: (_, i) =>
-                  _WeatherDayChip(day: _forecast!.forecast[i]),
             ),
-          ),
-        ],
+            const SizedBox(height: 8),
+            SizedBox(
+              height: 70,
+              child: ListView.builder(
+                scrollDirection: Axis.horizontal,
+                itemCount: _forecast!.forecast.length,
+                itemBuilder: (_, i) =>
+                    _WeatherDayChip(day: _forecast!.forecast[i]),
+              ),
+            ),
+          ],
+        ),
       ),
     );
   }
@@ -194,7 +210,8 @@ class _WeatherDayChip extends StatelessWidget {
     // Parse date
     final parts = day.date.split('-');
     final dt = parts.length == 3
-        ? DateTime(int.parse(parts[0]), int.parse(parts[1]), int.parse(parts[2]))
+        ? DateTime(
+            int.parse(parts[0]), int.parse(parts[1]), int.parse(parts[2]))
         : null;
     final dayLabel = dt != null
         ? _shortDay(dt.weekday, context)
@@ -234,8 +251,8 @@ class _WeatherDayChip extends StatelessWidget {
             height: 28,
             // A spinner per 28px icon would flicker; keep the space reserved.
             placeholder: (_, __) => const SizedBox(width: 28, height: 28),
-            errorWidget: (_, __, ___) =>
-                const Icon(Icons.wb_sunny_rounded, size: 22, color: Colors.amber),
+            errorWidget: (_, __, ___) => const Icon(Icons.wb_sunny_rounded,
+                size: 22, color: Colors.amber),
           ),
           const SizedBox(height: 2),
           Text(
@@ -254,9 +271,19 @@ class _WeatherDayChip extends StatelessWidget {
   /// Weekday abbreviation in the active language. DateTime.weekday is
   /// 1 = Monday … 7 = Sunday.
   String _shortDay(int weekday, BuildContext context) {
-    const arDays = ['الإثنين', 'الثلاثاء', 'الأربعاء', 'الخميس', 'الجمعة', 'السبت', 'الأحد'];
+    const arDays = [
+      'الإثنين',
+      'الثلاثاء',
+      'الأربعاء',
+      'الخميس',
+      'الجمعة',
+      'السبت',
+      'الأحد'
+    ];
     const enDays = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
     final idx = (weekday - 1).clamp(0, 6);
-    return AppStrings.of(context).languageCode == 'en' ? enDays[idx] : arDays[idx];
+    return AppStrings.of(context).languageCode == 'en'
+        ? enDays[idx]
+        : arDays[idx];
   }
 }

@@ -31,6 +31,7 @@ class BudgetCubit extends Cubit<BudgetState> {
     final expensesResult = results[2] as Either<Failure, List<ExpenseEntity>>;
     final daysResult = results[3] as Either<Failure, List<DayEntity>>;
 
+    if (isClosed) return;
     itemsResult.fold(
       (failure) => emit(BudgetError(failure.message)),
       (items) {
@@ -59,17 +60,37 @@ class BudgetCubit extends Cubit<BudgetState> {
 
   Future<void> addExpense(ExpenseEntity expense) async {
     final result = await _repository.addExpense(expense);
+    if (isClosed) return;
     result.fold(
-      (failure) => emit(BudgetError(failure.message)),
+      (failure) => _emitActionError(failure.message),
       (_) => loadBudget(expense.tripId),
     );
   }
 
   Future<void> deleteExpense(String tripId, String expenseId) async {
     final result = await _repository.deleteExpense(expenseId);
+    if (isClosed) return;
     result.fold(
-      (failure) => emit(BudgetError(failure.message)),
+      (failure) => _emitActionError(failure.message),
       (_) => loadBudget(tripId),
     );
+  }
+
+  /// Keeps whatever's already on screen instead of replacing it with a
+  /// full-screen error when an add/delete fails — only a failure during the
+  /// initial loadBudget() (nothing loaded yet to preserve) falls back to
+  /// BudgetError.
+  void _emitActionError(String message) {
+    final current = state;
+    emit(current is BudgetLoaded ? current.withError(message) : BudgetError(message));
+  }
+
+  /// Called by the UI right after it shows the action-error snackbar, so a
+  /// later failure with the same message still triggers a fresh notice.
+  void clearActionError() {
+    final current = state;
+    if (current is BudgetLoaded && current.actionError != null) {
+      emit(current.clearError());
+    }
   }
 }

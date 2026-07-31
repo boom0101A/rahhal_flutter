@@ -1,10 +1,6 @@
 import 'dart:async';
-import 'package:flutter/foundation.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:equatable/equatable.dart';
-import '../../../../core/database/database_helper.dart';
-import '../../../../core/di/injection.dart';
-import '../../../../core/network/cloud_sync_service.dart';
 import '../../domain/entities/user_entity.dart';
 import '../../domain/repositories/auth_repository.dart';
 
@@ -17,22 +13,15 @@ class AuthCubit extends Cubit<AuthState> {
       : _repository = repository,
         super(const AuthInitial());
 
-  Future<void> _restoreCloudData(String uid) async {
-    try {
-      await sl<CloudSyncService>().restoreTripsFromCloud(uid);
-    } catch (e) {
-      debugPrint('AuthCubit: Failed to restore cloud data: $e');
-    }
-  }
-
   Future<void> signInAnonymously() async {
     emit(const AuthLoading());
     final result = await _repository.signInAnonymously();
+    if (isClosed) return;
     result.fold(
       (failure) => emit(AuthError(failure.message)),
       (user) {
         emit(AuthAuthenticated(user));
-        _restoreCloudData(user.uid);
+        _repository.restoreCloudData(user.uid);
       },
     );
   }
@@ -40,11 +29,12 @@ class AuthCubit extends Cubit<AuthState> {
   Future<void> signInWithGoogle() async {
     emit(const AuthLoading());
     final result = await _repository.signInWithGoogle();
+    if (isClosed) return;
     result.fold(
       (failure) => emit(AuthError(failure.message)),
       (user) {
         emit(AuthAuthenticated(user));
-        unawaited(sl<CloudSyncService>().restoreTripsFromCloud(user.uid));
+        unawaited(_repository.restoreCloudData(user.uid));
       },
     );
   }
@@ -52,11 +42,12 @@ class AuthCubit extends Cubit<AuthState> {
   Future<void> signInWithEmail(String email, String password) async {
     emit(const AuthLoading());
     final result = await _repository.signInWithEmail(email, password);
+    if (isClosed) return;
     result.fold(
       (failure) => emit(AuthError(failure.message)),
       (user) {
         emit(AuthAuthenticated(user));
-        _restoreCloudData(user.uid);
+        _repository.restoreCloudData(user.uid);
       },
     );
   }
@@ -66,19 +57,21 @@ class AuthCubit extends Cubit<AuthState> {
     emit(const AuthLoading());
     final result = await _repository.registerWithEmail(
         email, password, displayName);
+    if (isClosed) return;
     result.fold(
       (failure) => emit(AuthError(failure.message)),
       (user) {
         emit(AuthAuthenticated(user));
         // A new user has no cloud data yet, but for consistency we can call it
         // or just rely on local state. It's harmless.
-        _restoreCloudData(user.uid);
+        _repository.restoreCloudData(user.uid);
       },
     );
   }
 
   Future<void> signOut() async {
     await _repository.signOut();
+    if (isClosed) return;
     emit(const AuthInitial());
   }
 
@@ -87,6 +80,7 @@ class AuthCubit extends Cubit<AuthState> {
   /// Returns null on success, or a message to show the user on failure.
   Future<String?> updateDisplayName(String name) async {
     final result = await _repository.updateDisplayName(name);
+    if (isClosed) return null;
     return result.fold(
       (failure) => failure.message,
       (user) {
@@ -104,6 +98,7 @@ class AuthCubit extends Cubit<AuthState> {
   Future<String?> deleteAccount() async {
     emit(const AuthLoading());
     final result = await _repository.deleteAccount();
+    if (isClosed) return null;
 
     return result.fold(
       (failure) {
@@ -115,11 +110,8 @@ class AuthCubit extends Cubit<AuthState> {
       (_) async {
         // The cloud copy is gone; leaving local trips behind would resurrect
         // them on the next sign-in via cloud sync and contradict the deletion.
-        try {
-          await sl<DatabaseHelper>().clearAllData();
-        } catch (e) {
-          debugPrint('[Auth] local data wipe failed: $e');
-        }
+        await _repository.clearLocalData();
+        if (isClosed) return null;
         emit(const AuthInitial());
         return null;
       },
@@ -130,7 +122,7 @@ class AuthCubit extends Cubit<AuthState> {
     final user = _repository.getCurrentUser();
     if (user != null) {
       emit(AuthAuthenticated(user));
-      _restoreCloudData(user.uid);
+      _repository.restoreCloudData(user.uid);
     } else {
       emit(const AuthInitial());
     }

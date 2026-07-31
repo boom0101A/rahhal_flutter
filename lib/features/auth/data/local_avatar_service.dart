@@ -1,9 +1,15 @@
 import 'dart:io';
 
 import 'package:flutter/foundation.dart';
+import 'package:flutter/services.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+
+/// Thrown by [LocalAvatarService.pickAndSave] when the OS denied camera or
+/// gallery access — distinct from the user simply cancelling the picker, so
+/// the caller can tell the two apart and show something instead of nothing.
+class AvatarPermissionDeniedException implements Exception {}
 
 /// A locally-stored profile picture.
 ///
@@ -39,17 +45,29 @@ class LocalAvatarService {
   }
 
   /// Opens the picker, copies the chosen image into app-private storage, and
-  /// remembers its path. Returns null if the user cancelled.
+  /// remembers its path. Returns null if the user cancelled; throws
+  /// [AvatarPermissionDeniedException] if the OS denied access instead.
   Future<File?> pickAndSave(ImageSource source) async {
+    final XFile? picked;
     try {
-      final picked = await _picker.pickImage(
+      picked = await _picker.pickImage(
         source: source,
         maxWidth: 640,
         maxHeight: 640,
         imageQuality: 85,
       );
-      if (picked == null) return null;
+    } on PlatformException catch (e) {
+      // image_picker's own codes for a denied OS permission — as opposed to
+      // the user just backing out of the picker, which never throws.
+      if (e.code == 'camera_access_denied' || e.code == 'photo_access_denied') {
+        throw AvatarPermissionDeniedException();
+      }
+      debugPrint('[LocalAvatar] pickImage failed: ${e.code} ${e.message}');
+      return null;
+    }
+    if (picked == null) return null;
 
+    try {
       final dir = await getApplicationDocumentsDirectory();
       final destPath = '${dir.path}/profile_avatar.jpg';
 

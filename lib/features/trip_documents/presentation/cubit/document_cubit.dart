@@ -13,6 +13,7 @@ class DocumentCubit extends Cubit<DocumentsState> {
   Future<void> loadDocuments(String tripId) async {
     emit(DocumentsLoading());
     final result = await _repository.getDocuments(tripId);
+    if (isClosed) return;
     result.fold(
       (failure) => emit(DocumentsError(failure.message)),
       (docs) => emit(DocumentsLoaded(documents: docs)),
@@ -30,6 +31,7 @@ class DocumentCubit extends Cubit<DocumentsState> {
     }
 
     final result = await _repository.addDocument(doc);
+    if (isClosed) return;
     result.fold(
       (failure) => emit(DocumentsError(failure.message)),
       (_) {
@@ -46,6 +48,7 @@ class DocumentCubit extends Cubit<DocumentsState> {
     emit(current.copyWith(isActionLoading: true));
 
     final result = await _repository.updateDocument(doc);
+    if (isClosed) return;
     result.fold(
       (failure) => emit(DocumentsError(failure.message)),
       (_) {
@@ -62,6 +65,7 @@ class DocumentCubit extends Cubit<DocumentsState> {
     emit(current.copyWith(isActionLoading: true));
 
     final result = await _repository.deleteDocument(docId);
+    if (isClosed) return;
     result.fold(
       (failure) => emit(DocumentsError(failure.message)),
       (_) {

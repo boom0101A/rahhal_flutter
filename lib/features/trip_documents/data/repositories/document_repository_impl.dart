@@ -1,15 +1,21 @@
+import 'dart:async';
 import 'package:dartz/dartz.dart';
 import '../../../../core/database/database_helper.dart';
 import '../../../../core/errors/failures.dart';
+import '../../../../core/network/cloud_sync_service.dart';
 import '../../domain/entities/document_entity.dart';
 import '../../domain/repositories/document_repository.dart';
 import '../mappers/document_mapper.dart';
 
 class DocumentRepositoryImpl implements DocumentRepository {
   final DatabaseHelper _dbHelper;
+  final CloudSyncService _syncService;
 
-  DocumentRepositoryImpl({required DatabaseHelper dbHelper})
-      : _dbHelper = dbHelper;
+  DocumentRepositoryImpl({
+    required DatabaseHelper dbHelper,
+    required CloudSyncService syncService,
+  })  : _dbHelper = dbHelper,
+        _syncService = syncService;
 
   @override
   Future<Either<Failure, List<DocumentEntity>>> getDocuments(
@@ -31,6 +37,7 @@ class DocumentRepositoryImpl implements DocumentRepository {
   Future<Either<Failure, void>> addDocument(DocumentEntity doc) async {
     try {
       await _dbHelper.insert('trip_documents', DocumentMapper.toMap(doc));
+      unawaited(_syncService.markTripDirtyAndSync(doc.tripId));
       return const Right(null);
     } catch (e) {
       return Left(DatabaseFailure(e.toString()));
@@ -46,6 +53,7 @@ class DocumentRepositoryImpl implements DocumentRepository {
         where: 'id = ?',
         whereArgs: [doc.id],
       );
+      unawaited(_syncService.markTripDirtyAndSync(doc.tripId));
       return const Right(null);
     } catch (e) {
       return Left(DatabaseFailure(e.toString()));
@@ -55,11 +63,18 @@ class DocumentRepositoryImpl implements DocumentRepository {
   @override
   Future<Either<Failure, void>> deleteDocument(String docId) async {
     try {
+      final row = await _dbHelper.queryOne(
+        'trip_documents',
+        where: 'id = ?',
+        whereArgs: [docId],
+      );
       await _dbHelper.delete(
         'trip_documents',
         where: 'id = ?',
         whereArgs: [docId],
       );
+      final tripId = row?['trip_id'] as String?;
+      if (tripId != null) unawaited(_syncService.markTripDirtyAndSync(tripId));
       return const Right(null);
     } catch (e) {
       return Left(DatabaseFailure(e.toString()));

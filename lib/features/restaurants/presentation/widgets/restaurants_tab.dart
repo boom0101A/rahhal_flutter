@@ -242,6 +242,7 @@ class _RestaurantCard extends StatelessWidget {
                             context.read<FavoritesCubit>().toggleFavorite(
                               'restaurant',
                               restaurant.id,
+                              tripId: restaurant.tripId,
                               destinationName: restaurant.name,
                             );
                             ScaffoldMessenger.of(context).showSnackBar(

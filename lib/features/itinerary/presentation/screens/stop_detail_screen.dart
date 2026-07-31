@@ -145,6 +145,7 @@ class _StopDetailScreenState extends State<StopDetailScreen> {
                           context.read<FavoritesCubit>().toggleFavorite(
                             'stop',
                             _stop!.id,
+                            tripId: _stop!.tripId,
                             destinationName: _stop!.name,
                           );
                           ScaffoldMessenger.of(context).showSnackBar(

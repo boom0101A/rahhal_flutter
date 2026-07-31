@@ -8,6 +8,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'firebase_options.dart';
 import 'core/di/injection.dart';
 import 'core/di/app_bloc_observer.dart';
+import 'core/network/cloud_sync_service.dart';
 import 'core/services/notification_service.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'core/theme/app_theme.dart';
@@ -73,6 +74,10 @@ void main() async {
 
   // Setup Dependency Injection container
   await setupDependencies();
+
+  // Retry any trip whose cloud sync failed (e.g. was offline) the moment
+  // connectivity comes back, for the lifetime of the app process.
+  sl<CloudSyncService>().startAutoSync();
 
   // Initialize Local Notification Service
   await NotificationService.initialize();

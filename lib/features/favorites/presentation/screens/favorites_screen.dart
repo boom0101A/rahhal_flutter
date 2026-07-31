@@ -232,6 +232,7 @@ class _FavoritesScreenState extends State<FavoritesScreen> {
         trimmed.isEmpty ? null : trimmed,
       );
     }
+    controller.dispose();
   }
 
   void _removeWithUndo(BuildContext context, FavoriteItem item) {
@@ -241,9 +242,11 @@ class _FavoritesScreenState extends State<FavoritesScreen> {
     final itemRefId = item.favorite.itemRefId;
     final destinationName = item.favorite.destinationName;
     final notes = item.favorite.notes;
+    // Exactly one of these is set — whichever matches itemType.
+    final tripId = item.stop?.tripId ?? item.restaurant?.tripId ?? item.hotel?.tripId ?? '';
 
     Haptics.toggle();
-    cubit.toggleFavorite(itemType, itemRefId, destinationName: destinationName, notes: notes);
+    cubit.toggleFavorite(itemType, itemRefId, tripId: tripId, destinationName: destinationName, notes: notes);
 
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
@@ -254,6 +257,7 @@ class _FavoritesScreenState extends State<FavoritesScreen> {
           onPressed: () => cubit.toggleFavorite(
             itemType,
             itemRefId,
+            tripId: tripId,
             destinationName: destinationName,
             notes: notes,
           ),

@@ -4,6 +4,15 @@ import 'dio_client.dart';
 import '../config/app_config.dart';
 import '../errors/exceptions.dart';
 
+/// Parses an AI-sourced money/price field as a non-negative double.
+///
+/// Nothing downstream re-validates these — a hallucinated negative
+/// `cost_usd`/`price_per_night_usd`/`budget_total_usd` etc. would otherwise
+/// flow straight into the trip's budget and stop/restaurant/hotel costs and
+/// get stored and displayed exactly as the model wrote it.
+double _nonNegativeUsd(dynamic raw) =>
+    ((raw as num?) ?? 0).toDouble().clamp(0, double.infinity);
+
 /// Response model for a complete AI-generated trip plan.
 class TripPlanResponse {
   final String destination;
@@ -46,7 +55,7 @@ class TripPlanResponse {
       destinationEn: json['destination_en'] as String?,
       countryCode: json['country_code'] as String? ?? '',
       aiSummary: json['ai_summary'] as String? ?? '',
-      budgetTotalUsd: (json['budget_total_usd'] as num? ?? 0).toDouble(),
+      budgetTotalUsd: _nonNegativeUsd(json['budget_total_usd']),
       heroImageQuery: json['hero_image_query'] as String? ?? '',
       days: ((json['days'] as List?) ?? [])
           .map((d) => DayPlanResponse.fromJson(d as Map<String, dynamic>))
@@ -155,7 +164,7 @@ class StopResponse {
       latitude: (json['latitude'] as num? ?? 0).toDouble(),
       longitude: (json['longitude'] as num? ?? 0).toDouble(),
       address: addressCandidate,
-      costUsd: (json['cost_usd'] as num? ?? 0).toDouble(),
+      costUsd: _nonNegativeUsd(json['cost_usd']),
       aiTip: json['ai_tip'] as String? ?? '',
       bookingRequired: json['booking_required'] as bool? ?? false,
       bookingUrl: json['booking_url'] as String?,
@@ -210,7 +219,7 @@ class RestaurantResponse {
       cuisineType: json['cuisine_type'] as String? ?? '',
       halalCertified: json['halal_certified'] as bool? ?? false,
       rating: (json['rating'] as num? ?? 0).toDouble(),
-      pricePerPersonUsd: (json['price_per_person_usd'] as num? ?? 0).toDouble(),
+      pricePerPersonUsd: _nonNegativeUsd(json['price_per_person_usd']),
       address: json['address'] as String? ?? '',
       latitude: (json['latitude'] as num? ?? 0).toDouble(),
       longitude: (json['longitude'] as num? ?? 0).toDouble(),
@@ -264,7 +273,7 @@ class HotelResponse {
       nameEn: json['name_en'] as String?,
       hotelType: json['hotel_type'] as String?,
       rating: (json['rating'] as num? ?? 0).toDouble(),
-      pricePerNightUsd: (json['price_per_night_usd'] as num? ?? 0).toDouble(),
+      pricePerNightUsd: _nonNegativeUsd(json['price_per_night_usd']),
       address: json['address'] as String? ?? '',
       latitude: (json['latitude'] as num? ?? 0).toDouble(),
       longitude: (json['longitude'] as num? ?? 0).toDouble(),
@@ -295,11 +304,11 @@ class BudgetBreakdownResponse {
 
   factory BudgetBreakdownResponse.fromJson(Map<String, dynamic> json) {
     return BudgetBreakdownResponse(
-      accommodationUsd: (json['accommodation_usd'] as num? ?? 0).toDouble(),
-      foodUsd: (json['food_usd'] as num? ?? 0).toDouble(),
-      transportUsd: (json['transport_usd'] as num? ?? 0).toDouble(),
-      activitiesUsd: (json['activities_usd'] as num? ?? 0).toDouble(),
-      shoppingUsd: (json['shopping_usd'] as num? ?? 0).toDouble(),
+      accommodationUsd: _nonNegativeUsd(json['accommodation_usd']),
+      foodUsd: _nonNegativeUsd(json['food_usd']),
+      transportUsd: _nonNegativeUsd(json['transport_usd']),
+      activitiesUsd: _nonNegativeUsd(json['activities_usd']),
+      shoppingUsd: _nonNegativeUsd(json['shopping_usd']),
     );
   }
 }

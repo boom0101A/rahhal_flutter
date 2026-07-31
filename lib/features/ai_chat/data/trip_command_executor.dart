@@ -1,11 +1,17 @@
+import 'dart:async';
 import 'package:flutter/foundation.dart';
 import '../../../core/database/database_helper.dart';
+import '../../../core/network/cloud_sync_service.dart';
 import '../domain/trip_command.dart';
 
 /// What a command would do, resolved against the real trip — so the user can be
 /// shown exactly what is about to change *before* anything is written.
 class TripCommandPreview {
   final TripCommand command;
+
+  /// The trip this command applies to — needed by [TripCommandExecutor.apply]
+  /// to sync the right trip to the cloud after the write.
+  final String tripId;
 
   /// Human-readable description of the resolved target ("اليوم 3 · 4 محطات").
   final String targetLabel;
@@ -18,6 +24,7 @@ class TripCommandPreview {
 
   const TripCommandPreview({
     required this.command,
+    required this.tripId,
     required this.targetLabel,
     required this.affectedIds,
     this.problem,
@@ -38,9 +45,11 @@ class TripCommandPreview {
 /// the strength of a parsed sentence alone.
 class TripCommandExecutor {
   final DatabaseHelper _dbHelper;
+  final CloudSyncService _syncService;
 
-  TripCommandExecutor({DatabaseHelper? dbHelper})
-      : _dbHelper = dbHelper ?? DatabaseHelper.instance;
+  TripCommandExecutor({DatabaseHelper? dbHelper, CloudSyncService? syncService})
+      : _dbHelper = dbHelper ?? DatabaseHelper.instance,
+        _syncService = syncService ?? CloudSyncService();
 
   Future<TripCommandPreview> preview({
     required String tripId,
@@ -58,6 +67,7 @@ class TripCommandExecutor {
       debugPrint('[TripCommand] preview failed: $e');
       return TripCommandPreview(
         command: command,
+        tripId: tripId,
         targetLabel: '',
         affectedIds: const [],
         problem: 'error',
@@ -75,6 +85,7 @@ class TripCommandExecutor {
     if (days.isEmpty) {
       return TripCommandPreview(
         command: command,
+        tripId: tripId,
         targetLabel: '${command.dayNumber}',
         affectedIds: const [],
         problem: 'not-found',
@@ -85,6 +96,7 @@ class TripCommandExecutor {
         .query('stops', where: 'day_id = ?', whereArgs: [dayId]);
     return TripCommandPreview(
       command: command,
+      tripId: tripId,
       targetLabel: '${command.dayNumber}|${stops.length}',
       affectedIds: [dayId],
     );
@@ -107,6 +119,7 @@ class TripCommandExecutor {
     if (matches.isEmpty) {
       return TripCommandPreview(
         command: command,
+        tripId: tripId,
         targetLabel: command.target!,
         affectedIds: const [],
         problem: 'not-found',
@@ -117,6 +130,7 @@ class TripCommandExecutor {
     if (matches.length > 1) {
       return TripCommandPreview(
         command: command,
+        tripId: tripId,
         targetLabel: matches.map((m) => m['name'] as String).join('، '),
         affectedIds: const [],
         problem: 'ambiguous',
@@ -125,6 +139,7 @@ class TripCommandExecutor {
 
     return TripCommandPreview(
       command: command,
+      tripId: tripId,
       targetLabel: matches.first['name'] as String,
       affectedIds: [matches.first['id'] as String],
     );
@@ -139,15 +154,20 @@ class TripCommandExecutor {
         case TripCommandKind.deleteDay:
           // Stops cascade via the days foreign key, but delete them explicitly
           // so the result is the same regardless of PRAGMA foreign_keys state.
+          // Both deletes run in one transaction — otherwise the app being
+          // killed between them leaves an empty day with no stops behind.
           final dayId = preview.affectedIds.first;
-          await _dbHelper
-              .delete('stops', where: 'day_id = ?', whereArgs: [dayId]);
-          await _dbHelper.delete('days', where: 'id = ?', whereArgs: [dayId]);
+          await _dbHelper.executeInTransaction((txn) async {
+            await txn.delete('stops', where: 'day_id = ?', whereArgs: [dayId]);
+            await txn.delete('days', where: 'id = ?', whereArgs: [dayId]);
+          });
+          unawaited(_syncService.markTripDirtyAndSync(preview.tripId));
           return true;
 
         case TripCommandKind.deleteStop:
           await _dbHelper.delete('stops',
               where: 'id = ?', whereArgs: [preview.affectedIds.first]);
+          unawaited(_syncService.markTripDirtyAndSync(preview.tripId));
           return true;
 
         case TripCommandKind.markVisited:
@@ -157,6 +177,7 @@ class TripCommandExecutor {
             where: 'id = ?',
             whereArgs: [preview.affectedIds.first],
           );
+          unawaited(_syncService.markTripDirtyAndSync(preview.tripId));
           return true;
       }
     } catch (e) {

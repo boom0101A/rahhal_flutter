@@ -37,6 +37,11 @@ class _TripInputScreenState extends State<TripInputScreen> {
   String? _detectedCountryCode;
   String? _lastAutoFilledText;
 
+  // Guards against a double-tap on "Generate" opening two generating screens
+  // at once — each has its own TripPlannerCubit, so that meant two paid AI
+  // requests and two identical trips saved.
+  bool _isGenerating = false;
+
   /// Live offline search results for whatever is typed in the destination box.
   List<IraqPlace> _suggestions = const [];
 
@@ -939,6 +944,7 @@ class _TripInputScreenState extends State<TripInputScreen> {
           GradientButton(
             label: strings.planGenerateButton,
             icon: Icons.auto_awesome_rounded,
+            isLoading: _isGenerating,
             onPressed: _generate,
           ),
         ],
@@ -946,7 +952,8 @@ class _TripInputScreenState extends State<TripInputScreen> {
     );
   }
 
-  void _generate() {
+  Future<void> _generate() async {
+    if (_isGenerating) return;
     final destination = _destinationCtrl.text.trim();
     final strings = AppStrings.of(context);
 
@@ -1008,8 +1015,13 @@ class _TripInputScreenState extends State<TripInputScreen> {
     });
     _saveLastSettings();
 
-    // Navigate to generating screen (which runs the AI generation)
-    context.push('/plan/generating', extra: {
+    setState(() => _isGenerating = true);
+
+    // Navigate to generating screen (which runs the AI generation). Awaiting
+    // it means that if the user backs out of generation instead of it
+    // completing (which navigates away from this screen entirely via
+    // context.go), this screen is still here and the button re-enables.
+    await context.push('/plan/generating', extra: {
       'destination': destination,
       'durationDays': _days,
       'budgetTier': _budget,
@@ -1021,5 +1033,7 @@ class _TripInputScreenState extends State<TripInputScreen> {
       'countryCode': _detectedCountryCode,
       'targetBudgetUsd': targetBudgetUsd,
     });
+
+    if (mounted) setState(() => _isGenerating = false);
   }
 }

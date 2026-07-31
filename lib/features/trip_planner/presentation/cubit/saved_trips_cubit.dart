@@ -15,6 +15,7 @@ class SavedTripsCubit extends Cubit<SavedTripsState> {
   Future<void> loadTrips() async {
     emit(const SavedTripsLoading());
     final result = await _repository.getAllTrips();
+    if (isClosed) return;
     result.fold(
       (failure) => emit(SavedTripsError(failure.message)),
       (trips) => emit(SavedTripsLoaded(trips: trips)),
@@ -23,6 +24,7 @@ class SavedTripsCubit extends Cubit<SavedTripsState> {
 
   Future<void> deleteTrip(String tripId) async {
     final result = await _repository.deleteTrip(tripId);
+    if (isClosed) return;
     result.fold(
       (failure) => null,
       (_) => loadTrips(),
@@ -31,6 +33,7 @@ class SavedTripsCubit extends Cubit<SavedTripsState> {
 
   Future<void> updateStatus(String tripId, String status) async {
     await _repository.updateTripStatus(tripId, status);
+    if (isClosed) return;
     await loadTrips();
   }
 }

@@ -3,11 +3,22 @@ import 'package:dartz/dartz.dart';
 import 'package:firebase_auth/firebase_auth.dart' as firebase_auth;
 import 'package:flutter/foundation.dart';
 import 'package:google_sign_in/google_sign_in.dart';
+import '../../../../core/database/database_helper.dart';
 import '../../../../core/errors/failures.dart';
+import '../../../../core/network/cloud_sync_service.dart';
 import '../domain/entities/user_entity.dart';
 import '../domain/repositories/auth_repository.dart';
 
 class AuthRepositoryImpl implements AuthRepository {
+  final DatabaseHelper _dbHelper;
+  final CloudSyncService _syncService;
+
+  AuthRepositoryImpl({
+    required DatabaseHelper dbHelper,
+    required CloudSyncService syncService,
+  })  : _dbHelper = dbHelper,
+        _syncService = syncService;
+
   @override
   bool get isAuthenticated {
     try {
@@ -265,6 +276,11 @@ class AuthRepositoryImpl implements AuthRepository {
       // rules no longer match this uid, which would strand the document
       // undeletable.
       try {
+        // Firestore never cascade-deletes subcollections when their parent
+        // document is deleted — deleting only users/{uid} would leave every
+        // trip the account ever synced (users/{uid}/trips/*) in the database
+        // forever, unreachable by anyone once the account itself is gone.
+        await _deleteAllUserTrips(user.uid);
         await FirebaseFirestore.instance
             .collection('users')
             .doc(user.uid)
@@ -290,6 +306,32 @@ class AuthRepositoryImpl implements AuthRepository {
     }
   }
 
+  /// Deletes every document in `users/{uid}/trips` — the one subcollection
+  /// the app actually writes to (see cloud_sync_service.dart). The client
+  /// SDK has no way to discover subcollection names it doesn't already know
+  /// about, so if a future feature adds another subcollection under a user,
+  /// this needs a matching addition or that data will be orphaned the same
+  /// way `trips` used to be.
+  ///
+  /// Batches at 400 (under Firestore's 500-per-batch limit) and repeats
+  /// until nothing is left, so this works regardless of how many trips the
+  /// account has.
+  Future<void> _deleteAllUserTrips(String uid) async {
+    final firestore = FirebaseFirestore.instance;
+    final tripsRef =
+        firestore.collection('users').doc(uid).collection('trips');
+    while (true) {
+      final snapshot = await tripsRef.limit(400).get();
+      if (snapshot.docs.isEmpty) break;
+      final batch = firestore.batch();
+      for (final doc in snapshot.docs) {
+        batch.delete(doc.reference);
+      }
+      await batch.commit();
+      if (snapshot.docs.length < 400) break;
+    }
+  }
+
   @override
   Future<String?> getIdToken() async {
     try {
@@ -300,6 +342,43 @@ class AuthRepositoryImpl implements AuthRepository {
       return null;
     } catch (_) {
       return null;
+    }
+  }
+
+  @override
+  Future<void> restoreCloudData(String uid) async {
+    // Claim any locally-stored trip that predates per-account filtering
+    // (was left with no owner) before this account can see its trip list —
+    // otherwise a second account signing in on this device would still see
+    // the first account's trips. Awaited (it's one local UPDATE) so the
+    // claim always finishes before the trip list can be shown; a no-op once
+    // no unclaimed trips remain.
+    try {
+      await _dbHelper.claimOrphanedTrips(uid);
+    } catch (e) {
+      debugPrint('AuthRepository: Failed to claim orphaned trips: $e');
+    }
+    try {
+      await _syncService.restoreTripsFromCloud(uid);
+    } catch (e) {
+      debugPrint('AuthRepository: Failed to restore cloud data: $e');
+    }
+    // Push anything created/edited locally (e.g. while offline) that never
+    // made it to the cloud — catches failures the fire-and-forget sync calls
+    // elsewhere couldn't retry themselves.
+    try {
+      await _syncService.syncPendingTrips();
+    } catch (e) {
+      debugPrint('AuthRepository: Failed to sync pending trips: $e');
+    }
+  }
+
+  @override
+  Future<void> clearLocalData() async {
+    try {
+      await _dbHelper.clearAllData();
+    } catch (e) {
+      debugPrint('[Auth] local data wipe failed: $e');
     }
   }
 }

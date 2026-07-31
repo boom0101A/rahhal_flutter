@@ -1,6 +1,8 @@
+import 'dart:async';
 import 'package:dartz/dartz.dart';
 import '../../../../core/database/database_helper.dart';
 import '../../../../core/errors/failures.dart';
+import '../../../../core/network/cloud_sync_service.dart';
 import '../../itinerary/domain/entities/day_entity.dart';
 import '../domain/entities/budget_item_entity.dart';
 import '../domain/entities/expense_entity.dart';
@@ -9,9 +11,13 @@ import 'mappers/expense_mapper.dart';
 
 class BudgetRepositoryImpl implements BudgetRepository {
   final DatabaseHelper _dbHelper;
+  final CloudSyncService _syncService;
 
-  BudgetRepositoryImpl({required DatabaseHelper dbHelper})
-      : _dbHelper = dbHelper;
+  BudgetRepositoryImpl({
+    required DatabaseHelper dbHelper,
+    required CloudSyncService syncService,
+  })  : _dbHelper = dbHelper,
+        _syncService = syncService;
 
   @override
   Future<Either<Failure, List<BudgetItemEntity>>> getBudgetItems(
@@ -93,8 +99,15 @@ class BudgetRepositoryImpl implements BudgetRepository {
 
   @override
   Future<Either<Failure, void>> addExpense(ExpenseEntity expense) async {
+    // The add-expense form already blocks amount <= 0, but that's UI-layer
+    // only — enforce it here too so any future/other caller can't insert a
+    // zero or negative expense just by skipping that form.
+    if (expense.amount <= 0) {
+      return const Left(ValidationFailure('المبلغ يجب أن يكون أكبر من صفر'));
+    }
     try {
       await _dbHelper.insert('actual_expenses', ExpenseMapper.toMap(expense));
+      unawaited(_syncService.markTripDirtyAndSync(expense.tripId));
       return const Right(null);
     } catch (e) {
       return Left(DatabaseFailure(e.toString()));
@@ -104,11 +117,18 @@ class BudgetRepositoryImpl implements BudgetRepository {
   @override
   Future<Either<Failure, void>> deleteExpense(String expenseId) async {
     try {
+      final row = await _dbHelper.queryOne(
+        'actual_expenses',
+        where: 'id = ?',
+        whereArgs: [expenseId],
+      );
       await _dbHelper.delete(
         'actual_expenses',
         where: 'id = ?',
         whereArgs: [expenseId],
       );
+      final tripId = row?['trip_id'] as String?;
+      if (tripId != null) unawaited(_syncService.markTripDirtyAndSync(tripId));
       return const Right(null);
     } catch (e) {
       return Left(DatabaseFailure(e.toString()));

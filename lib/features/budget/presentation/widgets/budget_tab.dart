@@ -12,6 +12,7 @@ import '../../../../../shared/widgets/shimmer_loader.dart';
 import '../../../../../core/utils/haptics.dart';
 import '../../../../../shared/widgets/dual_currency_text.dart';
 import '../../../itinerary/domain/entities/day_entity.dart';
+import '../../domain/budget_category_ui.dart';
 import '../../domain/entities/expense_entity.dart';
 import '../cubit/budget_cubit.dart';
 import 'planned_vs_actual_chart.dart';
@@ -27,12 +28,22 @@ class BudgetTab extends StatefulWidget {
 }
 
 class _BudgetTabState extends State<BudgetTab> {
-  int _activeSubTab = 0; // 0: Comparison, 1: Actual Expenses
+  int _activeSubTab = 0; // 0: Comparison, 1: Actual Expenses, 2: Daily Plan
   String? _selectedDayId; // null means 'All Days'
+  String? _selectedDailyPlanDayId; // null means "not yet picked, use first day"
 
   @override
   Widget build(BuildContext context) {
-    return BlocBuilder<BudgetCubit, BudgetState>(
+    return BlocConsumer<BudgetCubit, BudgetState>(
+      listenWhen: (previous, current) =>
+          current is BudgetLoaded && current.actionError != null,
+      listener: (context, state) {
+        final message = (state as BudgetLoaded).actionError!;
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text(message), backgroundColor: AppColors.error),
+        );
+        context.read<BudgetCubit>().clearActionError();
+      },
       builder: (context, state) {
         if (state is BudgetLoading) {
           return const ShimmerBudgetView();
@@ -48,9 +59,11 @@ class _BudgetTabState extends State<BudgetTab> {
             children: [
               _buildSubTabSelector(context),
               Expanded(
-                child: _activeSubTab == 0
-                    ? _buildComparisonView(context, state)
-                    : _buildActualExpensesView(context, state),
+                child: switch (_activeSubTab) {
+                  0 => _buildComparisonView(context, state),
+                  1 => _buildActualExpensesView(context, state),
+                  _ => _buildDailyPlanView(context, state),
+                },
               ),
             ],
           );
@@ -84,6 +97,13 @@ class _BudgetTabState extends State<BudgetTab> {
               context,
               index: 1,
               label: strings.expenseActual,
+            ),
+          ),
+          Expanded(
+            child: _buildSubTabButton(
+              context,
+              index: 2,
+              label: strings.budgetDailyPlan,
             ),
           ),
         ],
@@ -233,7 +253,11 @@ class _BudgetTabState extends State<BudgetTab> {
           ),
         ).animate().fadeIn(duration: 400.ms),
 
-        const SizedBox(height: 24),
+        const SizedBox(height: 16),
+
+        _buildOverspendAlertsBanner(context, _getOverspendAlerts(state)),
+
+        const SizedBox(height: 8),
 
         // Comparison Breakdown List
         Text(strings.expenseComparison, style: AppTextStyles.headlineSmall),
@@ -337,57 +361,124 @@ class _BudgetTabState extends State<BudgetTab> {
   List<_CategoryCompData> _getCategoryComparisonData(
       BuildContext context, BudgetLoaded state) {
     final strings = AppStrings.of(context);
-    final breakdown = state.breakdown;
+    final actuals = _actualsByCategory(state);
 
-    // Category lists
-    final categories = ['accommodation', 'food', 'transport', 'activities', 'shopping', 'other'];
-    final emojis = {
-      'accommodation': '🏨',
-      'food': '🍽️',
-      'transport': '🚕',
-      'activities': '🎭',
-      'shopping': '🛍️',
-      'other': '💰',
-    };
-    final colors = {
-      'accommodation': AppColors.chart1,
-      'food': AppColors.chart2,
-      'transport': AppColors.chart3,
-      'activities': AppColors.chart4,
-      'shopping': AppColors.chart5,
-      'other': AppColors.adaptiveTextSecondary(context),
-    };
+    return kBudgetCategoryKeys
+        .map((cat) => _CategoryCompData(
+              key: cat,
+              name: strings.budgetItemCategory(cat),
+              emoji: kBudgetCategoryEmoji[cat] ?? '💰',
+              color: budgetCategoryColor(context, cat),
+              estimated: budgetPlannedFor(state.breakdown, cat),
+              actual: actuals[cat] ?? 0.0,
+            ))
+        .where((c) => c.estimated > 0 || c.actual > 0)
+        .toList();
+  }
 
-    // Calculate actual mapping
+  /// Sums logged expenses per category — shared by the comparison rows,
+  /// the overspend alerts, and the daily plan tab.
+  Map<String, double> _actualsByCategory(BudgetLoaded state) {
     final actuals = <String, double>{};
     for (final exp in state.expenses) {
       actuals[exp.category] = (actuals[exp.category] ?? 0.0) + exp.amount;
     }
+    return actuals;
+  }
 
-    final estimates = <String, double>{
-      'accommodation': breakdown.accommodation,
-      'food': breakdown.food,
-      'transport': breakdown.transport,
-      'activities': breakdown.activities,
-      'shopping': breakdown.shopping,
-      'other': breakdown.other,
-    };
+  // ─── Overspend Alerts ───────────────────────────────────────────────────────
 
-    return categories
-        .map((cat) {
-          final est = estimates[cat] ?? 0.0;
-          final act = actuals[cat] ?? 0.0;
-          return _CategoryCompData(
-            key: cat,
-            name: strings.budgetItemCategory(cat),
-            emoji: emojis[cat] ?? '💰',
-            color: colors[cat] ?? AppColors.accentAmber,
-            estimated: est,
-            actual: act,
+  List<_BudgetOverspendAlert> _getOverspendAlerts(BudgetLoaded state) {
+    final actuals = _actualsByCategory(state);
+    final alerts = <_BudgetOverspendAlert>[];
+    for (final key in kBudgetCategoryKeys) {
+      final planned = budgetPlannedFor(state.breakdown, key);
+      final actual = actuals[key] ?? 0.0;
+      if (planned <= 0) {
+        if (actual > 0) {
+          alerts.add(_BudgetOverspendAlert(
+            categoryKey: key,
+            actual: actual,
+            percentOver: null,
+            isOver: false,
+            isApproaching: false,
+            isUnplanned: true,
+          ));
+        }
+        continue;
+      }
+      final ratio = actual / planned;
+      if (ratio > 1.0) {
+        alerts.add(_BudgetOverspendAlert(
+          categoryKey: key,
+          actual: actual,
+          percentOver: (ratio - 1) * 100,
+          isOver: true,
+          isApproaching: false,
+          isUnplanned: false,
+        ));
+      } else if (ratio >= 0.9) {
+        alerts.add(_BudgetOverspendAlert(
+          categoryKey: key,
+          actual: actual,
+          percentOver: ratio * 100,
+          isOver: false,
+          isApproaching: true,
+          isUnplanned: false,
+        ));
+      }
+    }
+    return alerts;
+  }
+
+  Widget _buildOverspendAlertsBanner(
+      BuildContext context, List<_BudgetOverspendAlert> alerts) {
+    if (alerts.isEmpty) return const SizedBox.shrink();
+    final strings = AppStrings.of(context);
+
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 12),
+      child: Column(
+        children: alerts.map((alert) {
+          final color = alert.isOver
+              ? AppColors.error
+              : alert.isApproaching
+                  ? AppColors.accentAmber
+                  : AppColors.adaptiveTextSecondary(context);
+          final categoryLabel = strings.budgetItemCategory(alert.categoryKey);
+          final message = alert.isOver
+              ? strings.budgetOverspendAlert(
+                  categoryLabel, alert.percentOver!.round())
+              : alert.isApproaching
+                  ? strings.budgetApproachingAlert(
+                      categoryLabel, alert.percentOver!.round())
+                  : strings.budgetUnplannedSpend(categoryLabel);
+
+          return Padding(
+            padding: const EdgeInsets.only(bottom: 8),
+            child: GlassCard(
+              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+              child: Row(
+                children: [
+                  Text(kBudgetCategoryEmoji[alert.categoryKey] ?? '💰',
+                      style: const TextStyle(fontSize: 18)),
+                  const SizedBox(width: 10),
+                  Expanded(
+                    child: Text(
+                      message,
+                      style: AppTextStyles.bodySmall.copyWith(
+                        color: color,
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
           );
-        })
-        .where((c) => c.estimated > 0 || c.actual > 0)
-        .toList();
+        }).toList(),
+      ),
+    );
   }
 
   // ─── Actual Expenses View ──────────────────────────────────────────────────
@@ -504,6 +595,108 @@ class _BudgetTabState extends State<BudgetTab> {
     );
   }
 
+  // ─── Daily Plan View ────────────────────────────────────────────────────────
+  //
+  // Splits each planned category total evenly across the trip's days (no
+  // persistence — recomputed live from state.breakdown + state.days) and
+  // shows it against that day's actual spend in the same category.
+
+  List<_DailyCategoryTarget> _getDailyCategoryTargets(BudgetLoaded state) {
+    final dayCount = state.days.length;
+    if (dayCount == 0) return [];
+    final result = <_DailyCategoryTarget>[];
+    for (final day in state.days) {
+      for (final key in kBudgetCategoryKeys) {
+        final planned = budgetPlannedFor(state.breakdown, key);
+        if (planned <= 0) continue;
+        final actual = state.expenses
+            .where((e) => e.dayId == day.id && e.category == key)
+            .fold(0.0, (sum, e) => sum + e.amount);
+        result.add(_DailyCategoryTarget(
+          dayId: day.id,
+          dayNumber: day.dayNumber,
+          categoryKey: key,
+          target: planned / dayCount,
+          actualForDay: actual,
+        ));
+      }
+    }
+    return result;
+  }
+
+  Widget _buildDailyPlanView(BuildContext context, BudgetLoaded state) {
+    final strings = AppStrings.of(context);
+    final targets = _getDailyCategoryTargets(state);
+
+    if (state.days.isEmpty) {
+      return Center(
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 32),
+          child: Text(strings.noDaysFound,
+              style: AppTextStyles.bodyMedium, textAlign: TextAlign.center),
+        ),
+      );
+    }
+    if (targets.isEmpty) {
+      return Center(
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 32),
+          child: Text(strings.budgetDailyPlanEmpty,
+              style: AppTextStyles.bodyMedium, textAlign: TextAlign.center),
+        ),
+      );
+    }
+
+    final selectedDayId = _selectedDailyPlanDayId ?? state.days.first.id;
+    final rows = targets.where((t) => t.dayId == selectedDayId).toList();
+
+    return Column(
+      children: [
+        _buildDailyPlanDaySelectorRow(context, state.days, selectedDayId),
+        Expanded(
+          child: ListView(
+            padding: const EdgeInsets.fromLTRB(16, 8, 16, 100),
+            children: rows.asMap().entries.map((entry) {
+              final item = _CategoryCompData(
+                key: entry.value.categoryKey,
+                name: strings.budgetItemCategory(entry.value.categoryKey),
+                emoji: kBudgetCategoryEmoji[entry.value.categoryKey] ?? '💰',
+                color: budgetCategoryColor(context, entry.value.categoryKey),
+                estimated: entry.value.target,
+                actual: entry.value.actualForDay,
+              );
+              return _buildCategoryComparisonRow(context, item, entry.key);
+            }).toList(),
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildDailyPlanDaySelectorRow(
+      BuildContext context, List<DayEntity> days, String selectedDayId) {
+    final strings = AppStrings.of(context);
+    return Container(
+      height: 40,
+      margin: const EdgeInsets.symmetric(vertical: 8),
+      child: ListView(
+        scrollDirection: Axis.horizontal,
+        padding: const EdgeInsets.symmetric(horizontal: 16),
+        children: days.map((day) {
+          final label = '${strings.dayPrefix} ${day.dayNumber}';
+          return Padding(
+            padding: const EdgeInsets.only(right: 8),
+            child: _buildDayChip(
+              label: label,
+              isSelected: selectedDayId == day.id,
+              onTap: () => setState(() => _selectedDailyPlanDayId = day.id),
+            ),
+          );
+        }).toList(),
+      ),
+    );
+  }
+
   Widget _buildExpenseListItem(
       BuildContext context, ExpenseEntity exp, List<DayEntity> days) {
     final strings = AppStrings.of(context);
@@ -517,23 +710,8 @@ class _BudgetTabState extends State<BudgetTab> {
       }
     }
 
-    final emoji = switch (exp.category) {
-      'accommodation' => '🏨',
-      'food' => '🍽️',
-      'transport' => '🚕',
-      'activities' => '🎭',
-      'shopping' => '🛍️',
-      _ => '💰',
-    };
-
-    final color = switch (exp.category) {
-      'accommodation' => AppColors.chart1,
-      'food' => AppColors.chart2,
-      'transport' => AppColors.chart3,
-      'activities' => AppColors.chart4,
-      'shopping' => AppColors.chart5,
-      _ => AppColors.adaptiveTextSecondary(context),
-    };
+    final emoji = kBudgetCategoryEmoji[exp.category] ?? '💰';
+    final color = budgetCategoryColor(context, exp.category);
 
     return Padding(
       padding: const EdgeInsets.only(bottom: 12),
@@ -684,6 +862,40 @@ class _CategoryCompData {
   });
 }
 
+class _BudgetOverspendAlert {
+  final String categoryKey;
+  final double actual;
+  final double? percentOver; // null only when isUnplanned
+  final bool isOver; // actual > 100% of planned
+  final bool isApproaching; // 90-100% of planned
+  final bool isUnplanned; // planned == 0 && actual > 0
+
+  _BudgetOverspendAlert({
+    required this.categoryKey,
+    required this.actual,
+    required this.percentOver,
+    required this.isOver,
+    required this.isApproaching,
+    required this.isUnplanned,
+  });
+}
+
+class _DailyCategoryTarget {
+  final String dayId;
+  final int dayNumber;
+  final String categoryKey;
+  final double target; // planned category total / number of days
+  final double actualForDay; // sum of this day's expenses in this category
+
+  _DailyCategoryTarget({
+    required this.dayId,
+    required this.dayNumber,
+    required this.categoryKey,
+    required this.target,
+    required this.actualForDay,
+  });
+}
+
 // ─── Add Expense Bottom Sheet Form ───────────────────────────────────────────
 
 class _AddExpenseBottomSheet extends StatefulWidget {
@@ -727,15 +939,7 @@ class _AddExpenseBottomSheetState extends State<_AddExpenseBottomSheet> {
     final strings = AppStrings.of(context);
     final isArabic = strings.languageCode == 'ar';
 
-    final categories = ['accommodation', 'food', 'transport', 'activities', 'shopping', 'other'];
-    final categoryEmojis = {
-      'accommodation': '🏨',
-      'food': '🍽️',
-      'transport': '🚕',
-      'activities': '🎭',
-      'shopping': '🛍️',
-      'other': '💰',
-    };
+    final categories = kBudgetCategoryKeys;
 
     return Container(
       decoration: BoxDecoration(
@@ -816,7 +1020,7 @@ class _AddExpenseBottomSheetState extends State<_AddExpenseBottomSheet> {
                 runSpacing: 8,
                 children: categories.map((cat) {
                   final isSelected = _selectedCategory == cat;
-                  final emoji = categoryEmojis[cat] ?? '💰';
+                  final emoji = kBudgetCategoryEmoji[cat] ?? '💰';
                   return ChoiceChip(
                     label: Row(
                       mainAxisSize: MainAxisSize.min,

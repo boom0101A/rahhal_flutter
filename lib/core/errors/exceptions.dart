@@ -23,7 +23,3 @@ class DatabaseException extends AppException {
 class AuthException extends AppException {
   AuthException({String? message, super.statusCode}) : super(message: message ?? 'auth-exception');
 }
-
-class ParseException extends AppException {
-  ParseException({String? message}) : super(message: message ?? 'parse-exception');
-}

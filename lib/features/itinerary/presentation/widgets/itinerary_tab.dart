@@ -480,6 +480,7 @@ class _StopTimelineItem extends StatelessWidget {
                                       context.read<FavoritesCubit>().toggleFavorite(
                                         'stop',
                                         stop.id,
+                                        tripId: stop.tripId,
                                         destinationName: stop.displayName(context),
                                       );
                                       ScaffoldMessenger.of(context).showSnackBar(

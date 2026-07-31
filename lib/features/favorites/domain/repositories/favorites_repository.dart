@@ -7,6 +7,7 @@ abstract class FavoritesRepository {
   Future<Either<Failure, void>> toggleFavorite(
     String itemType,
     String itemRefId, {
+    required String tripId,
     String? destinationName,
     String? notes,
   });

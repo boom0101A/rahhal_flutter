@@ -26,6 +26,7 @@ class ChatCubit extends Cubit<ChatState> {
     _tripSummary = tripSummary;
 
     final result = await _repository.getMessages(tripId);
+    if (isClosed) return;
     result.fold(
       (_) => emit(const ChatState()),
       (messages) => emit(ChatState(messages: messages)),
@@ -58,6 +59,7 @@ class ChatCubit extends Cubit<ChatState> {
       history: state.messages.where((m) => m.id != userMsg.id).toList(),
     );
 
+    if (isClosed) return;
     result.fold(
       (failure) {
         // Remove temp message on error, keep rest
@@ -93,6 +95,7 @@ class ChatCubit extends Cubit<ChatState> {
   Future<void> clearHistory() async {
     if (_tripId == null) return;
     await _repository.clearHistory(_tripId!);
+    if (isClosed) return;
     emit(const ChatState());
   }
 }

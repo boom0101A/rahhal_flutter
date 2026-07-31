@@ -3,6 +3,7 @@ import 'package:flutter_animate/flutter_animate.dart';
 import '../../core/constants/app_colors.dart';
 import '../../core/constants/app_text_styles.dart';
 import '../../core/constants/app_strings.dart';
+import '../../core/constants/category_ui.dart';
 
 /// The "AI" badge used throughout the app — matches Next.js AIBadge component.
 class AIBadge extends StatelessWidget {
@@ -87,19 +88,7 @@ class CategoryChip extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final emoji = switch (category) {
-      'museum' => '🏛️',
-      'restaurant' => '🍽️',
-      'park' => '🌿',
-      'shopping' => '🛍️',
-      'landmark' => '🗺️',
-      'beach' => '🏖️',
-      'mosque' => '🕌',
-      'palace' => '🏰',
-      'market' => '🏪',
-      'viewpoint' => '🔭',
-      _ => '📍',
-    };
+    final emoji = stopCategoryEmoji(category);
 
     return Container(
       padding: EdgeInsets.symmetric(

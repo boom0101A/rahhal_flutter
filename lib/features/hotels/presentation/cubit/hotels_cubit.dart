@@ -16,6 +16,7 @@ class HotelsCubit extends Cubit<HotelsState> {
     emit(const HotelsLoading());
 
     final result = await _repository.getHotelsForTrip(tripId);
+    if (isClosed) return;
     result.fold(
       (failure) => emit(HotelsError(failure.message)),
       (hotels) => emit(HotelsLoaded(hotels: hotels)),

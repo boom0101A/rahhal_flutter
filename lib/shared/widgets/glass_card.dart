@@ -10,6 +10,11 @@ class GlassCard extends StatelessWidget {
   final Border? border;
   final List<BoxShadow>? boxShadow;
 
+  /// Overrides [backgroundColor] with a gradient fill — for callers that need
+  /// a tinted glass look (e.g. the weather banner's sky gradient) while still
+  /// sharing this card's padding/border/radius defaults.
+  final Gradient? gradient;
+
   const GlassCard({
     super.key,
     required this.child,
@@ -18,6 +23,7 @@ class GlassCard extends StatelessWidget {
     this.backgroundColor,
     this.border,
     this.boxShadow,
+    this.gradient,
   });
 
   @override
@@ -25,7 +31,10 @@ class GlassCard extends StatelessWidget {
     return Container(
       padding: padding,
       decoration: BoxDecoration(
-        color: backgroundColor ?? AppColors.adaptiveGlass(context),
+        color: gradient == null
+            ? (backgroundColor ?? AppColors.adaptiveGlass(context))
+            : null,
+        gradient: gradient,
         borderRadius: borderRadius ?? BorderRadius.circular(16),
         border: border ??
             Border.all(

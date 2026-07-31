@@ -424,12 +424,20 @@ class _ProfileScreenState extends State<ProfileScreen> {
   Future<void> _pickAvatar(ImageSource source) async {
     final messenger = ScaffoldMessenger.of(context);
     final strings = AppStrings.of(context);
-    final saved = await sl<LocalAvatarService>().pickAndSave(source);
-    if (saved == null) return; // user cancelled — no message needed
-    if (!mounted) return;
-    // UserAvatar listens to LocalAvatarService.version itself, so no manual
-    // setState is needed here for the picture to update.
-    messenger.showSnackBar(SnackBar(content: Text(strings.profileNameUpdated)));
+    try {
+      final saved = await sl<LocalAvatarService>().pickAndSave(source);
+      if (saved == null) return; // user cancelled — no message needed
+      if (!mounted) return;
+      // UserAvatar listens to LocalAvatarService.version itself, so no manual
+      // setState is needed here for the picture to update.
+      messenger.showSnackBar(SnackBar(content: Text(strings.profileNameUpdated)));
+    } on AvatarPermissionDeniedException {
+      if (!mounted) return;
+      messenger.showSnackBar(SnackBar(
+        content: Text(strings.avatarPermissionDenied),
+        backgroundColor: AppColors.error,
+      ));
+    }
   }
 
   Future<void> _showEditNameDialog(AuthCubit cubit, String currentName) async {
@@ -464,6 +472,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
         ],
       ),
     );
+    controller.dispose();
 
     if (newName == null) return; // cancelled
     if (newName.trim().isEmpty) {

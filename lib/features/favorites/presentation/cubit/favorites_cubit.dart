@@ -14,6 +14,7 @@ class FavoritesCubit extends Cubit<FavoritesState> {
 
   Future<void> loadFavorites() async {
     final result = await _repository.getFavorites();
+    if (isClosed) return;
     result.fold(
       (failure) => emit(FavoritesError(failure.message)),
       (items) {
@@ -26,6 +27,7 @@ class FavoritesCubit extends Cubit<FavoritesState> {
   Future<void> toggleFavorite(
     String itemType,
     String itemRefId, {
+    required String tripId,
     String? destinationName,
     String? notes,
   }) async {
@@ -50,10 +52,12 @@ class FavoritesCubit extends Cubit<FavoritesState> {
     final result = await _repository.toggleFavorite(
       itemType,
       itemRefId,
+      tripId: tripId,
       destinationName: destinationName,
       notes: notes,
     );
 
+    if (isClosed) return;
     result.fold(
       (failure) {
         emit(FavoritesError(failure.message));
@@ -77,6 +81,7 @@ class FavoritesCubit extends Cubit<FavoritesState> {
     String? notes,
   ) async {
     final result = await _repository.updateNotes(itemType, itemRefId, notes);
+    if (isClosed) return;
     result.fold(
       (failure) => emit(FavoritesError(failure.message)),
       (_) => loadFavorites(),

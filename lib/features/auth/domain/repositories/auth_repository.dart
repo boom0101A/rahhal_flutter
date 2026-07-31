@@ -26,4 +26,16 @@ abstract class AuthRepository {
   bool get isAuthenticated;
   Stream<UserEntity?> get authStateChanges;
   Future<String?> getIdToken();
+
+  /// Reconciles local storage with the cloud for [uid] after a sign-in:
+  /// claims any locally-stored trip left ownerless by older app versions,
+  /// downloads/merges cloud-synced trips, then pushes anything local that
+  /// never made it to the cloud (e.g. edits made while offline).
+  Future<void> restoreCloudData(String uid);
+
+  /// Wipes every locally-stored row (trips and everything under them). Used
+  /// only after [deleteAccount] succeeds — leaving local data behind would
+  /// let it resurface via cloud sync on a future sign-in with the same
+  /// account, contradicting the deletion the user just asked for.
+  Future<void> clearLocalData();
 }

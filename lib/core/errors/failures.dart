@@ -41,10 +41,6 @@ class ValidationFailure extends Failure {
   const ValidationFailure([super.message = 'validation-failure']);
 }
 
-class PermissionFailure extends Failure {
-  const PermissionFailure([super.message = 'permission-failure']);
-}
-
 class UnknownFailure extends Failure {
   const UnknownFailure([super.message = 'unknown-failure']);
 }

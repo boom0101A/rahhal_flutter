@@ -115,6 +115,7 @@ class FavoritesRepositoryImpl implements FavoritesRepository {
   Future<Either<Failure, void>> toggleFavorite(
     String itemType,
     String itemRefId, {
+    required String tripId,
     String? destinationName,
     String? notes,
   }) async {
@@ -136,10 +137,13 @@ class FavoritesRepositoryImpl implements FavoritesRepository {
           whereArgs: [itemType, itemRefId],
         );
       } else {
-        // Insert it
+        // Insert it — trip_id lets the row cascade-delete along with the
+        // trip instead of becoming a dead row once its stop/restaurant/hotel
+        // is gone (see the v10 migration in database_helper.dart).
         await _dbHelper.insert('favorites', {
           'id': const Uuid().v4(),
           'user_id': userId,
+          'trip_id': tripId,
           'item_type': itemType,
           'item_ref_id': itemRefId,
           'destination_name': destinationName,

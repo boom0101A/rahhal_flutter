@@ -19,6 +19,7 @@ class RestaurantsCubit extends Cubit<RestaurantsState> {
     emit(const RestaurantsLoading());
 
     final result = await _repository.getRestaurantsForTrip(tripId);
+    if (isClosed) return;
     result.fold(
       (failure) => emit(RestaurantsError(failure.message)),
       (restaurants) {

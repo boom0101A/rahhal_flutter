@@ -164,6 +164,7 @@ class _HotelCard extends StatelessWidget {
                             context.read<FavoritesCubit>().toggleFavorite(
                                   'hotel',
                                   hotel.id,
+                                  tripId: hotel.tripId,
                                   destinationName: hotel.name,
                                 );
                             ScaffoldMessenger.of(context).showSnackBar(

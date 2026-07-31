@@ -175,6 +175,9 @@ class AppStrings {
   String get profileNameUpdated => _t('تم تحديث الاسم ✅', 'Name updated ✅');
   String get profileUpdateFailed =>
       _t('تعذّر تحديث الملف الشخصي', 'Couldn\'t update the profile');
+  String get avatarPermissionDenied => _t(
+      'تم رفض إذن الكاميرا/المعرض. يرجى تفعيله من إعدادات التطبيق.',
+      'Camera/gallery permission denied. Please enable it in the app settings.');
   String get profileQuickFavorites => _t('المفضّلة', 'Favorites');
   String get profileQuickDocuments => _t('الوثائق', 'Documents');
   String get profileNoTripForDocuments => _t(
@@ -344,6 +347,23 @@ class AppStrings {
   String get budgetDistribution => _t('توزيع الميزانية', 'Budget Distribution');
   String get budgetDetails => _t('تفاصيل البنود', 'Item Details');
   String get budgetEmpty => _t('لا توجد ميزانية متاحة لهذه الرحلة', 'No budget data available for this trip');
+
+  // ── Budget: per-category overspend alerts ──────────────────────────────────
+  String budgetOverspendAlert(String categoryLabel, int percentOver) => _t(
+      'تجاوزت ميزانية $categoryLabel بـ $percentOver%',
+      'You exceeded your $categoryLabel budget by $percentOver%');
+  String budgetApproachingAlert(String categoryLabel, int percentUsed) => _t(
+      'اقتربت من حد ميزانية $categoryLabel ($percentUsed%)',
+      'You are close to your $categoryLabel budget limit ($percentUsed%)');
+  String budgetUnplannedSpend(String categoryLabel) => _t(
+      'صرفت على $categoryLabel دون ميزانية مخططة',
+      'You spent on $categoryLabel with no planned budget');
+
+  // ── Budget: daily plan tab ──────────────────────────────────────────────────
+  String get budgetDailyPlan => _t('الخطة اليومية', 'Daily Plan');
+  String get budgetDailyPlanEmpty => _t(
+      'لا توجد ميزانية مخططة لتوزيعها على الأيام',
+      'No planned budget to distribute across days');
 
   // Saved Trips
   String get savedTitle => _t('رحلاتي', 'My Trips');
@@ -699,6 +719,7 @@ class AppStrings {
         'transport' => 'المواصلات',
         'activities' => 'الأنشطة والزيارات',
         'shopping' => 'التسوق',
+        'other' => 'أخرى',
         _ => key,
       },
       switch (key) {
@@ -707,6 +728,7 @@ class AppStrings {
         'transport' => 'Transportation',
         'activities' => 'Activities & Visits',
         'shopping' => 'Shopping',
+        'other' => 'Other',
         _ => key,
       },
     );

@@ -19,6 +19,7 @@ class MapCubit extends Cubit<MapState> {
   Future<void> loadMapData(String tripId) async {
     emit(const MapLoading());
     final result = await _repository.getStopsForTrip(tripId);
+    if (isClosed) return;
     result.fold(
       (failure) => emit(MapError(failure.message)),
       (stops) async {
@@ -40,6 +41,7 @@ class MapCubit extends Cubit<MapState> {
           }
         } catch (_) {} // Silently ignore — location is optional
 
+        if (isClosed) return;
         emit(MapReady(
           stops: stops,
           filteredStops: stops,

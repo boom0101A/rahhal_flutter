@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'package:dartz/dartz.dart';
+import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/foundation.dart';
 import 'package:sqflite/sqflite.dart';
 import 'package:uuid/uuid.dart';
@@ -29,6 +30,18 @@ class TripRepositoryImpl implements TripRepository {
   })  : _dbHelper = dbHelper,
         _aiService = aiService,
         _syncService = syncService;
+
+  /// Current account's uid, so every trip is scoped to whoever created it —
+  /// without this, every account on a shared device could see and delete
+  /// every other account's trips. `null` only before any sign-in has ever
+  /// happened (the app always signs in, even as a guest, before this is used).
+  String? get _currentUid {
+    try {
+      return FirebaseAuth.instance.currentUser?.uid;
+    } catch (_) {
+      return null;
+    }
+  }
 
   // ─── Generate ─────────────────────────────────────────────────────────────
 
@@ -78,6 +91,7 @@ class TripRepositoryImpl implements TripRepository {
       final tripId = _uuid.v4();
       final trip = TripEntity(
         id: tripId,
+        userId: _currentUid,
         destination: response.destination,
         destinationEn: response.destinationEn,
         countryCode: response.countryCode,
@@ -245,7 +259,7 @@ class TripRepositoryImpl implements TripRepository {
 
           // Insert Stops
           for (final stop in dayPlan.stops) {
-            final hasValidCoords = stop.latitude.abs() > 0.001 && stop.longitude.abs() > 0.001;
+            final hasValidCoords = _hasValidCoords(stop.latitude, stop.longitude);
             final key = '${dayPlan.dayNumber}_${stop.orderIndex}_${stop.name}';
             final fetchedUrl = stopImageMap[key];
             // Null, not a random picsum photo — the UI renders a placeholder
@@ -297,8 +311,8 @@ class TripRepositoryImpl implements TripRepository {
               'price_per_person': rec.pricePerPersonUsd,
               'price_tier': _priceTier(rec.pricePerPersonUsd),
               'address': rec.address,
-              'latitude': rec.latitude,
-              'longitude': rec.longitude,
+              'latitude': _hasValidCoords(rec.latitude, rec.longitude) ? rec.latitude : null,
+              'longitude': _hasValidCoords(rec.latitude, rec.longitude) ? rec.longitude : null,
               'opening_hours': rec.openingHours,
               'opening_hours_en': rec.openingHoursEn,
               'ai_description': rec.aiDescription,
@@ -331,8 +345,8 @@ class TripRepositoryImpl implements TripRepository {
               'price_per_person': r.pricePerPersonUsd,
               'price_tier': _priceTier(r.pricePerPersonUsd),
               'address': r.address,
-              'latitude': r.latitude,
-              'longitude': r.longitude,
+              'latitude': _hasValidCoords(r.latitude, r.longitude) ? r.latitude : null,
+              'longitude': _hasValidCoords(r.latitude, r.longitude) ? r.longitude : null,
               'opening_hours': r.openingHours,
               'opening_hours_en': r.openingHoursEn,
               'ai_description': r.aiDescription,
@@ -369,8 +383,8 @@ class TripRepositoryImpl implements TripRepository {
             'rating': h.rating,
             'price_per_night': h.pricePerNightUsd,
             'address': h.address,
-            'latitude': h.latitude,
-            'longitude': h.longitude,
+            'latitude': _hasValidCoords(h.latitude, h.longitude) ? h.latitude : null,
+            'longitude': _hasValidCoords(h.latitude, h.longitude) ? h.longitude : null,
             'phone': h.phone,
             'image_url': hotelImageUrl,
             'ai_description': h.aiDescription,
@@ -418,8 +432,15 @@ class TripRepositoryImpl implements TripRepository {
   @override
   Future<Either<Failure, List<TripEntity>>> getAllTrips() async {
     try {
+      final uid = _currentUid;
+      // No signed-in account yet (shouldn't happen — the app always signs in,
+      // even as a guest, before a trip list can be shown) — fail closed
+      // rather than return every trip on the device.
+      if (uid == null) return const Right([]);
       final rows = await _dbHelper.query(
         'trips',
+        where: 'user_id = ?',
+        whereArgs: [uid],
         orderBy: 'created_at DESC',
       );
       return Right(rows.map(TripMapper.fromMap).toList());
@@ -481,8 +502,8 @@ class TripRepositoryImpl implements TripRepository {
       await _dbHelper.update(
         'trips',
         {'status': status, 'updated_at': DateTime.now().toIso8601String()},
-        where: 'id = ?',
-        whereArgs: [tripId],
+        where: 'id = ? AND user_id = ?',
+        whereArgs: [tripId, _currentUid],
       );
       // Trigger cloud sync in the background
       _syncService.syncTripToCloud(tripId).catchError((e) {
@@ -497,7 +518,39 @@ class TripRepositoryImpl implements TripRepository {
   @override
   Future<Either<Failure, void>> deleteTrip(String tripId) async {
     try {
-      await _dbHelper.delete('trips', where: 'id = ?', whereArgs: [tripId]);
+      // Ownership check first — deleting children below must never happen
+      // for a trip this account doesn't own.
+      final owned = await _dbHelper.queryOne(
+        'trips',
+        where: 'id = ? AND user_id = ?',
+        whereArgs: [tripId, _currentUid],
+      );
+      if (owned == null) return const Right(null);
+
+      // Explicit per-table deletes rather than relying solely on
+      // ON DELETE CASCADE — trip_command_executor.dart already set this
+      // precedent ("so the result is the same regardless of PRAGMA
+      // foreign_keys state"). If that PRAGMA ever isn't active on a given
+      // connection, cascade silently doesn't fire and these tables would
+      // accumulate orphaned rows forever with no error surfaced anywhere.
+      await _dbHelper.executeInTransaction((txn) async {
+        const childTables = [
+          'stops',
+          'restaurants',
+          'hotels',
+          'budget_items',
+          'chat_messages',
+          'actual_expenses',
+          'trip_documents',
+          'favorites',
+          'days',
+        ];
+        for (final table in childTables) {
+          await txn.delete(table, where: 'trip_id = ?', whereArgs: [tripId]);
+        }
+        await txn.delete('trips', where: 'id = ?', whereArgs: [tripId]);
+      });
+
       // Trigger cloud deletion in the background
       _syncService.deleteTripFromCloud(tripId).catchError((e) {
         debugPrint('[TripRepo] Cloud delete failed (non-critical): $e');
@@ -537,4 +590,10 @@ class TripRepositoryImpl implements TripRepository {
     return 'luxury';
   }
 
+  /// AI/Places-sourced coordinates parsed as exactly (0,0) mean "no real
+  /// coordinate was given" (the field's own zero default), not an actual
+  /// place off the coast of Africa — treat them as missing (store NULL)
+  /// instead of a misleading map marker at "null island".
+  bool _hasValidCoords(double lat, double lng) =>
+      lat.abs() > 0.001 && lng.abs() > 0.001;
 }

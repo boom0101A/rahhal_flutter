@@ -78,11 +78,17 @@ Future<void> setupDependencies() async {
   // ─── Repositories ─────────────────────────────────────────────────────────
 
   sl.registerLazySingleton<AuthRepository>(
-    () => AuthRepositoryImpl(),
+    () => AuthRepositoryImpl(
+      dbHelper: sl<DatabaseHelper>(),
+      syncService: sl<CloudSyncService>(),
+    ),
   );
 
   sl.registerLazySingleton<DocumentRepository>(
-    () => DocumentRepositoryImpl(dbHelper: sl<DatabaseHelper>()),
+    () => DocumentRepositoryImpl(
+      dbHelper: sl<DatabaseHelper>(),
+      syncService: sl<CloudSyncService>(),
+    ),
   );
 
   sl.registerLazySingleton<TripRepository>(
@@ -94,7 +100,10 @@ Future<void> setupDependencies() async {
   );
 
   sl.registerLazySingleton<ItineraryRepository>(
-    () => ItineraryRepositoryImpl(dbHelper: sl<DatabaseHelper>()),
+    () => ItineraryRepositoryImpl(
+      dbHelper: sl<DatabaseHelper>(),
+      syncService: sl<CloudSyncService>(),
+    ),
   );
 
   sl.registerLazySingleton<MapRepository>(
@@ -110,7 +119,10 @@ Future<void> setupDependencies() async {
   );
 
   sl.registerLazySingleton<BudgetRepository>(
-    () => BudgetRepositoryImpl(dbHelper: sl<DatabaseHelper>()),
+    () => BudgetRepositoryImpl(
+      dbHelper: sl<DatabaseHelper>(),
+      syncService: sl<CloudSyncService>(),
+    ),
   );
 
   sl.registerLazySingleton<FavoritesRepository>(
@@ -147,7 +159,10 @@ Future<void> setupDependencies() async {
   sl.registerLazySingleton<LocalAvatarService>(() => LocalAvatarService());
 
   sl.registerLazySingleton<TripCommandExecutor>(
-    () => TripCommandExecutor(dbHelper: sl<DatabaseHelper>()),
+    () => TripCommandExecutor(
+      dbHelper: sl<DatabaseHelper>(),
+      syncService: sl<CloudSyncService>(),
+    ),
   );
 
   sl.registerLazySingleton<ChatRepository>(
@@ -191,7 +206,10 @@ Future<void> setupDependencies() async {
     () => ChatCubit(repository: sl<ChatRepository>()),
   );
 
-  sl.registerFactory<AuthCubit>(
+  // Singleton, not factory: like FavoritesCubit, this is provided exactly
+  // once at the app root (main.dart) and is meant to be the single shared
+  // source of truth for auth state across every screen.
+  sl.registerLazySingleton<AuthCubit>(
     () => AuthCubit(repository: sl<AuthRepository>()),
   );
 

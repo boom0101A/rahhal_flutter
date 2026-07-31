@@ -356,7 +356,12 @@ class _TripDashboardScreenState extends State<TripDashboardScreen>
                           // Destination
                           Text(
                             trip?.displayDestination(context) ?? '',
-                            style: AppTextStyles.displayMedium.copyWith(color: AppColors.adaptiveTextPrimary(context)),
+                            // Painted directly on the hero photo's dark scrim
+                            // (hardcoded, non-adaptive gradient above), so this
+                            // must stay white regardless of app theme — using
+                            // adaptiveTextPrimary here made it near-invisible
+                            // (dark navy on dark navy) in light mode.
+                            style: AppTextStyles.displayMedium.copyWith(color: Colors.white),
                             maxLines: 1,
                             overflow: TextOverflow.ellipsis,
                           ),

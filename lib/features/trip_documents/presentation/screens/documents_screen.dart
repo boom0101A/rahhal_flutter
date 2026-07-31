@@ -609,6 +609,9 @@ class _DocumentsScreenState extends State<DocumentsScreen> {
           },
         );
       },
-    );
+    ).whenComplete(() {
+      titleCtrl.dispose();
+      notesCtrl.dispose();
+    });
   }
 }

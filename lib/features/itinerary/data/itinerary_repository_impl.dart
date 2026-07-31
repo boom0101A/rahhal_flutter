@@ -1,6 +1,8 @@
+import 'dart:async';
 import 'package:dartz/dartz.dart';
 import '../../../../core/database/database_helper.dart';
 import '../../../../core/errors/failures.dart';
+import '../../../../core/network/cloud_sync_service.dart';
 
 import '../domain/entities/day_entity.dart';
 import '../domain/repositories/itinerary_repository.dart';
@@ -8,9 +10,13 @@ import '../../trip_planner/domain/entities/stop_entity.dart';
 
 class ItineraryRepositoryImpl implements ItineraryRepository {
   final DatabaseHelper _dbHelper;
+  final CloudSyncService _syncService;
 
-  ItineraryRepositoryImpl({required DatabaseHelper dbHelper})
-      : _dbHelper = dbHelper;
+  ItineraryRepositoryImpl({
+    required DatabaseHelper dbHelper,
+    required CloudSyncService syncService,
+  })  : _dbHelper = dbHelper,
+        _syncService = syncService;
 
   @override
   Future<Either<Failure, List<DayEntity>>> getDaysForTrip(
@@ -65,6 +71,7 @@ class ItineraryRepositoryImpl implements ItineraryRepository {
   Future<Either<Failure, void>> reorderStops(
       String dayId, List<String> orderedStopIds) async {
     try {
+      final dayRow = await _dbHelper.queryOne('days', where: 'id = ?', whereArgs: [dayId]);
       await _dbHelper.executeInTransaction((txn) async {
         for (var i = 0; i < orderedStopIds.length; i++) {
           await txn.update(
@@ -75,6 +82,8 @@ class ItineraryRepositoryImpl implements ItineraryRepository {
           );
         }
       });
+      final tripId = dayRow?['trip_id'] as String?;
+      if (tripId != null) unawaited(_syncService.markTripDirtyAndSync(tripId));
       return const Right(null);
     } catch (e) {
       return Left(DatabaseFailure(e.toString()));
@@ -84,12 +93,15 @@ class ItineraryRepositoryImpl implements ItineraryRepository {
   @override
   Future<Either<Failure, void>> setStopVisited(String stopId, bool visited) async {
     try {
+      final stopRow = await _dbHelper.queryOne('stops', where: 'id = ?', whereArgs: [stopId]);
       await _dbHelper.update(
         'stops',
         {'is_visited': visited ? 1 : 0},
         where: 'id = ?',
         whereArgs: [stopId],
       );
+      final tripId = stopRow?['trip_id'] as String?;
+      if (tripId != null) unawaited(_syncService.markTripDirtyAndSync(tripId));
       return const Right(null);
     } catch (e) {
       return Left(DatabaseFailure(e.toString()));

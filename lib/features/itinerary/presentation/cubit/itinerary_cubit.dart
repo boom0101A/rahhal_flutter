@@ -17,6 +17,7 @@ class ItineraryCubit extends Cubit<ItineraryState> {
     emit(const ItineraryLoading());
 
     final daysResult = await _repository.getDaysForTrip(tripId);
+    if (isClosed) return;
     daysResult.fold(
       (failure) => emit(ItineraryError(failure.message)),
       (days) async {
@@ -27,6 +28,7 @@ class ItineraryCubit extends Cubit<ItineraryState> {
         // Load stops for first day by default
         final stopsResult =
             await _repository.getStopsForDay(days.first.id);
+        if (isClosed) return;
         stopsResult.fold(
           (failure) => emit(ItineraryError(failure.message)),
           (stops) => emit(ItineraryLoaded(
@@ -52,6 +54,7 @@ class ItineraryCubit extends Cubit<ItineraryState> {
 
     final stopsResult =
         await _repository.getStopsForDay(current.days[dayIndex].id);
+    if (isClosed) return;
     stopsResult.fold(
       (failure) => emit(ItineraryError(failure.message)),
       (stops) => emit(ItineraryLoaded(
@@ -68,6 +71,7 @@ class ItineraryCubit extends Cubit<ItineraryState> {
     if (current is! ItineraryLoaded) return;
 
     await _repository.reorderStops(dayId, orderedStopIds);
+    if (isClosed) return;
     await selectDay(current.selectedDayIndex);
   }
 
@@ -77,17 +81,33 @@ class ItineraryCubit extends Cubit<ItineraryState> {
     final current = state;
     if (current is! ItineraryLoaded) return;
 
+    final oldValue =
+        current.selectedDayStops.firstWhere((s) => s.id == stopId).isVisited;
+    final newValue = !oldValue;
+
     final updated = current.selectedDayStops
-        .map((s) => s.id == stopId ? s.copyWith(isVisited: !s.isVisited) : s)
+        .map((s) => s.id == stopId ? s.copyWith(isVisited: newValue) : s)
         .toList();
-    final newValue = updated.firstWhere((s) => s.id == stopId).isVisited;
 
     emit(current.copyWith(selectedDayStops: updated));
 
     final result = await _repository.setStopVisited(stopId, newValue);
+    if (isClosed) return;
     result.fold(
-      (_) => emit(current), // revert to the pre-toggle state on failure
+      // Revert only this stop, off whatever's current *now* — not the
+      // snapshot from before the await — so a second toggleVisited() call
+      // that raced in and already landed isn't wiped out too.
+      (_) => _revertStopVisited(stopId, oldValue),
       (_) {},
     );
+  }
+
+  void _revertStopVisited(String stopId, bool oldValue) {
+    final latest = state;
+    if (latest is! ItineraryLoaded) return;
+    final reverted = latest.selectedDayStops
+        .map((s) => s.id == stopId ? s.copyWith(isVisited: oldValue) : s)
+        .toList();
+    emit(latest.copyWith(selectedDayStops: reverted));
   }
 }

@@ -1,6 +1,7 @@
 import 'package:equatable/equatable.dart';
 import 'package:flutter/widgets.dart';
 import '../../../../core/constants/app_strings.dart';
+import '../../../../core/constants/category_ui.dart';
 
 class StopEntity extends Equatable {
   final String id;
@@ -73,19 +74,7 @@ class StopEntity extends Equatable {
   bool get hasValidLocation =>
       latitude.abs() > 0.001 && longitude.abs() > 0.001;
 
-  String get categoryEmoji => switch (category) {
-        'museum' => '🏛️',
-        'restaurant' => '🍽️',
-        'park' => '🌿',
-        'shopping' => '🛍️',
-        'landmark' => '🗺️',
-        'beach' => '🏖️',
-        'mosque' => '🕌',
-        'palace' => '🏰',
-        'market' => '🏪',
-        'viewpoint' => '🔭',
-        _ => '📍',
-      };
+  String get categoryEmoji => stopCategoryEmoji(category);
 
   /// Empty when we have no real photo — see [RestaurantEntity.displayImageUrl].
   String get displayImageUrl => imageUrl?.trim() ?? '';

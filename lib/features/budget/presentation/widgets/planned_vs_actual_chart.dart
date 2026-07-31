@@ -4,6 +4,7 @@ import '../../../../core/constants/app_colors.dart';
 import '../../../../core/constants/app_strings.dart';
 import '../../../../core/constants/app_text_styles.dart';
 import '../../../../shared/widgets/glass_card.dart';
+import '../../domain/budget_category_ui.dart';
 import '../../domain/entities/budget_item_entity.dart';
 import '../../domain/entities/expense_entity.dart';
 
@@ -19,36 +20,13 @@ class PlannedVsActualChart extends StatelessWidget {
     required this.expenses,
   });
 
-  /// Category keys shared by the planned breakdown and logged expenses.
-  static const _categories = [
-    'accommodation',
-    'food',
-    'transport',
-    'activities',
-    'shopping',
-  ];
-
-  double _plannedFor(String category) => switch (category) {
-        'accommodation' => planned.accommodation,
-        'food' => planned.food,
-        'transport' => planned.transport,
-        'activities' => planned.activities,
-        'shopping' => planned.shopping,
-        _ => planned.other,
-      };
+  double _plannedFor(String category) => budgetPlannedFor(planned, category);
 
   double _actualFor(String category) => expenses
       .where((e) => e.category.toLowerCase() == category)
       .fold(0.0, (sum, e) => sum + e.amount);
 
-  String _label(String category, AppStrings s) => switch (category) {
-        'accommodation' => s.budgetAccommodation,
-        'food' => s.budgetFood,
-        'transport' => s.budgetTransport,
-        'activities' => s.budgetActivities,
-        'shopping' => s.budgetShopping,
-        _ => s.budgetOther,
-      };
+  String _label(String category, AppStrings s) => s.budgetItemCategory(category);
 
   @override
   Widget build(BuildContext context) {
@@ -56,7 +34,7 @@ class PlannedVsActualChart extends StatelessWidget {
 
     // Only chart the categories that carry a number on either side — empty
     // columns are noise on a phone-width chart.
-    final rows = _categories
+    final rows = kBudgetCategoryKeys
         .map((c) => (
               key: c,
               planned: _plannedFor(c),
