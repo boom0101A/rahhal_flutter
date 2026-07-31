@@ -614,6 +614,15 @@ async function callGemini(systemPrompt, messages, maxTokens = 4000, apiKey) {
           maxOutputTokens: maxTokens,
         },
         ...(systemPrompt ? { systemInstruction: systemPrompt } : {}),
+      }, {
+        // Without an explicit requestOptions.timeout, this SDK never sets up
+        // a fetch AbortController at all (confirmed in the installed SDK
+        // source: buildFetchOptions only acts when timeout/signal is
+        // explicitly passed) — a stalled network or a hung response from
+        // Google could then block this call far longer than intended instead
+        // of failing over to the REST fallback below. 60s matches that
+        // REST fallback's own timeout for the same kind of call.
+        timeout: 60000,
       });
 
       const history = messages.slice(0, -1).map(m => ({
@@ -748,9 +757,27 @@ async function callGroq(systemPrompt, messages, maxTokens = 4000, apiKey) {
 // Unified AI Engine Call: prefers Groq (generous free tier), falls back
 // to Google Gemini so the app keeps working if either provider is down.
 async function callAI(systemPrompt, messages, maxTokens = 4000) {
-  // 1. Try Groq first if configured (much larger free daily quota).
   const groqKey = process.env.GROQ_API_KEY;
-  if (groqKey && groqKey !== 'your_groq_api_key_here' && groqKey.length > 10) {
+  const geminiKey = process.env.GEMINI_API_KEY;
+  const placesKey = process.env.GOOGLE_PLACES_API_KEY;
+
+  const hasGroqKey = groqKey && groqKey !== 'your_groq_api_key_here' && groqKey.length > 10;
+  const hasGeminiKey = geminiKey && geminiKey !== 'your_gemini_api_key_here' && geminiKey.length > 10;
+  const hasPlacesFallbackKey = placesKey && placesKey.startsWith('AIzaSy') && placesKey !== geminiKey;
+
+  // Distinguishes "this deployment has no AI key set at all" (a deployment/
+  // config problem — the caller returns 401 "not configured") from "a key
+  // is set but every provider rejected it" (throw invalid-api-key below —
+  // 403 "invalid key"). Both branches already existed in every caller's
+  // catch block, but nothing ever actually threw missing-api-key, so it was
+  // dead code and every unconfigured deployment was misreported as having
+  // an invalid key instead of no key.
+  if (!hasGroqKey && !hasGeminiKey && !hasPlacesFallbackKey) {
+    throw new Error('missing-api-key');
+  }
+
+  // 1. Try Groq first if configured (much larger free daily quota).
+  if (hasGroqKey) {
     try {
       console.log('[AI Engine] Using Groq...');
       return await callGroq(systemPrompt, messages, maxTokens, groqKey);
@@ -761,8 +788,7 @@ async function callAI(systemPrompt, messages, maxTokens = 4000) {
   }
 
   // 2. Try primary Gemini key
-  const geminiKey = process.env.GEMINI_API_KEY;
-  if (geminiKey && geminiKey !== 'your_gemini_api_key_here' && geminiKey.length > 10) {
+  if (hasGeminiKey) {
     try {
       console.log('[AI Engine] Using Google Gemini...');
       return await callGemini(systemPrompt, messages, maxTokens, geminiKey);
@@ -772,9 +798,8 @@ async function callAI(systemPrompt, messages, maxTokens = 4000) {
     }
   }
 
-  // 2. Fallback to GOOGLE_PLACES_API_KEY if it starts with AIzaSy
-  const placesKey = process.env.GOOGLE_PLACES_API_KEY;
-  if (placesKey && placesKey.startsWith('AIzaSy') && placesKey !== geminiKey) {
+  // 3. Fallback to GOOGLE_PLACES_API_KEY if it starts with AIzaSy
+  if (hasPlacesFallbackKey) {
     try {
       console.log('[AI Engine] Trying GOOGLE_PLACES_API_KEY fallback for Gemini...');
       return await callGemini(systemPrompt, messages, maxTokens, placesKey);
@@ -1179,6 +1204,19 @@ const RESTAURANT_FIELD_MASK = [
   'places.editorialSummary',
 ].join(',');
 
+// Ranks a Places result by rating weighted with review volume, so a lone
+// 5.0 with a handful of reviews doesn't outrank a 4.6 with thousands.
+// Shared by restaurants and hotels so the formula can't drift between them
+// again — it previously existed as two independent copies, and the hotels
+// one needed `|| 0` (its filter has no rating floor) while the restaurants
+// one didn't (its stricter filter already guarantees non-null values) — a
+// silent, easy-to-miss divergence. Keeping one defensive version here means
+// a future filter change on either side can't reintroduce a NaN-comparison
+// bug (rating * log10 on undefined => NaN, which sorts unpredictably).
+function placeRankScore(place) {
+  return (place.rating || 0) * Math.log10((place.userRatingCount || 0) + 10);
+}
+
 async function searchRestaurantsInLanguage(cityEn, centerLat, centerLng, languageCode) {
   const placesKey = process.env.GOOGLE_PLACES_API_KEY;
   const body = {
@@ -1264,12 +1302,7 @@ async function fetchRealRestaurants(cityEn, centerLat, centerLng, countryCode, l
       }
       return true;
     })
-    // Rank by rating weighted with review volume so a lone 5.0 with 21 reviews
-    // doesn't outrank a 4.6 with 8000.
-    .sort((a, b) =>
-      (b.rating * Math.log10(b.userRatingCount + 10)) -
-      (a.rating * Math.log10(a.userRatingCount + 10))
-    )
+    .sort((a, b) => placeRankScore(b) - placeRankScore(a))
     .slice(0, limit);
 
   const mapped = candidates.map((p) => {
@@ -1470,10 +1503,7 @@ async function fetchRealHotels(cityEn, centerLat, centerLng, limit) {
       }
       return true;
     })
-    .sort((a, b) =>
-      ((b.rating || 0) * Math.log10((b.userRatingCount || 0) + 10)) -
-      ((a.rating || 0) * Math.log10((a.userRatingCount || 0) + 10))
-    )
+    .sort((a, b) => placeRankScore(b) - placeRankScore(a))
     .slice(0, limit);
 
   const mapped = candidates.map((p) => {
@@ -1510,6 +1540,45 @@ async function fetchRealHotels(cityEn, centerLat, centerLng, limit) {
   return mapped;
 }
 
+// Public Overpass mirrors, tried in order — shared by every Overpass
+// consumer (hotels fallback, nearby-places fallback) so a dead/retired
+// mirror only ever needs fixing in one place instead of drifting between
+// copies (this list used to be duplicated verbatim in two functions).
+const OVERPASS_HOSTS = [
+  'https://overpass-api.de/api/interpreter',
+  'https://overpass.kumi.systems/api/interpreter',
+];
+
+// POSTs an Overpass QL query, trying each mirror in OVERPASS_HOSTS until one
+// succeeds. Returns the axios response, or null if every host failed (the
+// caller decides whether that's a silent empty-result fallback or an error
+// to propagate — see `throwOnFailure`).
+async function postOverpassQuery(query, { timeout, userAgent, logPrefix = 'OVERPASS', throwOnFailure = false }) {
+  let response;
+  let lastErr;
+  for (const host of OVERPASS_HOSTS) {
+    try {
+      response = await axios.post(
+        host,
+        new URLSearchParams({ data: query }).toString(),
+        {
+          headers: {
+            'Content-Type': 'application/x-www-form-urlencoded',
+            'User-Agent': userAgent,
+          },
+          timeout,
+        }
+      );
+      break;
+    } catch (e) {
+      lastErr = e;
+      console.warn(`[${logPrefix}] Overpass ${host} failed: ${e.response?.status || e.message}`);
+    }
+  }
+  if (!response && throwOnFailure) throw lastErr || new Error('all-overpass-hosts-failed');
+  return response || null;
+}
+
 // Free fallback: OpenStreetMap / Overpass around a coordinate. Used when Places
 // is off or quota-blocked so a trip still shows real hotels. Coverage in small
 // Iraqi governorates is thinner than Google's, but it's real, free data.
@@ -1527,29 +1596,11 @@ async function fetchHotelsOverpass(lat, lng, radius = 15000, limit = 24) {
     );
     out center 80;
   `;
-  const hosts = [
-    'https://overpass-api.de/api/interpreter',
-    'https://overpass.kumi.systems/api/interpreter',
-  ];
-  let response;
-  for (const host of hosts) {
-    try {
-      response = await axios.post(
-        host,
-        new URLSearchParams({ data: overpassQuery }).toString(),
-        {
-          headers: {
-            'Content-Type': 'application/x-www-form-urlencoded',
-            'User-Agent': 'RahhalAI/1.0 (trip planner hotels)',
-          },
-          timeout: 28000,
-        }
-      );
-      break;
-    } catch (e) {
-      console.warn(`[HOTELS] Overpass ${host} failed: ${e.response?.status || e.message}`);
-    }
-  }
+  const response = await postOverpassQuery(overpassQuery, {
+    timeout: 28000,
+    userAgent: 'RahhalAI/1.0 (trip planner hotels)',
+    logPrefix: 'HOTELS',
+  });
   if (!response) return [];
 
   const seen = new Set();
@@ -2004,6 +2055,16 @@ ${countryCode ? `- Country: ${countryCode}` : ''}`;
       } catch (err) {
         lastError = err;
         console.warn(`[TRIP] attempt ${attempt + 1}/${maxAttempts} failed:`, err.message);
+        // missing-api-key (no provider key configured at all), invalid-api-key
+        // (every configured key already failed auth) and rate-limit (quota
+        // already exhausted for this window) have nothing to do with the
+        // JSON the model wrote, and retrying with the exact same
+        // credentials/quota state will fail identically — stop immediately
+        // instead of making the user wait through a second full attempt
+        // (up to another ~60s) that has no real chance of succeeding.
+        if (err.message === 'missing-api-key' || err.message === 'invalid-api-key' || err.message === 'rate-limit') {
+          break;
+        }
       }
     }
     if (lastError) {
@@ -2214,7 +2275,10 @@ function dedupeTripByPlaceId(tripData) {
 
 // Helper to translate Arabic city names to English for better stock photo search results
 function sanitizePhotoQuery(rawQuery) {
-  if (!rawQuery) return 'travel destination';
+  // Defense-in-depth: called from more than one route. A non-string
+  // (e.g. an array from a repeated query-string key) is still truthy and
+  // would otherwise reach .trim() below and throw.
+  if (typeof rawQuery !== 'string' || !rawQuery) return 'travel destination';
   let q = rawQuery.trim();
 
   const arabicToEnglishMap = {
@@ -2252,7 +2316,13 @@ function sanitizePhotoQuery(rawQuery) {
 // ─── GET /api/photos ────────────────────────────────────────────────────────
 app.get('/api/photos', async (req, res) => {
   const { query } = req.query;
-  if (!query || !query.trim()) {
+  // A repeated query key (?query=a&query=b) makes Express/qs parse `query`
+  // as an ARRAY, which is still truthy — `!query` alone doesn't catch it,
+  // and .trim() on an array throws synchronously here, before this route's
+  // own try/catch. That crashes the whole Node process for every concurrent
+  // user (this handler is async, so the throw becomes an unhandled promise
+  // rejection with nothing to catch it).
+  if (typeof query !== 'string' || !query.trim()) {
     return res.status(400).json({ error: 'Missing query parameter' });
   }
 
@@ -2370,6 +2440,12 @@ The traveler can ask you ANYTHING about their trip — answer helpfully and spec
   const mappedMessages = [];
   if (conversationHistory && Array.isArray(conversationHistory)) {
     conversationHistory.forEach((msg) => {
+      // A malformed entry (null, a string, a number — anything that isn't a
+      // plain object) must be skipped, not crash: reading `.role` off it
+      // would throw synchronously inside this async route handler with no
+      // enclosing try/catch yet, which becomes an unhandled promise
+      // rejection and kills the whole Node process for every concurrent user.
+      if (!msg || typeof msg !== 'object') return;
       // role must be either 'user' or 'assistant'
       const role = (msg.role === 'model' || msg.role === 'ai' || msg.role === 'bot') ? 'assistant' : 'user';
       mappedMessages.push({
@@ -2406,6 +2482,7 @@ The traveler can ask you ANYTHING about their trip — answer helpfully and spec
 // ─── Currency Converter ───────────────────────────────────────────────────────
 // Uses Frankfurter.app — completely free, no API key required
 const currencyCache = new Map(); // in-memory cache
+const CURRENCY_CACHE_TTL_MS = 6 * 60 * 60 * 1000; // 6 hours
 
 app.get('/api/currency', async (req, res) => {
   const { base = 'USD', target } = req.query;
@@ -2417,7 +2494,7 @@ app.get('/api/currency', async (req, res) => {
   // Cache for 6 hours
   if (currencyCache.has(cacheKey)) {
     const cached = currencyCache.get(cacheKey);
-    if (now - cached.timestamp < 6 * 60 * 60 * 1000) {
+    if (now - cached.timestamp < CURRENCY_CACHE_TTL_MS) {
       return res.status(200).json({ base, target, rate: cached.rate, cached: true });
     }
   }
@@ -2669,29 +2746,12 @@ async function nearbyViaOverpass(lat, lng, radius) {
     );
     out center 150;
   `;
-  const overpassHosts = [
-    'https://overpass-api.de/api/interpreter',
-    'https://overpass.kumi.systems/api/interpreter',
-  ];
-  const postOverpass = (host) => axios.post(
-    host,
-    new URLSearchParams({ data: overpassQuery }).toString(),
-    {
-      headers: {
-        'Content-Type': 'application/x-www-form-urlencoded',
-        'User-Agent': 'RahhalAI/1.0 (trip planner nearby-places)',
-      },
-      timeout: 15000,
-    }
-  );
-
-  let response;
-  let lastErr;
-  for (const host of overpassHosts) {
-    try { response = await postOverpass(host); break; }
-    catch (e) { lastErr = e; console.warn(`[NEARBY] ${host} failed: ${e.response?.status || e.message}`); }
-  }
-  if (!response) throw lastErr || new Error('all-overpass-hosts-failed');
+  const response = await postOverpassQuery(overpassQuery, {
+    timeout: 15000,
+    userAgent: 'RahhalAI/1.0 (trip planner nearby-places)',
+    logPrefix: 'NEARBY',
+    throwOnFailure: true,
+  });
 
   const uLat = parseFloat(lat);
   const uLng = parseFloat(lng);
@@ -2946,6 +3006,49 @@ function resolvePublicUrl() {
   return null;
 }
 
+// placesCache/currencyCache only evict a key when it's looked up again after
+// expiring — an entry cached once and never re-queried (common for
+// placesCache's high-cardinality name+city+coordinate keys) would otherwise
+// sit in memory for its full TTL regardless, on a process this app
+// deliberately keeps alive indefinitely (see startSelfPing). This sweeps
+// both caches on a timer so memory doesn't just grow with uptime, plus a
+// hard size cap as a backstop against a traffic burst outrunning the TTL
+// window before the next sweep.
+const CACHE_SWEEP_INTERVAL_MS = 60 * 60 * 1000; // 1 hour
+const CACHE_MAX_ENTRIES = 5000;
+
+function sweepCache(cache, ttlMs, label) {
+  const now = Date.now();
+  let expired = 0;
+  for (const [key, entry] of cache) {
+    if (now - entry.timestamp >= ttlMs) {
+      cache.delete(key);
+      expired++;
+    }
+  }
+  // Still over the cap after removing expired entries — drop the oldest
+  // ones (Map iterates in insertion order) rather than let it grow further.
+  if (cache.size > CACHE_MAX_ENTRIES) {
+    const overflow = cache.size - CACHE_MAX_ENTRIES;
+    const keys = cache.keys();
+    for (let i = 0; i < overflow; i++) {
+      const key = keys.next().value;
+      if (key === undefined) break;
+      cache.delete(key);
+    }
+  }
+  if (expired > 0) {
+    console.log(`[CACHE] ${label} sweep: removed ${expired} expired entr${expired === 1 ? 'y' : 'ies'}, ${cache.size} remaining`);
+  }
+}
+
+function startCacheSweeper() {
+  setInterval(() => {
+    sweepCache(placesCache, PLACES_CACHE_TTL_MS, 'placesCache');
+    sweepCache(currencyCache, CURRENCY_CACHE_TTL_MS, 'currencyCache');
+  }, CACHE_SWEEP_INTERVAL_MS);
+}
+
 function startSelfPing() {
   const publicUrl = resolvePublicUrl();
   if (!publicUrl) {
@@ -2970,4 +3073,5 @@ app.listen(PORT, () => {
   console.log(`🚀 Rahhal AI Backend Proxy is running on http://localhost:${PORT}`);
   console.log(`Press Ctrl+C to terminate.`);
   startSelfPing();
+  startCacheSweeper();
 });
