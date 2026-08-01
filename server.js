@@ -986,7 +986,11 @@ const CATEGORY_TO_GOOGLE_TYPES = {
 //
 // Runs Google Places verification in parallel (with concurrency cap of 5)
 // to avoid hammering the API quota.
-async function verifyAllPlacesInTrip(tripData, destinationEn, userLat, userLng) {
+// [budgetLeftMs] (optional) lets the caller cap how long verification may run.
+// Replacement lookups are the expensive part (two extra Places calls per
+// unverified stop), so they stop being attempted once the budget runs low —
+// treated exactly like Places being unavailable, i.e. the stop is kept.
+async function verifyAllPlacesInTrip(tripData, destinationEn, userLat, userLng, budgetLeftMs) {
   const placesKey = process.env.GOOGLE_PLACES_API_KEY;
   if (!placesKey || placesKey === 'your_google_places_api_key_here') {
     console.warn('[PLACES] GOOGLE_PLACES_API_KEY not set — skipping place verification.');
@@ -1059,11 +1063,14 @@ async function verifyAllPlacesInTrip(tripData, destinationEn, userLat, userLng) 
           // in the app, and booking_url keeps whatever the model supplied.
           item.coords_verified = true;
         } else {
-          // Place not found in Google — this is a fictional/hallucinated
-          // stop. Try to find a REAL alternative nearby in the same
-          // category rather than showing the AI's invented place to the
-          // user; if no real alternative exists either, drop the stop.
-          const replacement = await findReplacementStop(item, centerLat, centerLng, seenPlaceIds);
+          // Not found in Google. That could mean the stop is fictional — or
+          // simply that Places couldn't be consulted at all (quota gone, key
+          // missing). Only the first case justifies deleting the stop, so
+          // findReplacementStop reports which one it was.
+          const outcome = (budgetLeftMs && budgetLeftMs() < 20000)
+              ? REPLACEMENT_UNAVAILABLE
+              : await findReplacementStop(item, centerLat, centerLng, seenPlaceIds);
+          const replacement = outcome.replacement;
           if (replacement) {
             item.name = replacement.name;
             item.name_en = replacement.name_en;
@@ -1074,10 +1081,18 @@ async function verifyAllPlacesInTrip(tripData, destinationEn, userLat, userLng) 
             item.coords_verified = true;
             seenPlaceIds.add(replacement.place_id);
             console.log(`[PLACES] Replaced fictional stop "${nameEn}" → "${replacement.name_en}"`);
-          } else {
+          } else if (outcome.status === 'none') {
+            // We really did search Places for a same-category alternative
+            // and there is none — the stop is almost certainly invented.
             item.coords_verified = false;
             item._dropCandidate = true;
             console.warn(`[PLACES] No real alternative for "${nameEn}" — dropping stop`);
+          } else {
+            // 'unavailable' — Places was never actually consulted, so we have
+            // NO evidence this stop is fake. Dropping here is what turned an
+            // exhausted Places quota (free tier = 100 searches/day, ~3 trips)
+            // into "the app returns a trip with every single stop deleted".
+            item.coords_verified = false;
           }
         }
       })
@@ -1086,9 +1101,23 @@ async function verifyAllPlacesInTrip(tripData, destinationEn, userLat, userLng) 
 
   // Drop stops that failed verification AND had no real replacement, then
   // re-index each day's remaining stops (mirrors pruneOutOfGovernorateStops).
+  //
+  // Safety net: never hand back a day with zero stops. If EVERY stop in a day
+  // would be dropped, keep them (flagged unverified) instead — an itinerary
+  // day that renders empty is a worse outcome for the user than one carrying
+  // a few unconfirmed places, and it's also a strong signal that Places
+  // itself is misbehaving rather than the model inventing an entire day.
   for (const day of tripData.days || []) {
     if (Array.isArray(day.stops)) {
-      day.stops = day.stops.filter((s) => !s._dropCandidate);
+      const kept = day.stops.filter((s) => !s._dropCandidate);
+      if (kept.length > 0) {
+        day.stops = kept;
+      } else if (day.stops.length > 0) {
+        console.warn(
+          `[PLACES] Day ${day.day_number}: every stop failed verification — keeping them unverified rather than emptying the day`
+        );
+        for (const s of day.stops) delete s._dropCandidate;
+      }
       day.stops.forEach((s, i) => { s.order_index = i; });
     }
   }
@@ -1104,10 +1133,21 @@ async function verifyAllPlacesInTrip(tripData, destinationEn, userLat, userLng) 
 // Finds a REAL nearby place to replace a stop that failed Google Places
 // verification (i.e. the AI likely invented it). Searches the same category
 // as the fictional stop, anchored near where the stop was supposed to be.
+// Returns a discriminated outcome, never a bare null, because the caller must
+// distinguish "Places says there is no such place" (safe to drop the stop)
+// from "Places couldn't be reached at all" (no evidence — must keep it):
+//   { status: 'replaced', replacement }  a real nearby place to swap in
+//   { status: 'none' }                   searched properly, nothing suitable
+//   { status: 'unavailable' }            no key / quota gone / no usable anchor
+const REPLACEMENT_UNAVAILABLE = { status: 'unavailable' };
+const REPLACEMENT_NONE = { status: 'none' };
+
 async function findReplacementStop(stop, centerLat, centerLng, seenPlaceIds) {
-  if (isPlacesQuotaBlocked()) return null;
+  if (isPlacesQuotaBlocked()) return REPLACEMENT_UNAVAILABLE;
   const placesKey = process.env.GOOGLE_PLACES_API_KEY;
-  if (!placesKey || placesKey === 'your_google_places_api_key_here') return null;
+  if (!placesKey || placesKey === 'your_google_places_api_key_here') {
+    return REPLACEMENT_UNAVAILABLE;
+  }
 
   const includedTypes = CATEGORY_TO_GOOGLE_TYPES[stop.category] || CATEGORY_TO_GOOGLE_TYPES.other;
 
@@ -1123,7 +1163,9 @@ async function findReplacementStop(stop, centerLat, centerLng, seenPlaceIds) {
       haversineDistance(centerLat, centerLng, anchorLat, anchorLng) > GOVERNORATE_RADIUS_KM) {
     anchorLat = centerLat; anchorLng = centerLng; radius = 15000;
   } else if (!validOwnCoords) {
-    if (!centerLat || !centerLng) return null; // no usable anchor at all
+    // No usable anchor at all — we can't search, so this is "unavailable",
+    // not "there is no such place".
+    if (!centerLat || !centerLng) return REPLACEMENT_UNAVAILABLE;
     anchorLat = centerLat; anchorLng = centerLng; radius = 15000;
   }
 
@@ -1141,20 +1183,25 @@ async function findReplacementStop(stop, centerLat, centerLng, seenPlaceIds) {
     const candidate = arResults.find(
       (p) => p.location && p.displayName?.text && !seenPlaceIds.has(p.id)
     );
-    if (!candidate) return null;
+    if (!candidate) return REPLACEMENT_NONE;
     const en = enById.get(candidate.id);
     return {
-      name: candidate.displayName.text,
-      name_en: en?.displayName?.text || candidate.displayName.text,
-      latitude: candidate.location.latitude,
-      longitude: candidate.location.longitude,
-      address: candidate.formattedAddress || candidate.shortFormattedAddress || '',
-      place_id: candidate.id,
+      status: 'replaced',
+      replacement: {
+        name: candidate.displayName.text,
+        name_en: en?.displayName?.text || candidate.displayName.text,
+        latitude: candidate.location.latitude,
+        longitude: candidate.location.longitude,
+        address: candidate.formattedAddress || candidate.shortFormattedAddress || '',
+        place_id: candidate.id,
+      },
     };
   } catch (err) {
+    // The search itself failed (network, quota, bad type filter) — again, no
+    // evidence about the stop, so the caller must keep it.
     const message = err.response?.data?.error?.message || err.message;
     tripPlacesBreaker(message);
-    return null;
+    return REPLACEMENT_UNAVAILABLE;
   }
 }
 
@@ -2056,6 +2103,17 @@ ${countryCode ? `- Country: ${countryCode}` : ''}`;
     const maxAttempts = 2;
     const GENERATION_BUDGET_MS = 22000;
     const startedAt = Date.now();
+
+    // Hard wall-clock ceiling for the WHOLE request, enforced by the optional
+    // enrichment steps after generation (Places verification/replacement,
+    // restaurants, hotels, and especially the 28s-per-mirror Overpass hotel
+    // fallback). Summed worst cases reached ~192s — past the Flutter client's
+    // 120s receiveTimeout, so the app aborted and the user got NO trip at all
+    // even though a perfectly good itinerary had already been generated.
+    // 95s leaves the client ~25s of headroom; every step below is an
+    // enhancement, so running out of budget degrades quality, never the trip.
+    const REQUEST_BUDGET_MS = 95000;
+    const budgetLeftMs = () => REQUEST_BUDGET_MS - (Date.now() - startedAt);
     for (let attempt = 0; attempt < maxAttempts; attempt++) {
       if (attempt > 0 && Date.now() - startedAt > GENERATION_BUDGET_MS) {
         console.warn('[TRIP] generation budget exhausted — not starting another attempt');
@@ -2125,7 +2183,9 @@ ${countryCode ? `- Country: ${countryCode}` : ''}`;
     const destinationEn = (resolved && resolved.cityEn) || parsedData.destination_en || destination;
     const centerLat = userLat || (resolved && resolved.lat) || null;
     const centerLng = userLng || (resolved && resolved.lng) || null;
-    parsedData = await verifyAllPlacesInTrip(parsedData, destinationEn, centerLat, centerLng);
+    parsedData = await verifyAllPlacesInTrip(
+      parsedData, destinationEn, centerLat, centerLng, budgetLeftMs
+    );
 
     // Catches a subtler duplicate than the name-based dedup above: two
     // differently-named AI stops that both verified/resolved to the SAME
@@ -2143,34 +2203,56 @@ ${countryCode ? `- Country: ${countryCode}` : ''}`;
     // Replace the model's invented restaurants with real, currently-open ones
     // from Places. Runs AFTER verification so the stop centroid is available as
     // a search center when the user gave no GPS. No-ops if Places is off.
-    const restaurantLimit = Math.min(20, Math.max(8, (parseInt(durationDays, 10) || 3) * 3));
+    // Each remaining step is skipped once too little of the request budget is
+    // left to finish it — the trip still ships, just without that extra.
     const restaurantCentroid = tripStopCentroid(parsedData);
-    const realRestaurants = await fetchRealRestaurants(
-      destinationEn,
-      centerLat || restaurantCentroid?.lat,
-      centerLng || restaurantCentroid?.lng,
-      (resolved && resolved.countryCode) || countryCode,
-      restaurantLimit
-    );
-    parsedData = applyRealRestaurants(parsedData, realRestaurants);
+    if (budgetLeftMs() > 12000) {
+      const restaurantLimit = Math.min(20, Math.max(8, (parseInt(durationDays, 10) || 3) * 3));
+      const realRestaurants = await fetchRealRestaurants(
+        destinationEn,
+        centerLat || restaurantCentroid?.lat,
+        centerLng || restaurantCentroid?.lng,
+        (resolved && resolved.countryCode) || countryCode,
+        restaurantLimit
+      );
+      parsedData = applyRealRestaurants(parsedData, realRestaurants);
+    } else {
+      console.warn('[TRIP] budget low — skipping real-restaurant enrichment');
+    }
 
     // Real hotels for the destination (Places first, OSM as a free fallback so
     // a trip still shows real hotels when the Places quota is gone).
     const hotelLimit = 12;
-    let hotels = await fetchRealHotels(
-      destinationEn,
-      centerLat || restaurantCentroid?.lat,
-      centerLng || restaurantCentroid?.lng,
-      hotelLimit
-    );
-    if (!hotels.length) {
+    let hotels = [];
+    if (budgetLeftMs() > 12000) {
+      hotels = await fetchRealHotels(
+        destinationEn,
+        centerLat || restaurantCentroid?.lat,
+        centerLng || restaurantCentroid?.lng,
+        hotelLimit
+      );
+    }
+    // The Overpass fallback tries each mirror in turn at 28s apiece, so its
+    // own worst case is ~56s — by far the biggest single risk of blowing past
+    // the client's timeout (measured live: 504 from mirror 1, then a full 28s
+    // timeout on mirror 2). Require enough budget for that ENTIRE worst case,
+    // not just an average run, or a slow AI call plus a slow Overpass still
+    // overshoots. Hotels also have their own dedicated endpoint, so skipping
+    // here costs the user nothing permanent.
+    if (!hotels.length && budgetLeftMs() > 60000) {
       const fbLat = centerLat || restaurantCentroid?.lat || (resolved && resolved.lat);
       const fbLng = centerLng || restaurantCentroid?.lng || (resolved && resolved.lng);
       if (fbLat && fbLng) {
         hotels = await fetchHotelsOverpass(fbLat, fbLng, 15000, hotelLimit);
       }
+    } else if (!hotels.length) {
+      console.warn('[TRIP] budget low — skipping Overpass hotel fallback');
     }
     parsedData = applyHotels(parsedData, hotels);
+
+    console.log(
+      `[TRIP] Completed in ${((Date.now() - startedAt) / 1000).toFixed(1)}s for "${destinationEn}"`
+    );
 
     return res.status(200).json(parsedData);
   } catch (error) {
