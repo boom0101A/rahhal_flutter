@@ -71,15 +71,27 @@ const PLACES_CACHE_TTL_MS = 7 * 24 * 60 * 60 * 1000; // 7 days
 // quota is gone every further call fails anyway, so a whole trip would spend
 // seconds hammering a dead endpoint (measured: 2.2s wasted on 14 lookups that
 // all 404'd). When we see a quota error we stop calling until this timestamp.
-let placesQuotaBlockedUntil = 0;
+// Tracked PER SURFACE, because Google meters `places:searchText` and
+// `places:searchNearby` under separate daily quotas — and the free searchText
+// tier (100/day for the whole deployment) runs out first, since stop
+// verification spends about a dozen per trip.
+//
+// One shared flag used to shut BOTH down together, so a searchText quota error
+// also silenced searchNearby even though it still had budget. That is what
+// left generated trips with no hotels, restaurants with no phone number, and
+// stops with no place_id (hence no Google Maps place card) for the rest of the
+// day. Keeping them separate lets the nearby-based fallbacks actually run.
 const PLACES_QUOTA_COOLDOWN_MS = 30 * 60 * 1000; // re-probe every 30 minutes
-function isPlacesQuotaBlocked() {
-  return Date.now() < placesQuotaBlockedUntil;
+const placesBlockedUntil = { text: 0, nearby: 0 };
+
+function isPlacesQuotaBlocked(surface = 'text') {
+  return Date.now() < (placesBlockedUntil[surface] ?? 0);
 }
-function tripPlacesBreaker(errMessage) {
+
+function tripPlacesBreaker(errMessage, surface = 'text') {
   if (/quota|RESOURCE_EXHAUSTED|rate limit/i.test(errMessage || '')) {
-    placesQuotaBlockedUntil = Date.now() + PLACES_QUOTA_COOLDOWN_MS;
-    console.warn('[PLACES] Daily quota exhausted — skipping Places lookups for 30 minutes.');
+    placesBlockedUntil[surface] = Date.now() + PLACES_QUOTA_COOLDOWN_MS;
+    console.warn(`[PLACES] ${surface} quota exhausted — skipping ${surface} lookups for 30 minutes.`);
     return true;
   }
   return false;
@@ -1485,7 +1497,7 @@ const REPLACEMENT_UNAVAILABLE = { status: 'unavailable' };
 const REPLACEMENT_NONE = { status: 'none' };
 
 async function findReplacementStop(stop, centerLat, centerLng, seenPlaceIds) {
-  if (isPlacesQuotaBlocked()) return REPLACEMENT_UNAVAILABLE;
+  if (isPlacesQuotaBlocked('nearby')) return REPLACEMENT_UNAVAILABLE;
   const placesKey = process.env.GOOGLE_PLACES_API_KEY;
   if (!placesKey || placesKey === 'your_google_places_api_key_here') {
     return REPLACEMENT_UNAVAILABLE;
@@ -1542,7 +1554,7 @@ async function findReplacementStop(stop, centerLat, centerLng, seenPlaceIds) {
     // The search itself failed (network, quota, bad type filter) — again, no
     // evidence about the stop, so the caller must keep it.
     const message = err.response?.data?.error?.message || err.message;
-    tripPlacesBreaker(message);
+    tripPlacesBreaker(message, 'nearby');
     return REPLACEMENT_UNAVAILABLE;
   }
 }
@@ -1603,6 +1615,44 @@ const RESTAURANT_FIELD_MASK = [
   'places.regularOpeningHours.weekdayDescriptions',
   'places.editorialSummary',
 ].join(',');
+
+// Google meters `places:searchText` and `places:searchNearby` under SEPARATE
+// daily quotas. The free searchText tier is 100 requests/DAY for the whole
+// deployment, and one trip spends roughly a dozen on stop verification alone —
+// so it runs dry most days, and when it does, restaurants and hotels used to
+// collapse to the model's invented ones: no phone number, no place_id, and
+// therefore no call/WhatsApp buttons and no Google Maps place card.
+//
+// searchNearby is usually still available at that point, takes the same
+// `places.*` field mask, and needs only a coordinate — which every trip has.
+// So it makes a genuine second source rather than a degraded one.
+async function nearbySearchWithMask({
+  lat, lng, radius, languageCode, includedTypes, fieldMask,
+}) {
+  const res = await axios.post(
+    'https://places.googleapis.com/v1/places:searchNearby',
+    {
+      includedTypes,
+      maxResultCount: 20,
+      languageCode,
+      locationRestriction: {
+        circle: {
+          center: { latitude: parseFloat(lat), longitude: parseFloat(lng) },
+          radius,
+        },
+      },
+    },
+    {
+      headers: {
+        'Content-Type': 'application/json',
+        'X-Goog-Api-Key': process.env.GOOGLE_PLACES_API_KEY,
+        'X-Goog-FieldMask': fieldMask,
+      },
+      timeout: 10000,
+    }
+  );
+  return res.data?.places || [];
+}
 
 // Ranks a Places result by rating weighted with review volume, so a lone
 // 5.0 with a handful of reviews doesn't outrank a 4.6 with thousands.
@@ -1677,8 +1727,32 @@ async function fetchRealRestaurants(cityEn, centerLat, centerLng, countryCode, l
     ]);
   } catch (err) {
     const apiError = err.response?.data?.error;
-    console.error('[RESTAURANTS] Places search failed:', apiError?.message || err.message);
-    return [];
+    const message = apiError?.message || err.message;
+    console.error('[RESTAURANTS] Places text search failed:', message);
+    tripPlacesBreaker(message);
+
+    // searchText is metered separately from searchNearby (see
+    // nearbySearchWithMask). Falling back keeps REAL restaurants — with their
+    // phone numbers and place_ids, so the call/WhatsApp buttons and the Maps
+    // place card keep working — instead of dropping to invented ones.
+    if (!centerLat || !centerLng) return [];
+    try {
+      [arPlaces, enPlaces] = await Promise.all([
+        nearbySearchWithMask({
+          lat: centerLat, lng: centerLng, radius: 20000, languageCode: 'ar',
+          includedTypes: ['restaurant'], fieldMask: RESTAURANT_FIELD_MASK,
+        }),
+        nearbySearchWithMask({
+          lat: centerLat, lng: centerLng, radius: 20000, languageCode: 'en',
+          includedTypes: ['restaurant'], fieldMask: RESTAURANT_FIELD_MASK,
+        }),
+      ]);
+      console.log(`[RESTAURANTS] Recovered ${arPlaces.length} via searchNearby fallback.`);
+    } catch (err2) {
+      console.error('[RESTAURANTS] Nearby fallback also failed:',
+        err2.response?.data?.error?.message || err2.message);
+      return [];
+    }
   }
 
   const enById = new Map(enPlaces.map((p) => [p.id, p]));
@@ -1856,7 +1930,10 @@ async function fetchRealHotels(cityEn, centerLat, centerLng, limit) {
     console.warn('[HOTELS] Places not configured — will try OSM fallback.');
     return [];
   }
-  if (isPlacesQuotaBlocked()) {
+  // Only the TEXT surface is checked here. When it's exhausted we still
+  // enter the try below, the text call fails fast, and the searchNearby
+  // fallback in the catch supplies real hotels with phone numbers.
+  if (isPlacesQuotaBlocked('text') && isPlacesQuotaBlocked('nearby')) {
     return [];
   }
 
@@ -1879,8 +1956,29 @@ async function fetchRealHotels(cityEn, centerLat, centerLng, limit) {
     const apiError = err.response?.data?.error;
     const message = apiError?.message || err.message;
     tripPlacesBreaker(message);
-    console.error('[HOTELS] Places search failed:', message);
-    return [];
+    console.error('[HOTELS] Places text search failed:', message);
+
+    // Same reasoning as restaurants: searchNearby has its own quota and still
+    // carries the phone number, so hotels keep their booking buttons instead
+    // of falling through to OSM entries that have neither phone nor place_id.
+    if (!centerLat || !centerLng) return [];
+    try {
+      [arPlaces, enPlaces] = await Promise.all([
+        nearbySearchWithMask({
+          lat: centerLat, lng: centerLng, radius: 25000, languageCode: 'ar',
+          includedTypes: ['hotel'], fieldMask: HOTEL_FIELD_MASK,
+        }),
+        nearbySearchWithMask({
+          lat: centerLat, lng: centerLng, radius: 25000, languageCode: 'en',
+          includedTypes: ['hotel'], fieldMask: HOTEL_FIELD_MASK,
+        }),
+      ]);
+      console.log(`[HOTELS] Recovered ${arPlaces.length} via searchNearby fallback.`);
+    } catch (err2) {
+      console.error('[HOTELS] Nearby fallback also failed:',
+        err2.response?.data?.error?.message || err2.message);
+      return [];
+    }
   }
 
   const enById = new Map(enPlaces.map((p) => [p.id, p]));
@@ -1982,7 +2080,10 @@ async function postOverpassQuery(query, { timeout, userAgent, logPrefix = 'OVERP
 // Free fallback: OpenStreetMap / Overpass around a coordinate. Used when Places
 // is off or quota-blocked so a trip still shows real hotels. Coverage in small
 // Iraqi governorates is thinner than Google's, but it's real, free data.
-async function fetchHotelsOverpass(lat, lng, radius = 15000, limit = 24) {
+// [timeoutMs] caps EACH mirror attempt. Trip generation passes a shorter
+// value so the whole fallback fits the request budget; the standalone
+// /api/hotels endpoint has no such deadline and keeps the generous default.
+async function fetchHotelsOverpass(lat, lng, radius = 15000, limit = 24, timeoutMs = 28000) {
   if (lat == null || lng == null) return [];
   const overpassQuery = `
     [out:json][timeout:25];
@@ -1997,7 +2098,7 @@ async function fetchHotelsOverpass(lat, lng, radius = 15000, limit = 24) {
     out center 80;
   `;
   const response = await postOverpassQuery(overpassQuery, {
-    timeout: 28000,
+    timeout: timeoutMs,
     userAgent: 'RahhalAI/1.0 (trip planner hotels)',
     logPrefix: 'HOTELS',
   });
@@ -2574,21 +2675,23 @@ ${countryCode ? `- Country: ${countryCode}` : ''}`;
         hotelLimit
       );
     }
-    // The Overpass fallback tries each mirror in turn at 28s apiece, so its
-    // own worst case is ~56s — by far the biggest single risk of blowing past
-    // the client's timeout (measured live: 504 from mirror 1, then a full 28s
-    // timeout on mirror 2). Require enough budget for that ENTIRE worst case,
-    // not just an average run, or a slow AI call plus a slow Overpass still
-    // overshoots. Hotels also have their own dedicated endpoint, so skipping
-    // here costs the user nothing permanent.
-    if (!hotels.length && budgetLeftMs() > 60000) {
+    // Last-resort free source when Places gives nothing at all.
+    //
+    // This gate used to demand 60s of remaining budget, to cover Overpass's
+    // own worst case of ~56s (28s timeout x 2 mirrors, tried in turn). But a
+    // normal generation only leaves ~55s by this point, so the gate almost
+    // never opened — and since Places was usually the thing that had failed,
+    // the result was trips with NO hotels at all. Cutting the per-mirror
+    // timeout for this call makes the worst case ~20s, which comfortably fits
+    // the budget that is actually left, so the fallback runs when it matters.
+    if (!hotels.length) {
       const fbLat = centerLat || restaurantCentroid?.lat || (resolved && resolved.lat);
       const fbLng = centerLng || restaurantCentroid?.lng || (resolved && resolved.lng);
-      if (fbLat && fbLng) {
-        hotels = await fetchHotelsOverpass(fbLat, fbLng, 15000, hotelLimit);
+      if (fbLat && fbLng && budgetLeftMs() > 22000) {
+        hotels = await fetchHotelsOverpass(fbLat, fbLng, 15000, hotelLimit, 10000);
+      } else if (fbLat && fbLng) {
+        console.warn('[TRIP] budget too low even for the trimmed Overpass fallback');
       }
-    } else if (!hotels.length) {
-      console.warn('[TRIP] budget low — skipping Overpass hotel fallback');
     }
     parsedData = applyHotels(parsedData, hotels);
 
@@ -3346,7 +3449,7 @@ async function nearbySearchGoogleGroup(uLat, uLng, radius, lang, includedTypes) 
 async function nearbyViaGoogle(lat, lng, radius, lang) {
   const placesKey = process.env.GOOGLE_PLACES_API_KEY;
   if (!placesKey || placesKey === 'your_google_places_api_key_here') return null;
-  if (isPlacesQuotaBlocked()) return null;
+  if (isPlacesQuotaBlocked('nearby')) return null;
 
   const uLat = parseFloat(lat);
   const uLng = parseFloat(lng);
@@ -3355,7 +3458,7 @@ async function nearbyViaGoogle(lat, lng, radius, lang) {
     NEARBY_GOOGLE_GROUPS.map((types) =>
       nearbySearchGoogleGroup(uLat, uLng, radius, lang, types).catch((e) => {
         const m = e.response?.data?.error?.message || e.message;
-        tripPlacesBreaker(m);
+        tripPlacesBreaker(m, 'nearby');
         console.warn('[NEARBY] Google group failed:', m);
         return [];
       })

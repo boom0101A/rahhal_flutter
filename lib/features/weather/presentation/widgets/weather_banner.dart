@@ -245,14 +245,28 @@ class _WeatherDayChip extends StatelessWidget {
           // Weather icon from OWM. CachedNetworkImage (not Image.network) so
           // the horizontal list doesn't re-fetch the same handful of icons
           // every time a chip scrolls back into view.
-          CachedNetworkImage(
-            imageUrl: day.iconUrl,
-            width: 28,
-            height: 28,
-            // A spinner per 28px icon would flicker; keep the space reserved.
-            placeholder: (_, __) => const SizedBox(width: 28, height: 28),
-            errorWidget: (_, __, ___) => const Icon(Icons.wb_sunny_rounded,
-                size: 22, color: Colors.amber),
+          //
+          // OpenWeather draws clouds, mist and snow in white/pale grey, which
+          // vanished against the light theme's pale sky chip — only the yellow
+          // sun stayed visible. Sitting them on a small dark disc gives every
+          // variant something to read against, the same way they already read
+          // against the dark theme's navy.
+          DecoratedBox(
+            decoration: BoxDecoration(
+              shape: BoxShape.circle,
+              color: isDark
+                  ? Colors.transparent
+                  : const Color(0xFF1A3A5C).withValues(alpha: 0.14),
+            ),
+            child: CachedNetworkImage(
+              imageUrl: day.iconUrl,
+              width: 28,
+              height: 28,
+              // A spinner per 28px icon would flicker; keep the space reserved.
+              placeholder: (_, __) => const SizedBox(width: 28, height: 28),
+              errorWidget: (_, __, ___) => const Icon(Icons.wb_sunny_rounded,
+                  size: 22, color: Colors.amber),
+            ),
           ),
           const SizedBox(height: 2),
           Text(
