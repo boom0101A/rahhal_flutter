@@ -217,6 +217,7 @@ class FavoritesRepositoryImpl implements FavoritesRepository {
         address: m['address'] as String?,
         costUsd: (m['cost_usd'] as num? ?? 0).toDouble(),
         aiTip: m['ai_tip'] as String?,
+        aiTipEn: m['ai_tip_en'] as String?,
         imageUrl: m['image_url'] as String?,
         bookingRequired: (m['booking_required'] as int? ?? 0) == 1,
         bookingUrl: m['booking_url'] as String?,
@@ -239,6 +240,7 @@ class FavoritesRepositoryImpl implements FavoritesRepository {
         openingHours: m['opening_hours'] as String?,
         imageUrl: m['image_url'] as String?,
         aiDescription: m['ai_description'] as String?,
+        aiDescriptionEn: m['ai_description_en'] as String?,
         isRecommended: (m['is_recommended'] as int? ?? 0) == 1,
       );
 
@@ -256,6 +258,7 @@ class FavoritesRepositoryImpl implements FavoritesRepository {
         phone: m['phone'] as String?,
         imageUrl: m['image_url'] as String?,
         aiDescription: m['ai_description'] as String?,
+        aiDescriptionEn: m['ai_description_en'] as String?,
         bookingUrl: m['booking_url'] as String?,
         placeId: m['place_id'] as String?,
         coordsVerified: (m['coords_verified'] as int? ?? 0) == 1,

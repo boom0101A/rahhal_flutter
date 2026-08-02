@@ -1,6 +1,7 @@
 import 'package:get_it/get_it.dart';
 import '../network/ai_service.dart';
 import '../network/cloud_sync_service.dart';
+import '../network/trip_translation_service.dart';
 import '../network/image_search_service.dart';
 import '../network/weather_service.dart';
 import '../../features/weather/data/weather_repository.dart';
@@ -62,6 +63,12 @@ Future<void> setupDependencies() async {
 
   // Cloud Sync Service
   sl.registerLazySingleton<CloudSyncService>(() => CloudSyncService());
+
+  // Translates a trip's AI prose into English on demand (see the service
+  // doc for why this is not done at generation time).
+  sl.registerLazySingleton<TripTranslationService>(
+    () => TripTranslationService(dbHelper: sl<DatabaseHelper>()),
+  );
 
   // Image Search Service
   sl.registerLazySingleton<ImageSearchService>(() => ImageSearchService());

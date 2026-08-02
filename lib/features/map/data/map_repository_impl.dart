@@ -58,6 +58,7 @@ class MapRepositoryImpl implements MapRepository {
         address: m['address'] as String?,
         costUsd: (m['cost_usd'] as num? ?? 0).toDouble(),
         aiTip: m['ai_tip'] as String?,
+        aiTipEn: m['ai_tip_en'] as String?,
         imageUrl: m['image_url'] as String?,
         bookingRequired: (m['booking_required'] as int? ?? 0) == 1,
         bookingUrl: m['booking_url'] as String?,

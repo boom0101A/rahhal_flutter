@@ -152,6 +152,7 @@ class BudgetRepositoryImpl implements BudgetRepository {
             ? DateTime.tryParse(m['date'] as String)
             : null,
         theme: m['theme'] as String?,
+        themeEn: m['theme_en'] as String?,
         summary: m['summary'] as String?,
       )).toList());
     } catch (e) {

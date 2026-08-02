@@ -214,11 +214,11 @@ class _HotelCard extends StatelessWidget {
                     ],
                   ],
                 ),
-                if (hotel.aiDescription != null &&
-                    hotel.aiDescription!.isNotEmpty) ...[
+                if (hotel.displayAiDescription(context) != null &&
+                    hotel.displayAiDescription(context)!.isNotEmpty) ...[
                   const SizedBox(height: 6),
                   Text(
-                    hotel.aiDescription!,
+                    hotel.displayAiDescription(context)!,
                     style: AppTextStyles.bodySmall.copyWith(
                       color: AppColors.adaptiveTextSecondary(context),
                     ),

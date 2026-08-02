@@ -2,6 +2,7 @@ import 'package:equatable/equatable.dart';
 import 'package:flutter/widgets.dart';
 import '../../../../core/constants/app_strings.dart';
 import '../../../../core/constants/category_ui.dart';
+import '../../../../core/utils/localized_prose.dart';
 
 class StopEntity extends Equatable {
   final String id;
@@ -19,6 +20,9 @@ class StopEntity extends Equatable {
   final String? address;
   final double costUsd;
   final String? aiTip;
+
+  /// English copy of [aiTip], filled in on demand — see [localizedProse].
+  final String? aiTipEn;
   final String? imageUrl;
   final bool bookingRequired;
   final String? bookingUrl;
@@ -41,6 +45,7 @@ class StopEntity extends Equatable {
     this.address,
     required this.costUsd,
     this.aiTip,
+    this.aiTipEn,
     this.imageUrl,
     required this.bookingRequired,
     this.bookingUrl,
@@ -64,6 +69,7 @@ class StopEntity extends Equatable {
         address: address,
         costUsd: costUsd,
         aiTip: aiTip,
+        aiTipEn: aiTipEn,
         imageUrl: imageUrl,
         bookingRequired: bookingRequired,
         bookingUrl: bookingUrl,
@@ -78,6 +84,10 @@ class StopEntity extends Equatable {
 
   /// Empty when we have no real photo — see [RestaurantEntity.displayImageUrl].
   String get displayImageUrl => imageUrl?.trim() ?? '';
+
+  /// The stop-level AI tip in the app current language.
+  String? displayAiTip(BuildContext context) =>
+      localizedProse(context, aiTip, aiTipEn);
 
   String displayName(BuildContext context) {
     final lang = AppStrings.of(context).languageCode;

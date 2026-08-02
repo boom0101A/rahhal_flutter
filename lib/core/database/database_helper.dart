@@ -17,7 +17,7 @@ class DatabaseHelper {
 
   // ─── Init ─────────────────────────────────────────────────────────────────
 
-  static const int _dbVersion = 13;
+  static const int _dbVersion = 14;
   static const String _dbName = 'rahhal_ai.db';
 
   static final Map<int, List<String>> _migrations = {
@@ -345,6 +345,23 @@ class DatabaseHelper {
     // retries deleting) anything listed, and the row is removed once the
     // cloud delete is confirmed to have actually gone through.
     13: [_createDeletedTripIdsTable],
+    // Everything the AI writes as prose — the summary, the travel tips, each
+    // day's theme, each stop's tip, and the restaurant/hotel blurbs — was only
+    // ever generated in Arabic. Only NAMES had an English counterpart
+    // (name_en/destination_en), so switching the app to English left all that
+    // text Arabic: there was simply nothing to switch to. These columns hold
+    // the English version, filled in on demand by TripTranslationService, so
+    // trips created before this (or created in Arabic) can still be read fully
+    // in English. Plain ADD COLUMNs — no table rebuild, nothing can be lost.
+    14: [
+      'ALTER TABLE trips ADD COLUMN ai_summary_en TEXT;',
+      'ALTER TABLE trips ADD COLUMN travel_tips_en TEXT;',
+      'ALTER TABLE trips ADD COLUMN best_time_to_visit_en TEXT;',
+      'ALTER TABLE days ADD COLUMN theme_en TEXT;',
+      'ALTER TABLE stops ADD COLUMN ai_tip_en TEXT;',
+      'ALTER TABLE restaurants ADD COLUMN ai_description_en TEXT;',
+      'ALTER TABLE hotels ADD COLUMN ai_description_en TEXT;',
+    ],
   };
 
   Future<Database> _initDatabase() async {

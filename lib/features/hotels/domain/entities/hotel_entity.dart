@@ -1,6 +1,7 @@
 import 'package:equatable/equatable.dart';
 import 'package:flutter/widgets.dart';
 import '../../../../core/constants/app_strings.dart';
+import '../../../../core/utils/localized_prose.dart';
 
 class HotelEntity extends Equatable {
   final String id;
@@ -16,6 +17,9 @@ class HotelEntity extends Equatable {
   final String? phone;
   final String? imageUrl;
   final String? aiDescription;
+
+  /// English copy of [aiDescription], filled in on demand.
+  final String? aiDescriptionEn;
   final String? bookingUrl;
   final String? placeId;
   final bool coordsVerified;
@@ -34,6 +38,7 @@ class HotelEntity extends Equatable {
     this.phone,
     this.imageUrl,
     this.aiDescription,
+    this.aiDescriptionEn,
     this.bookingUrl,
     this.placeId,
     this.coordsVerified = false,
@@ -60,6 +65,10 @@ class HotelEntity extends Equatable {
     }
     return name;
   }
+
+  /// The hotel blurb in the app's current language.
+  String? displayAiDescription(BuildContext context) =>
+      localizedProse(context, aiDescription, aiDescriptionEn);
 
   @override
   List<Object?> get props => [

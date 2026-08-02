@@ -116,6 +116,7 @@ class ItineraryRepositoryImpl implements ItineraryRepository {
             ? DateTime.tryParse(m['date'] as String)
             : null,
         theme: m['theme'] as String?,
+        themeEn: m['theme_en'] as String?,
         summary: m['summary'] as String?,
       );
 
@@ -135,6 +136,7 @@ class ItineraryRepositoryImpl implements ItineraryRepository {
         address: m['address'] as String?,
         costUsd: (m['cost_usd'] as num? ?? 0).toDouble(),
         aiTip: m['ai_tip'] as String?,
+        aiTipEn: m['ai_tip_en'] as String?,
         imageUrl: m['image_url'] as String?,
         bookingRequired: (m['booking_required'] as int? ?? 0) == 1,
         bookingUrl: m['booking_url'] as String?,

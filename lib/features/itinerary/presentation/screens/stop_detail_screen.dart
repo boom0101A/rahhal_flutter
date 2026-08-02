@@ -258,13 +258,13 @@ class _StopDetailScreenState extends State<StopDetailScreen> {
                   ],
 
                   // AI Tip
-                  if (stop.aiTip != null) ...[
+                  if (stop.displayAiTip(context) != null) ...[
                     Text(AppStrings.of(context).aiSmartTip, style: AppTextStyles.titleMedium.copyWith(color: AppColors.accentAmber)),
                     const SizedBox(height: 8),
                     GlassCard(
                       padding: const EdgeInsets.all(16),
                       child: Text(
-                        stop.aiTip!,
+                        stop.displayAiTip(context)!,
                         style: AppTextStyles.bodyMedium.copyWith(height: 1.6),
                       ),
                     ),

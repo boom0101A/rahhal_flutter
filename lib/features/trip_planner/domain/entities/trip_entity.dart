@@ -1,6 +1,7 @@
 import 'package:equatable/equatable.dart';
 import 'package:flutter/widgets.dart';
 import '../../../../core/constants/app_strings.dart';
+import '../../../../core/utils/localized_prose.dart';
 
 class TripEntity extends Equatable {
   final String id;
@@ -20,6 +21,12 @@ class TripEntity extends Equatable {
   final String? aiSummary;
   final List<String> travelTips;
   final String? bestTimeToVisit;
+
+  /// English copies of the three prose fields above, filled in on demand
+  /// by TripTranslationService — see [localizedProse].
+  final String? aiSummaryEn;
+  final List<String> travelTipsEn;
+  final String? bestTimeToVisitEn;
   final String currency;
   final String timezone;
   final bool isMockData;
@@ -45,6 +52,9 @@ class TripEntity extends Equatable {
     this.aiSummary,
     this.travelTips = const [],
     this.bestTimeToVisit,
+    this.aiSummaryEn,
+    this.travelTipsEn = const [],
+    this.bestTimeToVisitEn,
     this.currency = 'USD',
     this.timezone = 'UTC',
     this.isMockData = false,
@@ -70,6 +80,9 @@ class TripEntity extends Equatable {
     String? aiSummary,
     List<String>? travelTips,
     String? bestTimeToVisit,
+    String? aiSummaryEn,
+    List<String>? travelTipsEn,
+    String? bestTimeToVisitEn,
     String? currency,
     String? timezone,
     DateTime? createdAt,
@@ -93,6 +106,9 @@ class TripEntity extends Equatable {
       aiSummary: aiSummary ?? this.aiSummary,
       travelTips: travelTips ?? this.travelTips,
       bestTimeToVisit: bestTimeToVisit ?? this.bestTimeToVisit,
+      aiSummaryEn: aiSummaryEn ?? this.aiSummaryEn,
+      travelTipsEn: travelTipsEn ?? this.travelTipsEn,
+      bestTimeToVisitEn: bestTimeToVisitEn ?? this.bestTimeToVisitEn,
       currency: currency ?? this.currency,
       timezone: timezone ?? this.timezone,
       createdAt: createdAt ?? this.createdAt,
@@ -111,6 +127,18 @@ class TripEntity extends Equatable {
     }
     return destination;
   }
+
+  /// The trip summary in the app's current language.
+  String? displayAiSummary(BuildContext context) =>
+      localizedProse(context, aiSummary, aiSummaryEn);
+
+  /// The travel tips in the app's current language.
+  List<String> displayTravelTips(BuildContext context) =>
+      localizedProseList(context, travelTips, travelTipsEn);
+
+  /// The best-time-to-visit note in the app's current language.
+  String? displayBestTimeToVisit(BuildContext context) =>
+      localizedProse(context, bestTimeToVisit, bestTimeToVisitEn);
 
   @override
   List<Object?> get props => [

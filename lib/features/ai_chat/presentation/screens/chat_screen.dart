@@ -102,7 +102,10 @@ class _ChatScreenState extends State<ChatScreen> {
               final names = stops.map((s) => s.nameEn?.isNotEmpty == true
                   ? s.nameEn!
                   : s.name);
-              final theme = day.theme != null ? ' (${day.theme})' : '';
+              // Use the reader's language so the context handed to the model
+              // matches the language they're actually chatting in.
+              final dayTheme = day.displayTheme(context);
+              final theme = dayTheme != null ? ' ($dayTheme)' : '';
               buffer.writeln('Day ${day.dayNumber}$theme: ${names.join(', ')}');
             });
           }
@@ -247,7 +250,7 @@ class _ChatScreenState extends State<ChatScreen> {
           tripId: widget.tripId,
           destination: _trip?.destination ?? '',
           tripSummary: [
-            _trip?.aiSummary ?? '',
+            _trip?.displayAiSummary(context) ?? '',
             if (_itineraryContext.isNotEmpty) 'Itinerary:\n$_itineraryContext',
           ].where((s) => s.isNotEmpty).join('\n\n'),
         ),

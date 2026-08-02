@@ -312,10 +312,10 @@ class _RestaurantCard extends StatelessWidget {
                   ],
                 ),
                 // AI description
-                if (restaurant.aiDescription != null) ...[
+                if (restaurant.displayAiDescription(context) != null) ...[
                   const SizedBox(height: 6),
                   Text(
-                    restaurant.aiDescription!,
+                    restaurant.displayAiDescription(context)!,
                     style: AppTextStyles.bodySmall.copyWith(
                       color: AppColors.adaptiveTextSecondary(context),
                     ),

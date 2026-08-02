@@ -119,11 +119,11 @@ class HotelDetailSheet extends StatelessWidget {
                 _infoRow(context, Icons.call_rounded, hotel.phone!),
               ],
 
-              if (hotel.aiDescription != null &&
-                  hotel.aiDescription!.isNotEmpty) ...[
+              if (hotel.displayAiDescription(context) != null &&
+                  hotel.displayAiDescription(context)!.isNotEmpty) ...[
                 const SizedBox(height: 16),
                 Text(
-                  hotel.aiDescription!,
+                  hotel.displayAiDescription(context)!,
                   style: AppTextStyles.bodyMedium
                       .copyWith(color: AppColors.adaptiveTextSecondary(context)),
                 ),

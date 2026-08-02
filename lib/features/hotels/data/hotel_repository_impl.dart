@@ -39,6 +39,7 @@ class HotelRepositoryImpl implements HotelRepository {
         phone: m['phone'] as String?,
         imageUrl: m['image_url'] as String?,
         aiDescription: m['ai_description'] as String?,
+        aiDescriptionEn: m['ai_description_en'] as String?,
         bookingUrl: m['booking_url'] as String?,
         placeId: m['place_id'] as String?,
         coordsVerified: (m['coords_verified'] as int? ?? 0) == 1,

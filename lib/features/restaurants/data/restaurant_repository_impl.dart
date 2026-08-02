@@ -59,6 +59,7 @@ class RestaurantRepositoryImpl implements RestaurantRepository {
         openingHoursEn: m['opening_hours_en'] as String?,
         imageUrl: m['image_url'] as String?,
         aiDescription: m['ai_description'] as String?,
+        aiDescriptionEn: m['ai_description_en'] as String?,
         isRecommended: (m['is_recommended'] as int? ?? 0) == 1,
         placeId: m['place_id'] as String?,
         phone: m['phone'] as String?,

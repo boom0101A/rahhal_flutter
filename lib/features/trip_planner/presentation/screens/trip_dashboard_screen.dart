@@ -9,6 +9,7 @@ import '../../../../core/constants/app_colors.dart';
 import '../../../../core/constants/app_text_styles.dart';
 import '../../../../core/constants/app_strings.dart';
 import '../../../../core/di/injection.dart';
+import '../../../../core/network/trip_translation_service.dart';
 import '../../../../core/services/location_share_service.dart';
 import '../../../../core/services/trip_notification_scheduler.dart';
 import '../../../../shared/widgets/app_badges.dart';
@@ -67,6 +68,38 @@ class _TripDashboardScreenState extends State<TripDashboardScreen>
     _tabController = TabController(length: 5, vsync: this);
     _trip = widget.trip;
     _loadTripIfNeeded();
+  }
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    // Runs here rather than in initState because it needs the locale, and
+    // again on every locale change — which is exactly when a trip written in
+    // Arabic needs its English copy. The service itself no-ops when nothing
+    // is missing and de-duplicates concurrent calls, so this is cheap.
+    _ensureTranslated();
+  }
+
+  /// Fills in the English copy of this trip's AI prose the first time it's
+  /// viewed in English, then refreshes so the new text is picked up.
+  Future<void> _ensureTranslated() async {
+    if (!mounted) return;
+    if (AppStrings.of(context).languageCode != 'en') return;
+
+    final didTranslate =
+        await sl<TripTranslationService>().ensureEnglish(widget.tripId);
+    if (!didTranslate || !mounted) return;
+
+    // The tabs read their data through their own cubits, which loaded before
+    // the translation landed — reload so the English text actually shows.
+    setState(() {});
+    _reloadTripAfterTranslation();
+  }
+
+  Future<void> _reloadTripAfterTranslation() async {
+    final result = await sl<TripRepository>().getTripById(widget.tripId);
+    if (!mounted) return;
+    result.fold((_) {}, (trip) => setState(() => _trip = trip));
   }
 
   /// Refreshes this trip's contextual reminders (morning plan, restaurant

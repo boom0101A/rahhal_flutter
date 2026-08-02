@@ -76,7 +76,7 @@ class ItineraryTab extends StatelessWidget {
         const SizedBox(height: 16),
 
         // Day summary
-        if (state.selectedDay.theme != null) ...[
+        if (state.selectedDay.displayTheme(context) != null) ...[
           GlassCard(
             padding: const EdgeInsets.all(14),
             child: Row(
@@ -88,7 +88,7 @@ class ItineraryTab extends StatelessWidget {
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       Text(
-                        state.selectedDay.theme!,
+                        state.selectedDay.displayTheme(context)!,
                         style: AppTextStyles.titleMedium,
                       ),
                       if (state.selectedDay.summary != null) ...[
@@ -528,7 +528,7 @@ class _StopTimelineItem extends StatelessWidget {
                               ],
                             ],
                           ),
-                          if (stop.aiTip != null) ...[
+                          if (stop.displayAiTip(context) != null) ...[
                             const SizedBox(height: 8),
                             Container(
                               padding: const EdgeInsets.symmetric(
@@ -547,7 +547,7 @@ class _StopTimelineItem extends StatelessWidget {
                                   const SizedBox(width: 6),
                                   Expanded(
                                     child: Text(
-                                      stop.aiTip!,
+                                      stop.displayAiTip(context)!,
                                       style: AppTextStyles.bodySmall.copyWith(
                                         color: AppColors.accentAmber
                                             .withValues(alpha: 0.9),

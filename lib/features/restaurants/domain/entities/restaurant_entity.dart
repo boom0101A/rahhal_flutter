@@ -1,6 +1,7 @@
 import 'package:equatable/equatable.dart';
 import 'package:flutter/widgets.dart';
 import '../../../../core/constants/app_strings.dart';
+import '../../../../core/utils/localized_prose.dart';
 
 class RestaurantEntity extends Equatable {
   final String id;
@@ -23,6 +24,9 @@ class RestaurantEntity extends Equatable {
   final String? openingHoursEn;
   final String? imageUrl;
   final String? aiDescription;
+
+  /// English copy of [aiDescription], filled in on demand.
+  final String? aiDescriptionEn;
   final bool isRecommended;
   final String? placeId;
   final String? phone;
@@ -46,6 +50,7 @@ class RestaurantEntity extends Equatable {
     this.openingHoursEn,
     this.imageUrl,
     this.aiDescription,
+    this.aiDescriptionEn,
     required this.isRecommended,
     this.placeId,
     this.phone,
@@ -80,6 +85,10 @@ class RestaurantEntity extends Equatable {
     }
     return name;
   }
+
+  /// The restaurant blurb in the app's current language.
+  String? displayAiDescription(BuildContext context) =>
+      localizedProse(context, aiDescription, aiDescriptionEn);
 
   @override
   List<Object?> get props => [
