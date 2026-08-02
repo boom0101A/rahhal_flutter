@@ -549,6 +549,20 @@ class TripRepositoryImpl implements TripRepository {
           await txn.delete(table, where: 'trip_id = ?', whereArgs: [tripId]);
         }
         await txn.delete('trips', where: 'id = ?', whereArgs: [tripId]);
+
+        // Recorded in the SAME transaction as the delete above so the two
+        // can never happen independently. Without this, deleting a trip
+        // then closing the app before the fire-and-forget cloud delete below
+        // finishes leaves the trip alive in Firestore — and the very next
+        // launch's restoreTripsFromCloud() re-downloads and resurrects it,
+        // since "not present locally" looks identical to "never synced yet".
+        // CloudSyncService checks this table before ever restoring a trip,
+        // and clears the row once the cloud delete is confirmed to succeed.
+        await txn.insert(
+          'deleted_trip_ids',
+          {'trip_id': tripId, 'deleted_at': DateTime.now().toIso8601String()},
+          conflictAlgorithm: ConflictAlgorithm.replace,
+        );
       });
 
       // Trigger cloud deletion in the background

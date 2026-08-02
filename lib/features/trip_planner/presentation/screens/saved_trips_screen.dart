@@ -30,6 +30,18 @@ class _SavedTripsScreenState extends State<SavedTripsScreen> {
   late final TextEditingController _searchCtrl;
   String _searchQuery = '';
 
+  /// Owned by this State rather than created inside `build()`'s BlocProvider.
+  ///
+  /// It used to be `BlocProvider(create: ...)` right here in `build()`, which
+  /// put the provider BELOW this State in the element tree — so every
+  /// `context.read<SavedTripsCubit>()` in this file (delete, retry, refresh)
+  /// looked *upwards* past it and threw "Could not find the correct Provider".
+  /// That silently broke deletion two different ways: swipe-to-delete looked
+  /// like it worked because Dismissible removes the card itself, but the row
+  /// was never deleted and came back on refresh; the trash-icon button did
+  /// nothing at all. Holding the instance here removes the lookup entirely.
+  late final SavedTripsCubit _cubit;
+
   // Delete is deferred: the trip is hidden immediately and a SnackBar offers
   // "Undo" for a few seconds before the actual (cascading, unrecoverable)
   // database delete runs. Nothing is destroyed until the timer fires.
@@ -40,14 +52,22 @@ class _SavedTripsScreenState extends State<SavedTripsScreen> {
   void initState() {
     super.initState();
     _searchCtrl = TextEditingController();
+    _cubit = sl<SavedTripsCubit>()..loadTrips();
   }
 
   @override
   void dispose() {
-    for (final timer in _deleteTimers.values) {
-      timer.cancel();
+    // Any delete still inside its undo window must still happen — the user
+    // asked for it and the SnackBar already told them it was done. Fire it
+    // now, before the cubit is closed, instead of losing it on navigation.
+    for (final entry in _deleteTimers.entries) {
+      entry.value.cancel();
+      _cubit.deleteTrip(entry.key);
     }
+    _deleteTimers.clear();
     _searchCtrl.dispose();
+    // BlocProvider.value does NOT own the cubit, so closing it is on us.
+    _cubit.close();
     super.dispose();
   }
 
@@ -100,14 +120,13 @@ class _SavedTripsScreenState extends State<SavedTripsScreen> {
   void _scheduleDelete(TripEntity trip) {
     Haptics.warning();
     final strings = AppStrings.of(context);
-    final cubit = context.read<SavedTripsCubit>();
 
     setState(() => _pendingDeleteIds.add(trip.id));
 
     _deleteTimers[trip.id]?.cancel();
     _deleteTimers[trip.id] = Timer(const Duration(seconds: 4), () {
       _deleteTimers.remove(trip.id);
-      cubit.deleteTrip(trip.id);
+      _cubit.deleteTrip(trip.id);
     });
 
     ScaffoldMessenger.of(context).showSnackBar(
@@ -148,8 +167,8 @@ class _SavedTripsScreenState extends State<SavedTripsScreen> {
 
   @override
   Widget build(BuildContext context) {
-    return BlocProvider(
-      create: (_) => sl<SavedTripsCubit>()..loadTrips(),
+    return BlocProvider.value(
+      value: _cubit,
       child: Scaffold(
         backgroundColor: AppColors.adaptiveBgPrimary(context),
         body: SafeArea(
@@ -332,7 +351,7 @@ class _SavedTripsScreenState extends State<SavedTripsScreen> {
         if (state is SavedTripsError) {
           return AppErrorWidget(
             message: state.message,
-            onRetry: () => context.read<SavedTripsCubit>().loadTrips(),
+            onRetry: () => _cubit.loadTrips(),
           );
         }
         return const SizedBox.shrink();
@@ -415,7 +434,7 @@ class _SavedTripsScreenState extends State<SavedTripsScreen> {
       color: AppColors.accentAmber,
       backgroundColor: AppColors.adaptiveBgCard(context),
       onRefresh: () async {
-        context.read<SavedTripsCubit>().loadTrips();
+        _cubit.loadTrips();
         await Future.delayed(const Duration(milliseconds: 500));
       },
       child: ListView(

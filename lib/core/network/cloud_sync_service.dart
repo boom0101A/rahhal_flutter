@@ -161,6 +161,12 @@ class CloudSyncService {
           .collection('trips')
           .doc(tripId)
           .delete();
+
+      // Confirmed gone from the cloud — the tombstone has done its job, so
+      // stop carrying it forever. If this delete never runs (offline, app
+      // killed) or fails, the row stays and restoreTripsFromCloud() both
+      // keeps skipping the trip and keeps retrying this same delete.
+      await _dbHelper.delete('deleted_trip_ids', where: 'trip_id = ?', whereArgs: [tripId]);
     } catch (e) {
       debugPrint('CloudSyncService: Error deleting trip $tripId from cloud: $e');
     }
@@ -196,8 +202,12 @@ class CloudSyncService {
   Future<void> restoreTripsFromCloud(String uid) async {
     try {
       final cloudTrips = await fetchTripsFromCloud(uid);
+      final deletedIds = (await _dbHelper.query('deleted_trip_ids'))
+          .map((row) => row['trip_id'] as String)
+          .toSet();
       var restoredCount = 0;
       var skippedCount = 0;
+      var tombstonedCount = 0;
 
       for (final tripData in cloudTrips) {
         // Isolated per trip — one malformed/legacy cloud document (missing
@@ -208,6 +218,17 @@ class CloudSyncService {
           if (tripId == null || tripId.isEmpty) {
             skippedCount++;
             debugPrint('CloudSyncService: Skipping a cloud trip with no id');
+            continue;
+          }
+
+          // Deliberately deleted locally — a cloud copy still existing here
+          // means that deletion's fire-and-forget Firestore call never
+          // finished (app closed too soon, was offline, etc.). Never
+          // resurrect it, and take the opportunity to retry the delete so
+          // this stops recurring on every future launch.
+          if (deletedIds.contains(tripId)) {
+            tombstonedCount++;
+            unawaited(deleteTripFromCloud(tripId));
             continue;
           }
 
@@ -230,8 +251,9 @@ class CloudSyncService {
         }
       }
 
-      if (skippedCount > 0) {
-        debugPrint('CloudSyncService: restoreTripsFromCloud — $restoredCount restored, $skippedCount skipped');
+      if (skippedCount > 0 || tombstonedCount > 0) {
+        debugPrint(
+            'CloudSyncService: restoreTripsFromCloud — $restoredCount restored, $skippedCount skipped, $tombstonedCount tombstoned (deleted locally, retried cloud cleanup)');
       }
     } catch (e) {
       debugPrint('CloudSyncService: Error restoring trips from cloud: $e');

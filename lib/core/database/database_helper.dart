@@ -17,7 +17,7 @@ class DatabaseHelper {
 
   // ─── Init ─────────────────────────────────────────────────────────────────
 
-  static const int _dbVersion = 12;
+  static const int _dbVersion = 13;
   static const String _dbName = 'rahhal_ai.db';
 
   static final Map<int, List<String>> _migrations = {
@@ -335,6 +335,16 @@ class DatabaseHelper {
       'ALTER TABLE trip_documents_new RENAME TO trip_documents;',
       'CREATE INDEX IF NOT EXISTS idx_documents_trip_id ON trip_documents(trip_id);',
     ],
+    // Deleting a trip locally used to fire-and-forget its Firestore deletion
+    // — if the app closed before that network call finished, the cloud copy
+    // survived, and the very next app launch's restoreTripsFromCloud() would
+    // re-download and resurrect the "deleted" trip since it has no way to
+    // tell "never existed here" apart from "was deliberately removed". This
+    // tombstone table closes that gap: every local delete records the id
+    // here first, restoreTripsFromCloud() skips (and opportunistically
+    // retries deleting) anything listed, and the row is removed once the
+    // cloud delete is confirmed to have actually gone through.
+    13: [_createDeletedTripIdsTable],
   };
 
   Future<Database> _initDatabase() async {
@@ -366,6 +376,7 @@ class DatabaseHelper {
       await txn.execute(_createFavoritesTable);
       await txn.execute(_createExpensesTable);
       await txn.execute(_createDocumentsTable);
+      await txn.execute(_createDeletedTripIdsTable);
 
       // Indexes
       for (final indexQuery in [..._createIndexes, ..._createIndexesV2]) {
@@ -594,6 +605,13 @@ class DatabaseHelper {
     )
   ''';
 
+  static const String _createDeletedTripIdsTable = '''
+    CREATE TABLE IF NOT EXISTS deleted_trip_ids (
+      trip_id     TEXT PRIMARY KEY,
+      deleted_at  TEXT NOT NULL
+    )
+  ''';
+
   static const List<String> _createIndexes = [
     'CREATE INDEX IF NOT EXISTS idx_days_trip_id ON days(trip_id)',
     'CREATE INDEX IF NOT EXISTS idx_stops_trip_id ON stops(trip_id)',
@@ -686,6 +704,7 @@ class DatabaseHelper {
       'trips',
       'favorites',
       'users',
+      'deleted_trip_ids',
     ];
     final db = await database;
     await db.transaction((txn) async {

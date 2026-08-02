@@ -271,24 +271,35 @@ class AuthRepositoryImpl implements AuthRepository {
     final user = firebase_auth.FirebaseAuth.instance.currentUser;
     if (user == null) return Left(AuthFailure('auth/no-current-user'));
 
+    // Remove the cloud copy FIRST: once the auth account is gone the security
+    // rules no longer match this uid, which would strand the document
+    // undeletable.
     try {
-      // Remove the cloud copy FIRST: once the auth account is gone the security
-      // rules no longer match this uid, which would strand the document
-      // undeletable.
-      try {
-        // Firestore never cascade-deletes subcollections when their parent
-        // document is deleted — deleting only users/{uid} would leave every
-        // trip the account ever synced (users/{uid}/trips/*) in the database
-        // forever, unreachable by anyone once the account itself is gone.
-        await _deleteAllUserTrips(user.uid);
-        await FirebaseFirestore.instance
-            .collection('users')
-            .doc(user.uid)
-            .delete();
-      } catch (e) {
-        debugPrint('[Auth] cloud data delete failed (continuing): $e');
-      }
+      // Firestore never cascade-deletes subcollections when their parent
+      // document is deleted — deleting only users/{uid} would leave every
+      // trip the account ever synced (users/{uid}/trips/*) in the database
+      // forever, unreachable by anyone once the account itself is gone.
+      await _deleteAllUserTrips(user.uid);
+      await FirebaseFirestore.instance
+          .collection('users')
+          .doc(user.uid)
+          .delete();
+    } catch (e) {
+      debugPrint('[Auth] cloud data delete failed (continuing): $e');
+    }
 
+    // Wipe local data unconditionally too, BEFORE attempting user.delete()
+    // below — not after it succeeds. user.delete() commonly fails with
+    // requires-recent-login (Firebase requires a fresh sign-in to remove the
+    // Auth record, and most sessions aren't that fresh), which used to leave
+    // the cloud copy gone but every local trip fully intact and the account
+    // still signed in — so "delete account" silently did nothing from the
+    // user's point of view: same data, still logged in, reachable again on
+    // the next sign-in. The user's data must not survive their explicit
+    // deletion request just because this last, separate step failed.
+    await clearLocalData();
+
+    try {
       // Also drop the Google session so the next sign-in shows the account
       // picker instead of silently reusing the deleted one.
       try {
@@ -298,8 +309,10 @@ class AuthRepositoryImpl implements AuthRepository {
       await user.delete();
       return const Right(null);
     } on firebase_auth.FirebaseAuthException catch (e) {
-      // Firebase refuses deletion on a stale session — surfaced verbatim so the
-      // UI can tell the user to sign in again rather than showing a generic error.
+      // Data is already gone at this point either way — this failure only
+      // means the Firebase Auth record itself is still there. Surfaced
+      // verbatim so the UI can tell the user to sign in again and retry to
+      // remove that too, rather than showing a generic error.
       return Left(AuthFailure('auth/${e.code}'));
     } catch (e) {
       return Left(AuthFailure('auth/delete-failed: ${e.toString()}'));

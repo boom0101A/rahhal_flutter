@@ -85,6 +85,19 @@ class AppColors {
           ? inputBorder
           : inputBorderLight;
 
+  /// The "planned" trip status colour.
+  ///
+  /// The charts' `chart3` blue (#4A90D9) was used here, but it only scores a
+  /// 3.3:1 contrast ratio against the light theme's near-white card — under
+  /// the 4.5:1 minimum for text — which is why the "مخططة" badge read as a
+  /// washed-out grey-blue. These two are picked per theme instead: 5.7:1 on
+  /// light, 7.9:1 on dark. Charts keep `chart3` since a chart segment is a
+  /// filled area, not small text, and doesn't have the same requirement.
+  static Color adaptiveStatusPlanned(BuildContext context) =>
+      Theme.of(context).brightness == Brightness.dark
+          ? const Color(0xFF64B5F6)
+          : const Color(0xFF1565C0);
+
   // ═══ Charts ═══
   static const Color chart1 = accentAmber;
   static const Color chart2 = accentTurquoise;

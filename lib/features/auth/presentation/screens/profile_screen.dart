@@ -26,10 +26,25 @@ class _ProfileScreenState extends State<ProfileScreen> {
   int? _visitedPlaces;
   int? _messagesSent;
 
+  /// Owned here, not created inside `build()`'s BlocProvider — otherwise the
+  /// provider sits BELOW this State and `context.read` from `_refreshAll`
+  /// throws "Could not find the correct Provider", silently breaking
+  /// pull-to-refresh (so the trip count never updated after a deletion).
+  /// Same root cause as the saved-trips screen.
+  late final SavedTripsCubit _tripsCubit;
+
   @override
   void initState() {
     super.initState();
+    _tripsCubit = sl<SavedTripsCubit>()..loadTrips();
     _loadStats();
+  }
+
+  @override
+  void dispose() {
+    // BlocProvider.value does not own the cubit, so we close it.
+    _tripsCubit.close();
+    super.dispose();
   }
 
   Future<void> _loadStats() async {
@@ -47,7 +62,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
 
   Future<void> _refreshAll() async {
     await Future.wait([
-      context.read<SavedTripsCubit>().loadTrips(),
+      _tripsCubit.loadTrips(),
       _loadStats(),
     ]);
   }
@@ -56,8 +71,8 @@ class _ProfileScreenState extends State<ProfileScreen> {
   Widget build(BuildContext context) {
     final strings = AppStrings.of(context);
 
-    return BlocProvider(
-      create: (_) => sl<SavedTripsCubit>()..loadTrips(),
+    return BlocProvider.value(
+      value: _tripsCubit,
       child: BlocBuilder<AuthCubit, AuthState>(
         builder: (context, authState) {
           final user = authState is AuthAuthenticated ? authState.user : null;
@@ -154,10 +169,22 @@ class _ProfileScreenState extends State<ProfileScreen> {
     final displayName = user?.displayName ?? strings.authGuestMode;
     final email = user?.email ?? '';
 
+    // This header was a `const BoxDecoration` with a fixed navy gradient and
+    // hardcoded white text, so it stayed dark while the rest of the screen
+    // went light — the one section of the app that ignored the theme.
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    final headerColors = isDark
+        ? const [Color(0xFF1B2A47), Color(0xFF0D1B2A)]
+        : const [Color(0xFFE8EDF5), Color(0xFFF5F7FA)];
+    final onHeaderPrimary =
+        isDark ? Colors.white : AppColors.textPrimaryLight;
+    final onHeaderSecondary =
+        isDark ? Colors.white70 : AppColors.textSecondaryLight;
+
     return Container(
-      decoration: const BoxDecoration(
+      decoration: BoxDecoration(
         gradient: LinearGradient(
-          colors: [Color(0xFF1B2A47), Color(0xFF0D1B2A)],
+          colors: headerColors,
           begin: Alignment.topCenter,
           end: Alignment.bottomCenter,
         ),
@@ -185,7 +212,9 @@ class _ProfileScreenState extends State<ProfileScreen> {
                         decoration: BoxDecoration(
                           color: AppColors.accentAmber,
                           shape: BoxShape.circle,
-                          border: Border.all(color: const Color(0xFF0D1B2A), width: 2),
+                          // Ring matches the header behind it so the badge
+                          // reads as lifted off the avatar in both themes.
+                          border: Border.all(color: headerColors.last, width: 2),
                         ),
                         child: const Icon(Icons.edit_rounded,
                             size: 14, color: Colors.black),
@@ -197,13 +226,13 @@ class _ProfileScreenState extends State<ProfileScreen> {
             const SizedBox(height: 12),
             Text(
               displayName,
-              style: AppTextStyles.headlineMedium.copyWith(color: Colors.white),
+              style: AppTextStyles.headlineMedium.copyWith(color: onHeaderPrimary),
             ),
             if (email.isNotEmpty) ...[
               const SizedBox(height: 4),
               Text(
                 email,
-                style: AppTextStyles.bodySmall.copyWith(color: Colors.white70),
+                style: AppTextStyles.bodySmall.copyWith(color: onHeaderSecondary),
               ),
             ],
           ],

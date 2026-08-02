@@ -93,8 +93,10 @@ class AuthCubit extends Cubit<AuthState> {
   /// Deletes the account, its cloud data, and every trip stored on this device.
   ///
   /// Returns null on success, or an error code the UI can localize — notably
-  /// `auth/requires-recent-login`, which means the user must sign in again
-  /// before the deletion is permitted.
+  /// `auth/requires-recent-login`, which means the Auth account itself still
+  /// needs the user to sign in again before it can be removed too. Either
+  /// way, the repository has already wiped the cloud/local data by the time
+  /// this returns.
   Future<String?> deleteAccount() async {
     emit(const AuthLoading());
     final result = await _repository.deleteAccount();
@@ -102,16 +104,13 @@ class AuthCubit extends Cubit<AuthState> {
 
     return result.fold(
       (failure) {
-        // Keep the user signed in so they can re-authenticate and retry.
+        // Keep the user signed in so they can re-authenticate and retry —
+        // their data is already gone at this point regardless.
         final user = _repository.getCurrentUser();
         emit(user != null ? AuthAuthenticated(user) : const AuthInitial());
         return failure.message;
       },
-      (_) async {
-        // The cloud copy is gone; leaving local trips behind would resurrect
-        // them on the next sign-in via cloud sync and contradict the deletion.
-        await _repository.clearLocalData();
-        if (isClosed) return null;
+      (_) {
         emit(const AuthInitial());
         return null;
       },

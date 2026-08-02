@@ -11,11 +11,19 @@ abstract class AuthRepository {
   Future<Either<Failure, UserEntity>> signInWithGoogle();
   Future<Either<Failure, void>> signOut();
 
-  /// Permanently deletes the signed-in account and its cloud data.
+  /// Permanently deletes the signed-in account's cloud and local data, and
+  /// then the Firebase Auth account itself.
   ///
   /// Required by Google Play's account-deletion policy for any app that lets
-  /// users create an account. Fails with `auth/requires-recent-login` when the
-  /// session is too old — the caller must re-authenticate and retry.
+  /// users create an account. The cloud/local data wipe happens unconditionally
+  /// once called — it does NOT wait on the Firebase Auth account removal
+  /// succeeding, because that step alone can fail with
+  /// `auth/requires-recent-login` on a session that isn't fresh enough (a
+  /// common, hard-to-avoid case), and leaving the user's data intact after
+  /// they explicitly asked to delete it would itself be a bug regardless of
+  /// whether the Auth record follows. On that specific failure the data is
+  /// already gone; the caller should prompt the user to sign in again and
+  /// retry so the Auth account itself is removed too.
   Future<Either<Failure, void>> deleteAccount();
 
   /// Updates the display name shown throughout the app, and returns the
@@ -33,9 +41,8 @@ abstract class AuthRepository {
   /// never made it to the cloud (e.g. edits made while offline).
   Future<void> restoreCloudData(String uid);
 
-  /// Wipes every locally-stored row (trips and everything under them). Used
-  /// only after [deleteAccount] succeeds — leaving local data behind would
-  /// let it resurface via cloud sync on a future sign-in with the same
-  /// account, contradicting the deletion the user just asked for.
+  /// Wipes every locally-stored row (trips and everything under them).
+  /// Called automatically by [deleteAccount]; exposed separately in case a
+  /// caller ever needs a local-only wipe on its own.
   Future<void> clearLocalData();
 }

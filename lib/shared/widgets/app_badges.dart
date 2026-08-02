@@ -118,22 +118,28 @@ class StatusBadge extends StatelessWidget {
   Widget build(BuildContext context) {
     final strings = AppStrings.of(context);
     final (label, color) = switch (status) {
-      'planned' => (strings.statusPlanned, AppColors.chart3),
+      'planned' => (strings.statusPlanned, AppColors.adaptiveStatusPlanned(context)),
       'active' => (strings.statusActive, AppColors.accentAmber),
       'completed' => (strings.statusCompleted, AppColors.success),
       _ => (status, AppColors.adaptiveTextSecondary(context)),
     };
 
+    // A 12%-alpha fill behind a mid-tone colour made the whole chip recede
+    // into the card. Denser fill, a fully-opaque border and a heavier weight
+    // make it read as a real status marker in both themes.
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
       decoration: BoxDecoration(
-        color: color.withValues(alpha: 0.12),
+        color: color.withValues(alpha: 0.18),
         borderRadius: BorderRadius.circular(50),
-        border: Border.all(color: color.withValues(alpha: 0.3)),
+        border: Border.all(color: color.withValues(alpha: 0.65)),
       ),
       child: Text(
         label,
-        style: AppTextStyles.labelSmall.copyWith(color: color),
+        style: AppTextStyles.labelSmall.copyWith(
+          color: color,
+          fontWeight: FontWeight.w700,
+        ),
       ),
     );
   }
