@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_animate/flutter_animate.dart';
 import 'package:go_router/go_router.dart';
@@ -933,14 +935,6 @@ class _TripInputScreenState extends State<TripInputScreen> {
       child: Column(
         mainAxisSize: MainAxisSize.min,
         children: [
-          Text(
-            strings.planGenerationTimeHint,
-            textAlign: TextAlign.center,
-            style: AppTextStyles.bodySmall.copyWith(
-              color: AppColors.adaptiveTextSecondary(context),
-            ),
-          ),
-          const SizedBox(height: 10),
           GradientButton(
             label: strings.planGenerateButton,
             icon: Icons.auto_awesome_rounded,
@@ -1017,11 +1011,13 @@ class _TripInputScreenState extends State<TripInputScreen> {
 
     setState(() => _isGenerating = true);
 
-    // Navigate to generating screen (which runs the AI generation). Awaiting
-    // it means that if the user backs out of generation instead of it
-    // completing (which navigates away from this screen entirely via
-    // context.go), this screen is still here and the button re-enables.
-    await context.push('/plan/generating', extra: {
+    // Deliberately NOT awaited. The generating screen never pops — it always
+    // leaves via `context.go` (to the finished trip, or back to '/plan' on
+    // error/cancel), which REPLACES the stack instead of popping. A pushed
+    // route removed that way never completes its future, so the previous
+    // `await` here hung forever and left this button spinning until the app
+    // was killed and relaunched — exactly the stuck spinner that was reported.
+    unawaited(context.push('/plan/generating', extra: {
       'destination': destination,
       'durationDays': _days,
       'budgetTier': _budget,
@@ -1032,8 +1028,12 @@ class _TripInputScreenState extends State<TripInputScreen> {
       'userLng': _detectedLng,
       'countryCode': _detectedCountryCode,
       'targetBudgetUsd': targetBudgetUsd,
-    });
+    }));
 
+    // The flag exists only to swallow a double-tap while the push is in
+    // flight; the generating screen covers this one immediately, so a short
+    // window is enough — and, unlike awaiting, it can never get stuck.
+    await Future<void>.delayed(const Duration(milliseconds: 700));
     if (mounted) setState(() => _isGenerating = false);
   }
 }

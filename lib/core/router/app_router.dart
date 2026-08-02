@@ -11,6 +11,7 @@ import '../../features/trip_planner/presentation/screens/trip_dashboard_screen.d
 import '../../features/map/presentation/screens/map_full_screen.dart';
 import '../../features/ai_chat/presentation/screens/chat_screen.dart';
 import '../../features/auth/presentation/screens/settings_screen.dart';
+import '../../features/auth/presentation/screens/notification_settings_screen.dart';
 import '../../features/nearby/presentation/screens/nearby_screen.dart';
 import '../../features/auth/presentation/screens/profile_screen.dart';
 import '../../features/itinerary/presentation/screens/stop_detail_screen.dart';
@@ -135,6 +136,21 @@ class AppRouter {
         name: 'settings',
         pageBuilder: (context, state) =>
             slideUpPage(state: state, child: const SettingsScreen()),
+        routes: [
+          // Profile's "Notifications" shortcut pushed '/settings/notifications',
+          // which was never declared here — so it fell through to the router's
+          // error page instead of opening anything. Settings reaches the same
+          // screen via a direct MaterialPageRoute, which is why only the
+          // Profile entry appeared broken.
+          GoRoute(
+            path: 'notifications',
+            name: 'notificationSettings',
+            pageBuilder: (context, state) => slideUpPage(
+              state: state,
+              child: const NotificationSettingsScreen(),
+            ),
+          ),
+        ],
       ),
 
       // ── Nearby ("What's around me") ──────────────────────────────────────

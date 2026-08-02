@@ -117,6 +117,10 @@ class _SavedTripsScreenState extends State<SavedTripsScreen> {
     return result ?? false;
   }
 
+  /// How long the user has to undo. One constant so the SnackBar, its visible
+  /// countdown and the actual delete timer can never drift apart.
+  static const Duration _undoWindow = Duration(seconds: 4);
+
   void _scheduleDelete(TripEntity trip) {
     Haptics.warning();
     final strings = AppStrings.of(context);
@@ -124,25 +128,39 @@ class _SavedTripsScreenState extends State<SavedTripsScreen> {
     setState(() => _pendingDeleteIds.add(trip.id));
 
     _deleteTimers[trip.id]?.cancel();
-    _deleteTimers[trip.id] = Timer(const Duration(seconds: 4), () {
+    _deleteTimers[trip.id] = Timer(_undoWindow, () {
       _deleteTimers.remove(trip.id);
       _cubit.deleteTrip(trip.id);
     });
 
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Text(strings.tripDeleted),
-        duration: const Duration(seconds: 4),
-        action: SnackBarAction(
-          label: strings.undo,
-          onPressed: () {
-            _deleteTimers[trip.id]?.cancel();
-            _deleteTimers.remove(trip.id);
-            if (mounted) setState(() => _pendingDeleteIds.remove(trip.id));
-          },
+    // Deleting several trips in a row used to queue one SnackBar per trip,
+    // each waiting out the previous one's 4s — so the bar looked like it
+    // never went away. Only the newest undo is meaningful, so drop any
+    // still on screen first.
+    ScaffoldMessenger.of(context)
+      ..clearSnackBars()
+      ..showSnackBar(
+        SnackBar(
+          duration: _undoWindow,
+          content: Row(
+            children: [
+              Expanded(child: Text(strings.tripDeleted)),
+              const SizedBox(width: 12),
+              // Makes the undo window visible instead of leaving the user
+              // guessing how long "تراجع" stays available.
+              _UndoCountdown(duration: _undoWindow),
+            ],
+          ),
+          action: SnackBarAction(
+            label: strings.undo,
+            onPressed: () {
+              _deleteTimers[trip.id]?.cancel();
+              _deleteTimers.remove(trip.id);
+              if (mounted) setState(() => _pendingDeleteIds.remove(trip.id));
+            },
+          ),
         ),
-      ),
-    );
+      );
   }
 
   Widget _buildSearchField(AppStrings strings) {
@@ -488,6 +506,53 @@ class _SavedTripsScreenState extends State<SavedTripsScreen> {
           if (confirmed) _scheduleDelete(trip);
         },
       ),
+    );
+  }
+}
+
+/// Small ring + digit that counts the undo window down to zero.
+///
+/// Driven by a single TweenAnimationBuilder rather than a Timer so it cannot
+/// outlive the SnackBar it sits in — when the bar goes, so does the animation.
+class _UndoCountdown extends StatelessWidget {
+  final Duration duration;
+
+  const _UndoCountdown({required this.duration});
+
+  @override
+  Widget build(BuildContext context) {
+    final seconds = duration.inSeconds;
+    // The SnackBar paints on `inverseSurface`, so its own `inverseOnSurface`
+    // is the only colour guaranteed to stay legible in both themes.
+    final fg = Theme.of(context).colorScheme.onInverseSurface;
+
+    return TweenAnimationBuilder<double>(
+      tween: Tween(begin: seconds.toDouble(), end: 0),
+      duration: duration,
+      builder: (context, remaining, _) {
+        return SizedBox(
+          width: 24,
+          height: 24,
+          child: Stack(
+            alignment: Alignment.center,
+            children: [
+              CircularProgressIndicator(
+                value: seconds == 0 ? 0 : remaining / seconds,
+                strokeWidth: 2,
+                color: fg,
+                backgroundColor: fg.withValues(alpha: 0.25),
+              ),
+              Text(
+                '${remaining.ceil()}',
+                style: AppTextStyles.labelSmall.copyWith(
+                  color: fg,
+                  fontWeight: FontWeight.w700,
+                ),
+              ),
+            ],
+          ),
+        );
+      },
     );
   }
 }

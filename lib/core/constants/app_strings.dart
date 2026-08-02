@@ -96,7 +96,6 @@ class AppStrings {
   String get planTargetBudgetHint => _t('مثال: 500', 'e.g. 500');
   String get planTargetBudgetHelper => _t('سيحاول الذكاء الاصطناعي التخطيط ضمن هذا المبلغ بالدولار لكامل الرحلة', 'The AI will try to plan the whole trip within this amount in USD');
   String get validationInvalidBudget => _t('الرجاء إدخال مبلغ صحيح أكبر من صفر', 'Please enter a valid amount greater than zero');
-  String get planGenerationTimeHint => _t('قد يستغرق التوليد حتى دقيقتين إذا كان الخادم في وضع السكون', 'Generation may take up to two minutes if the server was asleep');
   String get defaultDestination => _t('إسطنبول', 'Istanbul');
   String get startDateTitle => _t('تاريخ بدء الرحلة', 'Trip Start Date');
   String get startDateHint => _t('اختر تاريخ البدء (اختياري)', 'Select start date (optional)');
