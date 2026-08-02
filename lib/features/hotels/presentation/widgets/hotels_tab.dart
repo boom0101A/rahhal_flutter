@@ -267,6 +267,8 @@ class _MapLocationButton extends StatelessWidget {
       lat: hotel.latitude,
       lon: hotel.longitude,
       placeId: hotel.placeId,
+      persistTable: 'hotels',
+      persistRowId: hotel.id,
     );
 
     if (!launched) {

@@ -323,6 +323,8 @@ class _StopDetailScreenState extends State<StopDetailScreen> {
                               lat: stop.latitude,
                               lon: stop.longitude,
                               placeId: stop.placeId,
+                              persistTable: 'stops',
+                              persistRowId: stop.id,
                             ),
                             icon: const Icon(Icons.directions_outlined, size: 18),
                             label: Text(

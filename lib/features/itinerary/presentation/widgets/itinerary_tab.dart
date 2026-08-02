@@ -570,6 +570,8 @@ class _StopTimelineItem extends StatelessWidget {
                                     lat: stop.latitude,
                                     lon: stop.longitude,
                                     placeId: stop.placeId,
+                                    persistTable: 'stops',
+                                    persistRowId: stop.id,
                                   ),
                                   child: Container(
                                     padding: const EdgeInsets.symmetric(vertical: 6, horizontal: 8),

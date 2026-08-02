@@ -67,6 +67,119 @@ const placesCache = new Map();
 // restarts the container; the TTL is an upper bound, not a guarantee.)
 const PLACES_CACHE_TTL_MS = 7 * 24 * 60 * 60 * 1000; // 7 days
 
+// ─── Persisting that cache across restarts ──────────────────────────────────
+//
+// The 7-day TTL above was never actually realised: Railway replaces the
+// container on every deploy (and after idle), so the Map started empty each
+// time and the same lookups were paid for again out of a 100/day quota.
+//
+// Firestore is already a dependency here (firebase-admin, used for auth), so
+// it doubles as free durable storage for the cache.
+//
+// Design constraints, deliberately conservative — this must be incapable of
+// breaking anything that works today:
+//   * The in-memory Map stays the single source of truth and keeps its exact
+//     synchronous API, so every existing read/iterate/sweep site is untouched.
+//   * Reads happen ONCE at startup (a warm-up), never on the request path, so
+//     no request can get slower or start depending on Firestore.
+//   * Writes are fire-and-forget with their own catch.
+//   * With no FIREBASE_SERVICE_ACCOUNT — or if Firestore errors for any
+//     reason — every path below no-ops and the server behaves exactly as it
+//     did before.
+const crypto = require('crypto');
+const PLACES_CACHE_COLLECTION = 'places_cache';
+const PLACES_CACHE_WARM_LIMIT = 1000;
+// Firestore's hard per-document ceiling is 1 MiB; stay well under it.
+const PLACES_CACHE_MAX_DOC_BYTES = 700 * 1024;
+
+let _cacheDb;           // undefined = not tried yet, null = unavailable
+function placesCacheDb() {
+  if (_cacheDb !== undefined) return _cacheDb;
+  _cacheDb = null;
+  try {
+    if (!admin || !process.env.FIREBASE_SERVICE_ACCOUNT) return _cacheDb;
+    // authenticateFirebaseToken initialises the same default app lazily and
+    // guards on apps.length too, so whichever runs first wins and the other
+    // reuses it.
+    if (!admin.apps.length) {
+      admin.initializeApp({
+        credential: admin.credential.cert(JSON.parse(process.env.FIREBASE_SERVICE_ACCOUNT)),
+      });
+    }
+    _cacheDb = admin.firestore();
+  } catch (e) {
+    console.warn('[CACHE] Firestore unavailable — memory-only cache:', e.message);
+    _cacheDb = null;
+  }
+  return _cacheDb;
+}
+
+// Cache keys contain '/', '|' and commas, none of which are safe in a
+// Firestore document id — hash to a fixed-length one and keep the real key in
+// the document so the warm-up can restore it.
+const placesCacheDocId = (key) =>
+  crypto.createHash('sha1').update(key).digest('hex');
+
+/// Mirrors one entry into Firestore. Never awaited, never throws.
+function persistPlacesCacheEntry(key, entry) {
+  const db = placesCacheDb();
+  if (!db) return;
+  let payload;
+  try {
+    // Stored as a JSON string rather than a nested object: Firestore rejects
+    // `undefined` and nested arrays, both of which appear in Places payloads.
+    payload = JSON.stringify(entry.data ?? null);
+  } catch (_) {
+    return; // not serialisable — memory-only for this one
+  }
+  if (payload.length > PLACES_CACHE_MAX_DOC_BYTES) return;
+  db.collection(PLACES_CACHE_COLLECTION)
+    .doc(placesCacheDocId(key))
+    .set({ key, payload, timestamp: entry.timestamp })
+    .catch((e) => console.warn('[CACHE] persist failed (ignored):', e.message));
+}
+
+/// The single write path for the Places cache: memory first (authoritative),
+/// Firestore mirrored behind it.
+function placesCacheSet(key, entry) {
+  placesCache.set(key, entry);
+  persistPlacesCacheEntry(key, entry);
+}
+
+/// Loads still-fresh entries back into memory at boot. Fire-and-forget: a
+/// request arriving mid-warm-up simply misses and pays for that one lookup,
+/// exactly as it would today.
+async function warmPlacesCache() {
+  const db = placesCacheDb();
+  if (!db) return;
+  try {
+    const cutoff = Date.now() - PLACES_CACHE_TTL_MS;
+    const snap = await db
+      .collection(PLACES_CACHE_COLLECTION)
+      .where('timestamp', '>=', cutoff)
+      .orderBy('timestamp', 'desc')
+      .limit(PLACES_CACHE_WARM_LIMIT)
+      .get();
+
+    let loaded = 0;
+    snap.forEach((doc) => {
+      const d = doc.data();
+      if (!d || typeof d.key !== 'string' || typeof d.payload !== 'string') return;
+      // Anything already learned since boot is newer — don't overwrite it.
+      if (placesCache.has(d.key)) return;
+      try {
+        placesCache.set(d.key, { data: JSON.parse(d.payload), timestamp: d.timestamp });
+        loaded++;
+      } catch (_) {
+        // A corrupt document must not abort the rest of the warm-up.
+      }
+    });
+    console.log(`[CACHE] warmed ${loaded} Places entries from Firestore`);
+  } catch (e) {
+    console.warn('[CACHE] warm-up skipped (ignored):', e.message);
+  }
+}
+
 // Circuit breaker for the Places free tier (100 searches/day). Once the daily
 // quota is gone every further call fails anyway, so a whole trip would spend
 // seconds hammering a dead endpoint (measured: 2.2s wasted on 14 lookups that
@@ -1246,7 +1359,7 @@ async function verifyPlaceWithGoogle(nameEn, cityEn, centerLat, centerLng) {
 
     const results = searchRes.data.places;
     if (!results || results.length === 0) {
-      placesCache.set(cacheKey, { data: null, timestamp: now });
+      placesCacheSet(cacheKey, { data: null, timestamp: now });
       console.warn(`[PLACES] Not found: "${nameEn}" in ${cityEn}`);
       return null;
     }
@@ -1266,7 +1379,7 @@ async function verifyPlaceWithGoogle(nameEn, cityEn, centerLat, centerLng) {
         console.warn(
           `[PLACES] Rejected "${nameEn}" — match is ${distKm.toFixed(0)}km from ${cityEn}, likely wrong city/governorate`
         );
-        placesCache.set(cacheKey, { data: null, timestamp: now });
+        placesCacheSet(cacheKey, { data: null, timestamp: now });
         return null;
       }
     }
@@ -1279,7 +1392,7 @@ async function verifyPlaceWithGoogle(nameEn, cityEn, centerLat, centerLng) {
       address: top.formattedAddress || '',
       placeId: top.id,
     };
-    placesCache.set(cacheKey, { data: verified, timestamp: now });
+    placesCacheSet(cacheKey, { data: verified, timestamp: now });
     console.log(`[PLACES] Verified: "${nameEn}" → lat=${verified.lat}, lng=${verified.lng}, placeId=${verified.placeId}`);
     return verified;
 
@@ -1291,7 +1404,7 @@ async function verifyPlaceWithGoogle(nameEn, cityEn, centerLat, centerLng) {
     if (!tripPlacesBreaker(message)) {
       console.error(`[PLACES] Text Search error for "${nameEn}":`, message);
     }
-    placesCache.set(cacheKey, { data: null, timestamp: now });
+    placesCacheSet(cacheKey, { data: null, timestamp: now });
     return null;
   }
 }
@@ -1822,7 +1935,7 @@ async function fetchRealRestaurants(cityEn, centerLat, centerLng, countryCode, l
     };
   });
 
-  placesCache.set(cacheKey, { data: mapped, timestamp: now });
+  placesCacheSet(cacheKey, { data: mapped, timestamp: now });
   console.log(`[RESTAURANTS] ${mapped.length} real restaurants sourced for "${cityEn}"`);
   return mapped;
 }
@@ -2033,7 +2146,7 @@ async function fetchRealHotels(cityEn, centerLat, centerLng, limit) {
     };
   });
 
-  placesCache.set(cacheKey, { data: mapped, timestamp: now });
+  placesCacheSet(cacheKey, { data: mapped, timestamp: now });
   console.log(`[HOTELS] ${mapped.length} real hotels sourced for "${cityEn}"`);
   return mapped;
 }
@@ -3714,7 +3827,7 @@ app.get('/api/resolve-place', async (req, res) => {
         }
       : { place_id: null, reason: 'no-match-near-coordinates' };
 
-    placesCache.set(cacheKey, { data: payload, timestamp: now });
+    placesCacheSet(cacheKey, { data: payload, timestamp: now });
     if (payload.place_id) {
       console.log(`[RESOLVE-PLACE] "${name}" → ${payload.place_id} (${payload.distance_km}km)`);
     } else {
@@ -3859,4 +3972,8 @@ app.listen(PORT, () => {
   console.log(`Press Ctrl+C to terminate.`);
   startSelfPing();
   startCacheSweeper();
+  // Not awaited: the server must start serving immediately. Requests that
+  // arrive before this finishes just miss the cache, exactly as they would
+  // have without it.
+  warmPlacesCache();
 });

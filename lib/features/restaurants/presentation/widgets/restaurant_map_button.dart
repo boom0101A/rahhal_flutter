@@ -36,6 +36,8 @@ class RestaurantMapButton extends StatelessWidget {
       lat: restaurant.latitude,
       lon: restaurant.longitude,
       placeId: restaurant.placeId,
+      persistTable: 'restaurants',
+      persistRowId: restaurant.id,
     );
 
     if (!launched) {

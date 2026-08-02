@@ -1,9 +1,39 @@
 import 'package:flutter/foundation.dart';
 import 'package:url_launcher/url_launcher.dart';
+import '../database/database_helper.dart';
 import '../di/injection.dart';
 import 'place_resolver_service.dart';
 
 class MapLauncherService {
+  /// Tables a resolved `place_id` may be written back to. A whitelist because
+  /// the table name goes into SQL unparameterised.
+  static const _persistableTables = {'stops', 'restaurants', 'hotels'};
+
+  /// Stores a freshly-resolved `place_id` on the row it belongs to.
+  ///
+  /// Resolution was previously cached only in memory — on the device AND on
+  /// the server — so every app restart paid for the same lookup again out of
+  /// a 100/day quota. Writing it to the row that already has a `place_id`
+  /// column makes it a once-ever cost, and means the exact Google place card
+  /// opens instantly (and offline) from then on.
+  static Future<void> _rememberPlaceId({
+    required String table,
+    required String rowId,
+    required String placeId,
+  }) async {
+    if (!_persistableTables.contains(table)) return;
+    try {
+      await sl<DatabaseHelper>().update(
+        table,
+        {'place_id': placeId},
+        where: 'id = ?',
+        whereArgs: [rowId],
+      );
+    } catch (e) {
+      // Purely an optimisation — never let it affect opening the map.
+      debugPrint('[Maps] could not persist place_id: $e');
+    }
+  }
   /// Opens the location in Google Maps, aiming to land on the actual PLACE CARD
   /// (name, photos, reviews, hours) rather than a bare coordinate pin.
   ///
@@ -16,12 +46,18 @@ class MapLauncherService {
   ///      is the fix for places we don't have a place_id for.
   ///   3. name only → a plain name search.
   ///   4. coordinates only → a coordinate pin (last resort — no card).
+  ///
+  /// [persistTable] / [persistRowId] are optional: pass them and a newly
+  /// resolved `place_id` is saved onto that row, so the lookup is never paid
+  /// for twice. Omitting them keeps the exact previous behaviour.
   static Future<bool> openInGoogleMaps({
     required String placeName,
     String? city,
     double? lat,
     double? lon,
     String? placeId,
+    String? persistTable,
+    String? persistRowId,
   }) async {
     try {
       final name = placeName.trim();
@@ -45,6 +81,18 @@ class MapLauncherService {
           );
         } catch (e) {
           debugPrint('Place resolution skipped: $e');
+        }
+        // Only worth storing when we actually learned something new.
+        if (resolvedPlaceId != null &&
+            resolvedPlaceId.trim().isNotEmpty &&
+            persistTable != null &&
+            persistRowId != null &&
+            persistRowId.isNotEmpty) {
+          await _rememberPlaceId(
+            table: persistTable,
+            rowId: persistRowId,
+            placeId: resolvedPlaceId.trim(),
+          );
         }
       }
       // Include the city/area only as extra disambiguation for the name search.
