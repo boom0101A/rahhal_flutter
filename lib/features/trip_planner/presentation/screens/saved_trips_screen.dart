@@ -124,43 +124,61 @@ class _SavedTripsScreenState extends State<SavedTripsScreen> {
   void _scheduleDelete(TripEntity trip) {
     Haptics.warning();
     final strings = AppStrings.of(context);
+    final onSurface = AppColors.adaptiveTextPrimary(context);
 
     setState(() => _pendingDeleteIds.add(trip.id));
+
+    // Deleting several trips in a row used to queue one SnackBar per trip,
+    // each waiting out the previous one's window — so the bar looked like it
+    // never went away. Only the newest undo is meaningful, so drop any
+    // still on screen first.
+    final messenger = ScaffoldMessenger.of(context)..clearSnackBars();
+
+    final controller = messenger.showSnackBar(
+      SnackBar(
+        duration: _undoWindow,
+        // Material's default SnackBar paints on `inverseSurface`, i.e. it
+        // deliberately INVERTS the theme — a dark slab on the light theme and
+        // a pale one on dark. That's why this bar was the one element that
+        // never matched the app. Use the app's own card surface instead.
+        backgroundColor: AppColors.adaptiveBgCard(context),
+        behavior: SnackBarBehavior.fixed,
+        elevation: 8,
+        content: Row(
+          children: [
+            Expanded(
+              child: Text(strings.tripDeleted, style: TextStyle(color: onSurface)),
+            ),
+            const SizedBox(width: 12),
+            // Makes the undo window visible instead of leaving the user
+            // guessing how long "تراجع" stays available.
+            _UndoCountdown(duration: _undoWindow, color: onSurface),
+          ],
+        ),
+        action: SnackBarAction(
+          label: strings.undo,
+          textColor: AppColors.accentAmber,
+          onPressed: () {
+            _deleteTimers[trip.id]?.cancel();
+            _deleteTimers.remove(trip.id);
+            if (mounted) setState(() => _pendingDeleteIds.remove(trip.id));
+          },
+        ),
+      ),
+    );
 
     _deleteTimers[trip.id]?.cancel();
     _deleteTimers[trip.id] = Timer(_undoWindow, () {
       _deleteTimers.remove(trip.id);
+      // Close THIS bar explicitly rather than trusting SnackBar.duration.
+      // The framework only starts that timer once the entrance animation
+      // reports completion, which on device left the bar sitting at "0" and
+      // never dismissing. Closing the controller we own is deterministic, and
+      // targeting the controller (not hideCurrentSnackBar) means we can never
+      // dismiss a newer trip's undo bar by accident.
+      controller.close();
       _cubit.deleteTrip(trip.id);
     });
-
-    // Deleting several trips in a row used to queue one SnackBar per trip,
-    // each waiting out the previous one's 4s — so the bar looked like it
-    // never went away. Only the newest undo is meaningful, so drop any
-    // still on screen first.
-    ScaffoldMessenger.of(context)
-      ..clearSnackBars()
-      ..showSnackBar(
-        SnackBar(
-          duration: _undoWindow,
-          content: Row(
-            children: [
-              Expanded(child: Text(strings.tripDeleted)),
-              const SizedBox(width: 12),
-              // Makes the undo window visible instead of leaving the user
-              // guessing how long "تراجع" stays available.
-              _UndoCountdown(duration: _undoWindow),
-            ],
-          ),
-          action: SnackBarAction(
-            label: strings.undo,
-            onPressed: () {
-              _deleteTimers[trip.id]?.cancel();
-              _deleteTimers.remove(trip.id);
-              if (mounted) setState(() => _pendingDeleteIds.remove(trip.id));
-            },
-          ),
-        ),
-      );
   }
 
   Widget _buildSearchField(AppStrings strings) {
@@ -517,14 +535,16 @@ class _SavedTripsScreenState extends State<SavedTripsScreen> {
 class _UndoCountdown extends StatelessWidget {
   final Duration duration;
 
-  const _UndoCountdown({required this.duration});
+  /// Foreground colour, passed in so it matches whatever surface the bar was
+  /// given — the bar now uses the app's card colour, not Material's inverted one.
+  final Color color;
+
+  const _UndoCountdown({required this.duration, required this.color});
 
   @override
   Widget build(BuildContext context) {
     final seconds = duration.inSeconds;
-    // The SnackBar paints on `inverseSurface`, so its own `inverseOnSurface`
-    // is the only colour guaranteed to stay legible in both themes.
-    final fg = Theme.of(context).colorScheme.onInverseSurface;
+    final fg = color;
 
     return TweenAnimationBuilder<double>(
       tween: Tween(begin: seconds.toDouble(), end: 0),
