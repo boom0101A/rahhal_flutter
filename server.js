@@ -180,6 +180,60 @@ async function warmPlacesCache() {
   }
 }
 
+// How often the Firestore copy is pruned, and how much per run.
+//
+// persistPlacesCacheEntry writes one document per cache key and nothing ever
+// deleted them, so every stop name, hotel query and place lookup this
+// deployment has ever seen is still stored. sweepCache() below only touches
+// the in-process Maps.
+//
+// This is safe by construction: warmPlacesCache already ignores anything older
+// than the TTL, so these documents are unreachable BEFORE they're deleted.
+// Pruning cannot change a single response — it's storage hygiene, which is
+// also why it can fail silently.
+//
+// Firestore bills reads and deletes, so this must not become its own bill:
+// daily rather than on the hourly memory sweep (a stale document costs nothing
+// until it's removed, so there's no urgency), and a hard ceiling per run so a
+// pathological collection drains over several days instead of one expensive
+// burst.
+const PLACES_CACHE_PRUNE_INTERVAL_MS = 24 * 60 * 60 * 1000;
+const PLACES_CACHE_PRUNE_BATCH = 400; // Firestore's WriteBatch limit is 500
+const PLACES_CACHE_PRUNE_MAX_PASSES = 5;
+let prunePassRunning = false;
+
+async function prunePlacesCacheFirestore() {
+  const db = placesCacheDb();
+  if (!db) return; // no service account, or Firestore is unreachable
+  if (prunePassRunning) return; // a slow pass must not overlap the next tick
+  prunePassRunning = true;
+  try {
+    const cutoff = Date.now() - PLACES_CACHE_TTL_MS;
+    let removed = 0;
+    for (let pass = 0; pass < PLACES_CACHE_PRUNE_MAX_PASSES; pass++) {
+      const snap = await db
+        .collection(PLACES_CACHE_COLLECTION)
+        .where('timestamp', '<', cutoff)
+        // No fields: only document ids need to cross the wire.
+        .select()
+        .limit(PLACES_CACHE_PRUNE_BATCH)
+        .get();
+      if (snap.empty) break;
+      const batch = db.batch();
+      snap.docs.forEach((d) => batch.delete(d.ref));
+      await batch.commit();
+      removed += snap.size;
+      if (snap.size < PLACES_CACHE_PRUNE_BATCH) break; // caught up
+    }
+    if (removed) console.log(`[CACHE] Firestore prune removed ${removed} expired entries`);
+  } catch (e) {
+    // Same contract as every other Firestore path here: warn and carry on.
+    console.warn('[CACHE] Firestore prune skipped (ignored):', e.message);
+  } finally {
+    prunePassRunning = false;
+  }
+}
+
 // Circuit breaker for the Places free tier (100 searches/day). Once the daily
 // quota is gone every further call fails anyway, so a whole trip would spend
 // seconds hammering a dead endpoint (measured: 2.2s wasted on 14 lookups that
@@ -991,6 +1045,53 @@ const translateLimiter = rateLimit({
   message: { error: 'Too many translation requests, please try again shortly.' },
 });
 
+// ─── Google Places routes ───────────────────────────────────────────────────
+// The global limiter counts REQUESTS; Google bills CALLS, and the ratio is not
+// 1:1 on these three:
+//   /api/nearby-places  → 4 searchNearby per request (NEARBY_GOOGLE_GROUPS)
+//   /api/hotels         → up to 5 (ar + en text, resolveDestinationEN, 2 nearby)
+//   /api/resolve-place  → 1 searchText
+// So 100 requests could mean 400 billable calls against a free searchText tier
+// of 100/day for the whole deployment. The caches below help with repeats, but
+// coordinates and names are user-supplied and can be varied forever — only a
+// cap actually bounds the spend.
+//
+// trust proxy is already set above, so these key off the real client IP rather
+// than Railway's edge.
+
+// Roughly "open the Nearby screen and refresh every 30s for the whole window".
+// Worst case drops from 400 billable calls per IP to 120, and the grid cache
+// makes most repeats free.
+const nearbyLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: 30,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { error: 'Too many nearby-places requests, please try again shortly.', places: [] },
+});
+
+// One request per destination; 20 distinct destinations in 15 minutes is
+// already well past real browsing.
+const hotelsLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: 20,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { error: 'Too many hotel searches, please try again shortly.', hotels: [] },
+});
+
+// Deliberately the loosest of the three. This fires once per "open in Maps"
+// tap, the client caches per place, and someone working through a 5-day trip
+// legitimately hits it dozens of times. Too tight here and Maps place cards
+// quietly stop resolving — the exact regression 8048495 was about.
+const resolvePlaceLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: 60,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { error: 'Too many place lookups, please try again shortly.', place_id: null },
+});
+
 // ─── Firebase ID Token Verification Middleware ──────────────────────────────
 // Validates Firebase Auth Bearer Token sent by Flutter app via _FirebaseTokenInterceptor
 //
@@ -1043,9 +1144,11 @@ app.use('/api/translate', translateLimiter, authenticateFirebaseToken);
 app.use('/api/photos', authenticateFirebaseToken);
 app.use('/api/weather', authenticateFirebaseToken);
 app.use('/api/currency', authenticateFirebaseToken);
-app.use('/api/nearby-places', authenticateFirebaseToken);
-app.use('/api/hotels', authenticateFirebaseToken);
-app.use('/api/resolve-place', authenticateFirebaseToken);
+// Limiter before auth on purpose: a flood should be rejected by the cheapest
+// middleware in the chain, not after a token verification round-trip.
+app.use('/api/nearby-places', nearbyLimiter, authenticateFirebaseToken);
+app.use('/api/hotels', hotelsLimiter, authenticateFirebaseToken);
+app.use('/api/resolve-place', resolvePlaceLimiter, authenticateFirebaseToken);
 
 // Health Check Endpoints for cloud hosting services (Render / Railway)
 app.get('/', (req, res) => {
@@ -2101,7 +2204,9 @@ async function fetchRealHotels(cityEn, centerLat, centerLng, limit) {
     return [];
   }
 
-  const cacheKey = `__hotels__|${cityEn.toLowerCase().trim()}|${limit}`;
+  // Capped here too, not only at the route: cityEn can also arrive from
+  // Google's own displayName, which this function does not control.
+  const cacheKey = `__hotels__|${cityEn.toLowerCase().trim().slice(0, 120)}|${limit}`;
   const now = Date.now();
   if (placesCache.has(cacheKey)) {
     const cached = placesCache.get(cacheKey);
@@ -3581,6 +3686,45 @@ const NEARBY_FIELD_MASK = [
 // Category buckets — one searchNearby call each so every category the user
 // cares about (food, worship, shopping/grocery/market, attractions) is
 // represented instead of the single closest type filling every slot.
+// ─── Nearby result cache ────────────────────────────────────────────────────
+// The most expensive route in this file had no cache at all: two people on the
+// same street each paid for four searchNearby calls, and a pull-to-refresh
+// paid for four more.
+//
+// Deliberately its own Map rather than the shared placesCache:
+//   * the payload carries `open_now`, and under that cache's 7-day TTL we
+//     would confidently tell someone a closed café is open. 30 minutes keeps
+//     the field honest while still absorbing every realistic repeat.
+//   * an entry is ~40 places; mirroring that into Firestore on every miss is a
+//     large write for something that expires in half an hour.
+//   * these would otherwise crowd trip-verification entries out of the shared
+//     entry budget.
+const nearbyCache = new Map();
+const NEARBY_CACHE_TTL_MS = 30 * 60 * 1000;
+
+// Raw coordinates as a key have unbounded cardinality — a client varying the
+// 7th decimal never hits, which is exactly the drain being closed. Round to a
+// grid instead. 3dp ≈ 111 m: coarser (2dp ≈ 1.1 km) would answer with another
+// neighbourhood's places at the 300 m minimum radius, finer (4dp ≈ 11 m)
+// almost never hits and reopens the hole.
+const NEARBY_GRID_DP = 3;
+const nearbyCacheKey = (lat, lng, radius, lang) =>
+  `${lat.toFixed(NEARBY_GRID_DP)},${lng.toFixed(NEARBY_GRID_DP)}|${radius}|${lang}`;
+
+// The accuracy trade-off, and its bound: a hit may have been computed from a
+// point up to ~150 m away, so the SET of places is an approximation —
+// negligible against a 300–15000 m radius. The DISTANCES are not allowed to be
+// approximate, because the UI shows them and sorts by them, so they are
+// recomputed from the caller's real position on every hit.
+function nearbyRescore(places, uLat, uLng) {
+  return places
+    .map((p) => ({
+      ...p,
+      distance_m: Math.round(haversineDistance(uLat, uLng, p.lat, p.lng) * 1000),
+    }))
+    .sort((a, b) => a.distance_m - b.distance_m);
+}
+
 const NEARBY_GOOGLE_GROUPS = [
   ['restaurant', 'cafe', 'bakery', 'meal_takeaway', 'coffee_shop', 'fast_food_restaurant'],
   ['mosque', 'church', 'hindu_temple', 'synagogue'],
@@ -3780,12 +3924,26 @@ app.get('/api/nearby-places', async (req, res) => {
   const r = Math.min(Math.max(parseInt(radius, 10) || 1500, 300), 15000);
   const language = lang === 'en' ? 'en' : 'ar';
 
+  const cacheKey = nearbyCacheKey(nLat, nLng, r, language);
+  const hit = nearbyCache.get(cacheKey);
+  if (hit && Date.now() - hit.timestamp < NEARBY_CACHE_TTL_MS) {
+    return res.status(200).json({
+      places: nearbyRescore(hit.places, nLat, nLng),
+      source: hit.source,
+    });
+  }
+
   try {
     let places = await nearbyViaGoogle(nLat, nLng, r, language);
     let source = 'google';
     if (!places || !places.length) {
       places = await nearbyViaOverpass(nLat, nLng, r);
       source = 'osm';
+    }
+    // Only a non-empty result is cached: freezing a transient upstream failure
+    // into a 30-minute empty screen is worse than paying for the retry.
+    if (places && places.length) {
+      nearbyCache.set(cacheKey, { places, source, timestamp: Date.now() });
     }
     return res.status(200).json({ places: places || [], source });
   } catch (error) {
@@ -3821,9 +3979,17 @@ const RESOLVE_BOX_DEG = 0.09;
 
 app.get('/api/resolve-place', async (req, res) => {
   const { name, lat, lng, city } = req.query;
-  if (!name || !lat || !lng) {
+  // typeof, not truthiness: `?name=a&name=b` arrives as an ARRAY, and the
+  // String(name) below flattened it to "a,b" — a distinct cache key and a
+  // meaningless textQuery for what is really one lookup. Same malformed-input
+  // class as the crash fixed in db2aeb2.
+  if (typeof name !== 'string' || !name.trim() || !lat || !lng) {
     return res.status(400).json({ error: 'name, lat and lng are required', place_id: null });
   }
+  // An unbounded name is an unbounded cache key, and placesCache is capped:
+  // junk keys don't merely waste memory, they EVICT the trip-verification
+  // entries, so the next trip pays Google for them all over again.
+  const cleanName = name.trim().replace(/\s+/g, ' ').slice(0, 120);
 
   const placesKey = process.env.GOOGLE_PLACES_API_KEY;
   if (!placesKey || placesKey === 'your_google_places_api_key_here' || isPlacesQuotaBlocked()) {
@@ -3836,7 +4002,7 @@ app.get('/api/resolve-place', async (req, res) => {
     return res.status(400).json({ error: 'invalid coordinates', place_id: null });
   }
 
-  const cacheKey = `__resolve__|${String(name).toLowerCase().trim()}|${pLat.toFixed(4)},${pLng.toFixed(4)}`;
+  const cacheKey = `__resolve__|${cleanName.toLowerCase()}|${pLat.toFixed(4)},${pLng.toFixed(4)}`;
   const now = Date.now();
   if (placesCache.has(cacheKey)) {
     const cached = placesCache.get(cacheKey);
@@ -3852,7 +4018,7 @@ app.get('/api/resolve-place', async (req, res) => {
       {
         // Name only. Appending a long AI-written address made the query noisy
         // and lowered match quality — the box below is what pins the location.
-        textQuery: String(name),
+        textQuery: cleanName,
         // locationRestriction is a HARD bound (unlike locationBias, which is
         // only a hint Google may ignore): Places physically cannot return a
         // result outside this box, so a same-named place in another
@@ -3889,7 +4055,7 @@ app.get('/api/resolve-place', async (req, res) => {
     const payload = (best && bestKm <= RESOLVE_MAX_KM)
       ? {
           place_id: best.id,
-          name: best.displayName?.text || String(name),
+          name: best.displayName?.text || cleanName,
           address: best.formattedAddress || '',
           lat: best.location.latitude,
           lng: best.location.longitude,
@@ -3899,7 +4065,7 @@ app.get('/api/resolve-place', async (req, res) => {
 
     placesCacheSet(cacheKey, { data: payload, timestamp: now });
     if (payload.place_id) {
-      console.log(`[RESOLVE-PLACE] "${name}" → ${payload.place_id} (${payload.distance_km}km)`);
+      console.log(`[RESOLVE-PLACE] "${cleanName}" → ${payload.place_id} (${payload.distance_km}km)`);
     } else {
       console.warn(`[RESOLVE-PLACE] No match near coordinates for "${name}"`);
     }
@@ -3919,17 +4085,26 @@ app.get('/api/resolve-place', async (req, res) => {
 app.get('/api/hotels', async (req, res) => {
   const { destination, lat, lng } = req.query;
 
-  if (!destination && (!lat || !lng)) {
+  // A repeated or bracketed query param arrives as an array/object, and
+  // .toString() below turned it into a nonsense city name with its own cache
+  // key. Reject it instead. The length cap keeps one caller from filling the
+  // capped cache with junk keys and evicting real entries.
+  if (destination !== undefined && typeof destination !== 'string') {
+    return res.status(400).json({ error: 'destination must be a string', hotels: [] });
+  }
+  const destClean = (destination || '').trim().replace(/\s+/g, ' ').slice(0, 120);
+
+  if (!destClean && (!lat || !lng)) {
     return res.status(400).json({ error: 'destination or lat/lng required', hotels: [] });
   }
 
   try {
-    let cityEn = (destination || '').toString().trim();
+    let cityEn = destClean;
     let cLat = lat ? parseFloat(lat) : null;
     let cLng = lng ? parseFloat(lng) : null;
 
-    if (destination) {
-      const resolved = await resolveDestinationEN(destination);
+    if (destClean) {
+      const resolved = await resolveDestinationEN(destClean);
       if (resolved) {
         cityEn = resolved.cityEn || cityEn;
         cLat = cLat || resolved.lat;
@@ -4013,8 +4188,16 @@ function sweepCache(cache, ttlMs, label) {
 function startCacheSweeper() {
   setInterval(() => {
     sweepCache(placesCache, PLACES_CACHE_TTL_MS, 'placesCache');
+    sweepCache(nearbyCache, NEARBY_CACHE_TTL_MS, 'nearbyCache');
     sweepCache(currencyCache, CURRENCY_CACHE_TTL_MS, 'currencyCache');
   }, CACHE_SWEEP_INTERVAL_MS);
+
+  // Railway replaces the container on every deploy, so a purely 24-hourly
+  // timer would rarely live long enough to fire — this delayed first run is
+  // the one that does the work in practice. Five minutes so it never competes
+  // with warmPlacesCache or the first user's request.
+  setTimeout(prunePlacesCacheFirestore, 5 * 60 * 1000);
+  setInterval(prunePlacesCacheFirestore, PLACES_CACHE_PRUNE_INTERVAL_MS);
 }
 
 function startSelfPing() {
