@@ -932,6 +932,11 @@ class AppStrings {
   String get documentExpired => _t('منتهي', 'Expired');
   String get documentPickGallery => _t('المعرض', 'Gallery');
   String get documentPickCamera => _t('الكاميرا', 'Camera');
+  /// Shown in place of a document photo whose file is gone — e.g. an image
+  /// added before photos were copied out of the OS cache, or a document that
+  /// arrived from another device, where the picture never existed locally.
+  String get documentImageUnavailable =>
+      _t('الصورة لم تعد متوفّرة', 'Image no longer available');
   String documentTypeLabelFor(String type) => _t(
         switch (type) {
           'passport' => 'جواز سفر / هوية',

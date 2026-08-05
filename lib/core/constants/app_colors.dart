@@ -29,6 +29,16 @@ class AppColors {
 
   // ═══ Shared / Accent Colors ═══
   static const Color accentAmber      = Color(0xFFF4A235);
+
+  /// Text and icons drawn ON TOP of the amber accent or its gradient.
+  ///
+  /// Deliberately a fixed navy rather than an `adaptive*` helper: the amber
+  /// underneath is the same in both themes, so a foreground that follows the
+  /// theme is wrong by construction. Several places used
+  /// [adaptiveBgPrimary] here, which in light mode returns the near-white
+  /// #F5F7FA and scored 1.94:1 — against a 4.5:1 minimum. This is 8.34:1 on
+  /// #F4A235 and 6.84:1 on the gradient's darker #F2871F end.
+  static const Color onAmber          = bgPrimary;
   static const Color accentAmberDark  = Color(0xFFF2871F);
   static const Color accentTurquoise  = Color(0xFF2EC4B6);
   static const Color success          = Color(0xFF4CAF82);
@@ -97,6 +107,24 @@ class AppColors {
       Theme.of(context).brightness == Brightness.dark
           ? const Color(0xFF64B5F6)
           : const Color(0xFF1565C0);
+
+  /// The "active" and "completed" trip status colours.
+  ///
+  /// StatusBadge draws its label in the same colour as its 18%-alpha fill, so
+  /// the label sits on a lightly tinted card, not the raw accent. On the light
+  /// card that put "نشطة" at 1.83:1 and "مكتملة" at 2.31:1 — the same defect
+  /// [adaptiveStatusPlanned] was introduced to fix, left behind on its two
+  /// siblings. These score 4.82:1 and 4.98:1 on light. Dark keeps the amber
+  /// (already 4.79:1) but brightens the green, which only managed 3.82:1.
+  static Color adaptiveStatusActive(BuildContext context) =>
+      Theme.of(context).brightness == Brightness.dark
+          ? accentAmber
+          : const Color(0xFF8F5100);
+
+  static Color adaptiveStatusCompleted(BuildContext context) =>
+      Theme.of(context).brightness == Brightness.dark
+          ? const Color(0xFF66D9A5)
+          : const Color(0xFF146B41);
 
   // ═══ Charts ═══
   static const Color chart1 = accentAmber;

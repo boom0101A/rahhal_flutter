@@ -544,7 +544,7 @@ class _MessageBubble extends StatelessWidget {
               child: Text(
                 message.content,
                 style: AppTextStyles.bodyMedium.copyWith(
-                  color: isUser ? AppColors.adaptiveBgPrimary(context) : AppColors.adaptiveTextPrimary(context),
+                  color: isUser ? AppColors.onAmber : AppColors.adaptiveTextPrimary(context),
                 ),
                 textDirection: isRTL ? TextDirection.rtl : TextDirection.ltr,
               ),

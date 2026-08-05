@@ -458,16 +458,18 @@ class _GeneratingScreenBodyState extends State<_GeneratingScreenBody>
                       ),
                     ),
                     child: Center(
+                      // Both marks are dark-on-fill: white on the green scored
+                      // 2.71:1 and failed in BOTH themes, not just light.
                       child: isDone
                           ? const Icon(Icons.check_rounded,
-                              size: 14, color: Colors.white)
+                              size: 14, color: AppColors.bgPrimary)
                           : isActive
-                              ? SizedBox(
+                              ? const SizedBox(
                                   width: 12,
                                   height: 12,
                                   child: CircularProgressIndicator(
                                     strokeWidth: 2,
-                                    color: AppColors.adaptiveBgPrimary(context),
+                                    color: AppColors.onAmber,
                                   ),
                                 )
                               : null,

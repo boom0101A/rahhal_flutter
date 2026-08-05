@@ -915,7 +915,7 @@ class _TripInputScreenState extends State<TripInputScreen> {
           icon,
           size: 18,
           color: filled
-              ? AppColors.adaptiveBgPrimary(context)
+              ? AppColors.onAmber
               : onTap == null
                   ? AppColors.adaptiveTextSecondary(context).withValues(alpha: 0.3)
                   : AppColors.adaptiveTextPrimary(context),

@@ -150,7 +150,17 @@ class RahhalAppState extends State<RahhalApp> {
           create: (_) => sl<AuthCubit>()..checkCurrentUser(),
         ),
       ],
-      child: ValueListenableBuilder<Locale>(
+      // FavoritesCubit is a singleton loaded once above, and favourites are now
+      // filtered per account — so without this, signing into a second account
+      // would keep showing the first one's list until the app was restarted.
+      // It has to sit inside the MultiBlocProvider to reach both cubits.
+      child: BlocListener<AuthCubit, AuthState>(
+        // Only on an actual account change: AuthAuthenticated is also re-emitted
+        // for things like a display-name edit, and reloading there would make
+        // the list flicker for no reason.
+        listenWhen: (prev, next) => _signedInUid(prev) != _signedInUid(next),
+        listener: (context, _) => context.read<FavoritesCubit>().loadFavorites(),
+        child: ValueListenableBuilder<Locale>(
         valueListenable: appLocale,
         builder: (context, currentLocale, _) {
           return MaterialApp.router(
@@ -181,7 +191,12 @@ class RahhalAppState extends State<RahhalApp> {
             ],
           );
         },
+        ),
       ),
     );
   }
 }
+
+/// The uid of the signed-in account, or null when nobody is signed in.
+String? _signedInUid(AuthState state) =>
+    state is AuthAuthenticated ? state.user.uid : null;

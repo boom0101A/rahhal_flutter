@@ -534,7 +534,7 @@ class _TripDashboardScreenState extends State<TripDashboardScreen>
           ),
           indicatorSize: TabBarIndicatorSize.tab,
           dividerColor: Colors.transparent,
-          labelColor: AppColors.adaptiveBgPrimary(context),
+          labelColor: AppColors.onAmber,
           unselectedLabelColor: AppColors.adaptiveTextSecondary(context),
           labelStyle: AppTextStyles.tabLabel,
           unselectedLabelStyle: AppTextStyles.tabLabel,
@@ -567,7 +567,7 @@ class _TripDashboardScreenState extends State<TripDashboardScreen>
       elevation: 8,
       shape: const CircleBorder(),
       child: Icon(Icons.smart_toy_rounded,
-          color: AppColors.adaptiveBgPrimary(context), size: 26),
+          color: AppColors.onAmber, size: 26),
     );
   }
 

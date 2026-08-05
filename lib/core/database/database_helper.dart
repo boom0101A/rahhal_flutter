@@ -765,6 +765,25 @@ class DatabaseHelper {
     );
   }
 
+  /// The favourites counterpart of [claimOrphanedTrips].
+  ///
+  /// Favourites saved before they were filtered per account carry no
+  /// `user_id`. Once the repository started scoping its reads, those rows
+  /// would have become invisible to everyone — so the same sign-in that
+  /// claims legacy trips claims legacy favourites too.
+  ///
+  /// Kept separate rather than folded into [claimOrphanedTrips]: that name
+  /// would stop being true, and a future caller would get a side effect it
+  /// never asked for.
+  Future<void> claimOrphanedFavorites(String uid) async {
+    final db = await database;
+    await db.update(
+      'favorites',
+      {'user_id': uid},
+      where: 'user_id IS NULL',
+    );
+  }
+
   Future<Map<String, dynamic>?> queryOne(
     String table, {
     required String where,

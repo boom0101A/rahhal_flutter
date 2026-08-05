@@ -329,11 +329,11 @@ class _StopDetailScreenState extends State<StopDetailScreen> {
                             icon: const Icon(Icons.directions_outlined, size: 18),
                             label: Text(
                               AppStrings.of(context).openInMaps,
-                              style: AppTextStyles.labelMedium.copyWith(color: AppColors.adaptiveBgPrimary(context)),
+                              style: AppTextStyles.labelMedium.copyWith(color: AppColors.onAmber),
                             ),
                             style: ElevatedButton.styleFrom(
                               backgroundColor: AppColors.accentAmber,
-                              foregroundColor: AppColors.adaptiveBgPrimary(context),
+                              foregroundColor: AppColors.onAmber,
                               padding: const EdgeInsets.symmetric(vertical: 12),
                               shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
                               elevation: 0,

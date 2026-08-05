@@ -78,7 +78,9 @@ class _GradientButtonState extends State<GradientButton>
                     height: 20,
                     child: CircularProgressIndicator(
                       strokeWidth: 2,
-                      color: Colors.white,
+                      // Matches the label and icon below rather than being
+                      // white on amber, which is 1.94:1.
+                      color: AppColors.onAmber,
                     ),
                   ),
                 ] else ...[

@@ -5,6 +5,7 @@ import '../../../../core/errors/failures.dart';
 import '../../../../core/network/cloud_sync_service.dart';
 import '../../domain/entities/document_entity.dart';
 import '../../domain/repositories/document_repository.dart';
+import '../document_file_service.dart';
 import '../mappers/document_mapper.dart';
 
 class DocumentRepositoryImpl implements DocumentRepository {
@@ -73,6 +74,9 @@ class DocumentRepositoryImpl implements DocumentRepository {
         where: 'id = ?',
         whereArgs: [docId],
       );
+      // The photo lives in app storage now, so deleting only the row would
+      // leave it there permanently with nothing pointing at it.
+      unawaited(DocumentFileService.deleteFile(row?['file_path'] as String?));
       final tripId = row?['trip_id'] as String?;
       if (tripId != null) unawaited(_syncService.markTripDirtyAndSync(tripId));
       return const Right(null);

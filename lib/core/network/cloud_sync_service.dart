@@ -100,6 +100,16 @@ class CloudSyncService {
       final chatMessagesRows = await _dbHelper.query('chat_messages', where: 'trip_id = ?', whereArgs: [tripId]);
       final actualExpensesRows = await _dbHelper.query('actual_expenses', where: 'trip_id = ?', whereArgs: [tripId]);
       final documentsRows = await _dbHelper.query('trip_documents', where: 'trip_id = ?', whereArgs: [tripId]);
+      // Scoped to this account: on a shared device another user's favourites
+      // live in the same table, and uploading them here would push them into
+      // this account's cloud document and then onto all of its devices.
+      // `user_id IS NULL` covers rows saved before favourites were owned at
+      // all, so this works whether or not the sign-in claim has run yet.
+      final favoritesRows = await _dbHelper.query(
+        'favorites',
+        where: 'trip_id = ? AND (user_id = ? OR user_id IS NULL)',
+        whereArgs: [tripId, user.uid],
+      );
 
       // 4. Construct payload (ensuring the user_id matches the active user uid)
       final Map<String, dynamic> tripData = Map<String, dynamic>.from(tripRow);
@@ -114,11 +124,19 @@ class CloudSyncService {
         'budget_items': budgetItemsRows,
         'chat_messages': chatMessagesRows,
         'actual_expenses': actualExpensesRows,
-        // Only the record (title/type/notes/expiry) travels to the cloud —
-        // `file_path` points at a local file on THIS device and won't
-        // resolve on another one; only `file_url` (a hosted copy, if any)
-        // would still work after a restore.
-        'trip_documents': documentsRows,
+        // Only the record (title/type/notes/expiry) travels to the cloud.
+        // `file_path` is stripped here rather than merely described as
+        // local-only: it names a file on THIS device, and shipping it meant
+        // another device stored a path it could never open and rendered a
+        // broken image. Only `file_url` (a hosted copy, if any) survives a
+        // restore. The receiving side keeps whatever path it already had —
+        // see [mergeDocumentFilePaths].
+        'trip_documents':
+            documentsRows.map((r) => {...r, 'file_path': null}).toList(),
+        // Stamped with the uid so a legacy unowned row doesn't come back
+        // invisible on another device, where the same ownership filter runs.
+        'favorites':
+            favoritesRows.map((r) => {...r, 'user_id': user.uid}).toList(),
         'synced_at': DateTime.now().toIso8601String(),
       };
 
@@ -292,6 +310,17 @@ class CloudSyncService {
   /// Inserts/overwrites a trip and all its nested tables locally from a cloud
   /// document — shared by [restoreTripsFromCloud] and the conflict-pull path
   /// in [syncTripToCloud].
+  ///
+  /// Note on `ConflictAlgorithm.replace` for the `trips` row below: it is
+  /// load-bearing and must stay. SQLite implements it as delete-then-insert,
+  /// which cascades away every child row, so only what the cloud payload
+  /// carries is re-inserted — that is how a stop deleted on one device
+  /// disappears on the other. Turning it into a non-destructive upsert would
+  /// resurrect every deleted child on every restore.
+  ///
+  /// `favorites` cascades along with it but was never in the payload, which is
+  /// how a trip's favourites quietly vanished on the next launch. They are
+  /// captured before the replace and merged back after it.
   Future<void> _applyCloudTripToLocal(Map<String, dynamic> tripData) async {
     await _dbHelper.executeInTransaction((txn) async {
       // Extract nested tables
@@ -303,8 +332,12 @@ class CloudSyncService {
       final List<dynamic> chatMessages = tripData['chat_messages'] as List<dynamic>? ?? [];
       final List<dynamic> actualExpenses = tripData['actual_expenses'] as List<dynamic>? ?? [];
       final List<dynamic> documents = tripData['trip_documents'] as List<dynamic>? ?? [];
+      final Object? cloudFavorites = tripData['favorites'];
 
-      // Remove nested fields to insert the base trip row
+      // Remove nested fields to insert the base trip row. `favorites` MUST be
+      // in this list — a leftover key means "no such column" on every restore,
+      // and the per-trip catch upstream would swallow it, so trips would just
+      // silently stop syncing.
       final Map<String, dynamic> tripRow = Map<String, dynamic>.from(tripData)
         ..remove('days')
         ..remove('stops')
@@ -313,7 +346,27 @@ class CloudSyncService {
         ..remove('budget_items')
         ..remove('chat_messages')
         ..remove('actual_expenses')
-        ..remove('trip_documents');
+        ..remove('trip_documents')
+        ..remove('favorites');
+
+      final tripId = tripRow['id'] as String?;
+
+      // Read what the replace below is about to cascade away. Deliberately
+      // NOT scoped to the current user: preserving must not drop another
+      // account's rows on a shared device. (Reading them back IS scoped —
+      // see FavoritesRepositoryImpl.)
+      final localFavorites = tripId == null
+          ? const <Map<String, dynamic>>[]
+          : await txn.query('favorites', where: 'trip_id = ?', whereArgs: [tripId]);
+
+      // Same idea for a document's image path, which is device-local: keep
+      // whatever this device already had rather than taking the cloud's.
+      final localDocPaths = <String, String?>{
+        if (tripId != null)
+          for (final d in await txn.query('trip_documents',
+              columns: ['id', 'file_path'], where: 'trip_id = ?', whereArgs: [tripId]))
+            d['id'] as String: d['file_path'] as String?,
+      };
 
       // Insert trip
       await txn.insert('trips', tripRow, conflictAlgorithm: ConflictAlgorithm.replace);
@@ -370,10 +423,65 @@ class CloudSyncService {
       // Insert documents (metadata only — see the note where these are read)
       for (final d in documents) {
         if (d is Map<String, dynamic>) {
-          await txn.insert('trip_documents', d, conflictAlgorithm: ConflictAlgorithm.replace);
+          await txn.insert(
+            'trip_documents',
+            {...d, 'file_path': localDocPaths[d['id']]},
+            conflictAlgorithm: ConflictAlgorithm.replace,
+          );
+        }
+      }
+
+      // Restore the favourites the trip replace cascaded away, merged with
+      // whatever the cloud carried.
+      if (tripId != null) {
+        for (final f in mergeFavoritesForRestore(localFavorites, cloudFavorites, tripId)) {
+          await txn.insert('favorites', f, conflictAlgorithm: ConflictAlgorithm.replace);
         }
       }
     });
+  }
+
+  /// Merges a trip's local favourites with the ones carried by its cloud
+  /// document, keyed by `id`.
+  ///
+  /// The rule is union, seeded with local, cloud winning a collision, and a
+  /// local row is never dropped. Two reasons it isn't "cloud is authoritative":
+  ///
+  ///  * a cloud document written before favourites were synced has no
+  ///    `favorites` key at all, and treating that as "the cloud says none"
+  ///    would delete every favourite on the next launch — the exact bug being
+  ///    fixed, just relocated; and
+  ///  * tapping a heart doesn't mark the trip dirty, so the cloud's copy is
+  ///    only refreshed when some *other* edit re-syncs the trip and is
+  ///    routinely staler than local.
+  ///
+  /// The cost is that un-favouriting doesn't propagate to another device until
+  /// something else on that trip changes. That's a deliberate trade: a stale
+  /// heart is recoverable, a deleted row is not.
+  @visibleForTesting
+  static List<Map<String, dynamic>> mergeFavoritesForRestore(
+    List<Map<String, dynamic>> local,
+    Object? cloud,
+    String tripId,
+  ) {
+    final merged = <String, Map<String, dynamic>>{
+      for (final f in local)
+        if (f['id'] is String) f['id'] as String: Map<String, dynamic>.from(f),
+    };
+
+    if (cloud is List) {
+      for (final f in cloud) {
+        if (f is! Map) continue;
+        final id = f['id'];
+        if (id is! String || id.isEmpty) continue;
+        // trip_id is forced rather than trusted: a mismatched one fails the
+        // foreign key and would abort the whole trip's restore, not just this
+        // row.
+        merged[id] = {...Map<String, dynamic>.from(f), 'trip_id': tripId};
+      }
+    }
+
+    return merged.values.toList();
   }
 
   /// Marks [tripId] as freshly edited and pushes it to the cloud.

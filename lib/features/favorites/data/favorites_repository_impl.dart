@@ -20,16 +20,33 @@ class FavoritesRepositoryImpl implements FavoritesRepository {
   })  : _dbHelper = dbHelper,
         _authRepository = authRepository;
 
+  /// The `WHERE` fragment that restricts a query to the signed-in account's
+  /// own rows.
+  ///
+  /// Every read and write goes through this. Writing the clause out at each
+  /// call site is how the bug this fixes happened: the insert stamped
+  /// `user_id`, but the lookups didn't filter on it, so on a shared device one
+  /// account's heart-tap matched — and deleted — another account's row.
+  ///
+  /// Signed out has to be `IS NULL`, not `= ?` with a null argument: SQL
+  /// equality against NULL is never true, so that would match nothing at all.
+  ({String clause, List<Object?> args}) _ownerScope(String? userId) =>
+      userId == null
+          ? (clause: 'user_id IS NULL', args: const <Object?>[])
+          : (clause: 'user_id = ?', args: <Object?>[userId]);
+
   @override
   Future<Either<Failure, List<FavoriteItem>>> getFavorites() async {
     try {
       final user = _authRepository.getCurrentUser();
-      final userId = user?.uid;
+      final scope = _ownerScope(user?.uid);
 
       final rows = await _dbHelper.query(
         'favorites',
-        where: userId != null ? 'user_id = ?' : null,
-        whereArgs: userId != null ? [userId] : null,
+        // Was `where: null` when signed out, which showed every account on the
+        // device each other's favourites.
+        where: scope.clause,
+        whereArgs: scope.args,
         orderBy: 'created_at DESC',
       );
 
@@ -122,19 +139,24 @@ class FavoritesRepositoryImpl implements FavoritesRepository {
     try {
       final user = _authRepository.getCurrentUser();
       final userId = user?.uid;
+      final scope = _ownerScope(userId);
+      // One clause, used by both the lookup and the delete. If those two ever
+      // disagreed, a tap would find nothing and then delete the wrong row.
+      final where = 'item_type = ? AND item_ref_id = ? AND ${scope.clause}';
+      final whereArgs = [itemType, itemRefId, ...scope.args];
 
       final existing = await _dbHelper.query(
         'favorites',
-        where: 'item_type = ? AND item_ref_id = ?',
-        whereArgs: [itemType, itemRefId],
+        where: where,
+        whereArgs: whereArgs,
       );
 
       if (existing.isNotEmpty) {
         // Delete it
         await _dbHelper.delete(
           'favorites',
-          where: 'item_type = ? AND item_ref_id = ?',
-          whereArgs: [itemType, itemRefId],
+          where: where,
+          whereArgs: whereArgs,
         );
       } else {
         // Insert it — trip_id lets the row cascade-delete along with the
@@ -161,10 +183,14 @@ class FavoritesRepositoryImpl implements FavoritesRepository {
   Future<Either<Failure, bool>> isFavorite(
       String itemType, String itemRefId) async {
     try {
+      // No callers today — the UI asks FavoritesCubit.isKeyFavorite, which
+      // reads the already-scoped list. Scoped anyway so the next caller
+      // doesn't inherit the bug.
+      final scope = _ownerScope(_authRepository.getCurrentUser()?.uid);
       final rows = await _dbHelper.query(
         'favorites',
-        where: 'item_type = ? AND item_ref_id = ?',
-        whereArgs: [itemType, itemRefId],
+        where: 'item_type = ? AND item_ref_id = ? AND ${scope.clause}',
+        whereArgs: [itemType, itemRefId, ...scope.args],
       );
       return Right(rows.isNotEmpty);
     } catch (e) {
@@ -179,11 +205,12 @@ class FavoritesRepositoryImpl implements FavoritesRepository {
     String? notes,
   ) async {
     try {
+      final scope = _ownerScope(_authRepository.getCurrentUser()?.uid);
       await _dbHelper.update(
         'favorites',
         {'notes': notes},
-        where: 'item_type = ? AND item_ref_id = ?',
-        whereArgs: [itemType, itemRefId],
+        where: 'item_type = ? AND item_ref_id = ? AND ${scope.clause}',
+        whereArgs: [itemType, itemRefId, ...scope.args],
       );
       return const Right(null);
     } catch (e) {

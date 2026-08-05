@@ -16,6 +16,7 @@ import 'mappers/trip_mapper.dart';
 import '../../../../core/network/cloud_sync_service.dart';
 import '../../../../core/di/injection.dart';
 import '../../../../core/network/image_search_service.dart';
+import '../../trip_documents/data/document_file_service.dart';
 
 class TripRepositoryImpl implements TripRepository {
   final DatabaseHelper _dbHelper;
@@ -530,6 +531,14 @@ class TripRepositoryImpl implements TripRepository {
       );
       if (owned == null) return const Right(null);
 
+      // Read before the transaction and delete after it commits: file I/O has
+      // no business inside a DB transaction, and the rows are gone by then.
+      final docRows = await _dbHelper.query(
+        'trip_documents',
+        where: 'trip_id = ?',
+        whereArgs: [tripId],
+      );
+
       // Explicit per-table deletes rather than relying solely on
       // ON DELETE CASCADE — trip_command_executor.dart already set this
       // precedent ("so the result is the same regardless of PRAGMA
@@ -567,6 +576,12 @@ class TripRepositoryImpl implements TripRepository {
           conflictAlgorithm: ConflictAlgorithm.replace,
         );
       });
+
+      // Fire-and-forget, like the cloud delete below: a file that won't unlink
+      // must not fail a delete the user has already been told succeeded.
+      unawaited(DocumentFileService.deleteFiles(
+        docRows.map((r) => r['file_path'] as String?),
+      ));
 
       // Trigger cloud deletion in the background
       _syncService.deleteTripFromCloud(tripId).catchError((e) {

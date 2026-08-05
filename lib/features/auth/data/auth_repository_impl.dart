@@ -6,6 +6,7 @@ import 'package:google_sign_in/google_sign_in.dart';
 import '../../../../core/database/database_helper.dart';
 import '../../../../core/errors/failures.dart';
 import '../../../../core/network/cloud_sync_service.dart';
+import '../../trip_documents/data/document_file_service.dart';
 import '../domain/entities/user_entity.dart';
 import '../domain/repositories/auth_repository.dart';
 
@@ -368,6 +369,10 @@ class AuthRepositoryImpl implements AuthRepository {
     // no unclaimed trips remain.
     try {
       await _dbHelper.claimOrphanedTrips(uid);
+      // Same reasoning, same timing: favourites are scoped per account too,
+      // so unowned ones have to be claimed here or they'd be invisible to
+      // every account and look like they were deleted by the update.
+      await _dbHelper.claimOrphanedFavorites(uid);
     } catch (e) {
       debugPrint('AuthRepository: Failed to claim orphaned trips: $e');
     }
@@ -392,6 +397,14 @@ class AuthRepositoryImpl implements AuthRepository {
       await _dbHelper.clearAllData();
     } catch (e) {
       debugPrint('[Auth] local data wipe failed: $e');
+    }
+    // Document photos are files, not rows, so clearAllData doesn't reach them.
+    // Done here rather than inside DatabaseHelper, which has no business
+    // touching path_provider.
+    try {
+      await DocumentFileService.deleteAll();
+    } catch (e) {
+      debugPrint('[Auth] document image wipe failed: $e');
     }
   }
 }

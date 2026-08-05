@@ -228,9 +228,9 @@ class _SavedTripsScreenState extends State<SavedTripsScreen> {
               elevation: 8,
               label: Text(
                 AppStrings.of(context).savedNewTrip,
-                style: AppTextStyles.button.copyWith(color: AppColors.adaptiveBgPrimary(context)),
+                style: AppTextStyles.button.copyWith(color: AppColors.onAmber),
               ),
-              icon: Icon(Icons.add_rounded, color: AppColors.adaptiveBgPrimary(context)),
+              icon: Icon(Icons.add_rounded, color: AppColors.onAmber),
             );
           },
         ),
@@ -317,7 +317,7 @@ class _SavedTripsScreenState extends State<SavedTripsScreen> {
               onPressed: _isLocating ? null : _exploreNearbyCity,
               style: ElevatedButton.styleFrom(
                 backgroundColor: AppColors.accentAmber,
-                foregroundColor: AppColors.adaptiveBgPrimary(context),
+                foregroundColor: AppColors.onAmber,
                 padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
                 shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
                 elevation: 0,

@@ -5,6 +5,7 @@ import 'package:flutter_animate/flutter_animate.dart';
 import 'package:go_router/go_router.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:uuid/uuid.dart';
+import '../../data/document_file_service.dart';
 import 'package:intl/intl.dart';
 import '../../../../core/constants/app_colors.dart';
 import '../../../../core/constants/app_strings.dart';
@@ -28,7 +29,32 @@ class DocumentsScreen extends StatefulWidget {
 }
 
 class _DocumentsScreenState extends State<DocumentsScreen> {
-  final ImagePicker _imagePicker = ImagePicker();
+  final DocumentFileService _fileService = DocumentFileService();
+
+  /// Stand-in for a photo whose file is gone. Shared by all three places a
+  /// document image is rendered so they can't drift apart.
+  Widget _missingImage(BuildContext context, {bool compact = false}) => Container(
+        color: Colors.black12,
+        child: Center(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Icon(Icons.broken_image_rounded,
+                  color: AppColors.adaptiveTextSecondary(context)),
+              if (!compact) ...[
+                const SizedBox(height: 6),
+                Text(
+                  AppStrings.of(context).documentImageUnavailable,
+                  textAlign: TextAlign.center,
+                  style: AppTextStyles.labelSmall.copyWith(
+                    color: AppColors.adaptiveTextSecondary(context),
+                  ),
+                ),
+              ],
+            ],
+          ),
+        ),
+      );
 
   String _getDocTypeLabel(BuildContext context, String docType) =>
       AppStrings.of(context).documentTypeLabelFor(docType);
@@ -288,12 +314,7 @@ class _DocumentsScreenState extends State<DocumentsScreen> {
                     child: Image.file(
                       File(doc.filePath!),
                       fit: doc.docType == 'ticket' ? BoxFit.contain : BoxFit.cover,
-                      errorBuilder: (ctx, e, s) => Container(
-                        color: Colors.black12,
-                        child: Center(
-                          child: Icon(Icons.broken_image_rounded, color: AppColors.adaptiveTextSecondary(ctx)),
-                        ),
-                      ),
+                      errorBuilder: (ctx, e, s) => _missingImage(ctx),
                     ),
                   ),
                 ),
@@ -341,6 +362,9 @@ class _DocumentsScreenState extends State<DocumentsScreen> {
               child: Image.file(
                 File(path),
                 fit: BoxFit.contain,
+                // Without this a purged file throws a render exception into an
+                // all-black dialog with no way to tell what went wrong.
+                errorBuilder: (ctx, e, s) => _missingImage(ctx),
               ),
             ),
             Positioned(
@@ -412,6 +436,27 @@ class _DocumentsScreenState extends State<DocumentsScreen> {
     String docType = 'passport';
     DateTime? expiryDate;
     String? selectedFilePath;
+    // Picking copies the photo into permanent storage immediately, so a sheet
+    // that's dismissed without saving has to clean up after itself — otherwise
+    // this fix would trade a disappearing file for an undeletable one.
+    var didSave = false;
+
+    Future<void> pickInto(ImageSource source, StateSetter setSheetState) async {
+      String? saved;
+      try {
+        saved = await _fileService.pickAndSave(source);
+      } on DocumentImagePermissionDeniedException {
+        if (!mounted) return;
+        ScaffoldMessenger.of(this.context).showSnackBar(
+          SnackBar(content: Text(AppStrings.of(this.context).avatarPermissionDenied)),
+        );
+        return;
+      }
+      if (saved == null) return; // cancelled
+      final replaced = selectedFilePath;
+      setSheetState(() => selectedFilePath = saved);
+      await DocumentFileService.deleteFile(replaced);
+    }
 
     showModalBottomSheet(
       context: context,
@@ -513,14 +558,17 @@ class _DocumentsScreenState extends State<DocumentsScreen> {
                     if (selectedFilePath != null) ...[
                       Stack(
                         children: [
-                          Container(
-                            height: 150,
-                            width: double.infinity,
-                            decoration: BoxDecoration(
-                              borderRadius: BorderRadius.circular(12),
-                              image: DecorationImage(
-                                image: FileImage(File(selectedFilePath!)),
-                                fit: BoxFit.cover,
+                          ClipRRect(
+                            borderRadius: BorderRadius.circular(12),
+                            child: Image.file(
+                              File(selectedFilePath!),
+                              height: 150,
+                              width: double.infinity,
+                              fit: BoxFit.cover,
+                              errorBuilder: (ctx, e, s) => SizedBox(
+                                height: 150,
+                                width: double.infinity,
+                                child: _missingImage(ctx, compact: true),
                               ),
                             ),
                           ),
@@ -533,7 +581,12 @@ class _DocumentsScreenState extends State<DocumentsScreen> {
                                 tooltip: AppStrings.of(context).delete,
                                 icon: const Icon(Icons.delete_outline_rounded, color: Colors.white),
                                 onPressed: () {
+                                  // Discard the copy too, or it sits in
+                                  // app storage forever with nothing
+                                  // referencing it.
+                                  final discarded = selectedFilePath;
                                   setSheetState(() => selectedFilePath = null);
+                                  DocumentFileService.deleteFile(discarded);
                                 },
                               ),
                             ),
@@ -545,16 +598,7 @@ class _DocumentsScreenState extends State<DocumentsScreen> {
                         children: [
                           Expanded(
                             child: OutlinedButton.icon(
-                              onPressed: () async {
-                                final file = await _imagePicker.pickImage(
-                                  source: ImageSource.gallery,
-                                  imageQuality: 85,
-                                );
-                                if (!context.mounted) return;
-                                if (file != null) {
-                                  setSheetState(() => selectedFilePath = file.path);
-                                }
-                              },
+                              onPressed: () => pickInto(ImageSource.gallery, setSheetState),
                               icon: const Icon(Icons.photo_library_rounded),
                               label: Text(AppStrings.of(context).documentPickGallery),
                             ),
@@ -562,16 +606,7 @@ class _DocumentsScreenState extends State<DocumentsScreen> {
                           const SizedBox(width: 12),
                           Expanded(
                             child: OutlinedButton.icon(
-                              onPressed: () async {
-                                final file = await _imagePicker.pickImage(
-                                  source: ImageSource.camera,
-                                  imageQuality: 85,
-                                );
-                                if (!context.mounted) return;
-                                if (file != null) {
-                                  setSheetState(() => selectedFilePath = file.path);
-                                }
-                              },
+                              onPressed: () => pickInto(ImageSource.camera, setSheetState),
                               icon: const Icon(Icons.camera_alt_rounded),
                               label: Text(AppStrings.of(context).documentPickCamera),
                             ),
@@ -602,6 +637,7 @@ class _DocumentsScreenState extends State<DocumentsScreen> {
                           createdAt: DateTime.now(),
                         );
 
+                        didSave = true;
                         cubit.addDocument(doc);
                         _scheduleExpiryReminder(doc);
                         Navigator.pop(ctx);
@@ -618,6 +654,7 @@ class _DocumentsScreenState extends State<DocumentsScreen> {
     ).whenComplete(() {
       titleCtrl.dispose();
       notesCtrl.dispose();
+      if (!didSave) DocumentFileService.deleteFile(selectedFilePath);
     });
   }
 }

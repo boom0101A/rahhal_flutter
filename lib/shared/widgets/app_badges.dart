@@ -119,8 +119,8 @@ class StatusBadge extends StatelessWidget {
     final strings = AppStrings.of(context);
     final (label, color) = switch (status) {
       'planned' => (strings.statusPlanned, AppColors.adaptiveStatusPlanned(context)),
-      'active' => (strings.statusActive, AppColors.accentAmber),
-      'completed' => (strings.statusCompleted, AppColors.success),
+      'active' => (strings.statusActive, AppColors.adaptiveStatusActive(context)),
+      'completed' => (strings.statusCompleted, AppColors.adaptiveStatusCompleted(context)),
       _ => (status, AppColors.adaptiveTextSecondary(context)),
     };
 
