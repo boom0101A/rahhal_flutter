@@ -2437,7 +2437,11 @@ app.post('/api/generate-trip', async (req, res) => {
     // an attempt to pack extra instructions into a field that gets embedded
     // straight into the system prompt below — cap it before that happens.
     destination.trim().length > 100 ||
-    !durationDays || !budgetTier
+    !durationDays || !budgetTier ||
+    // Same class of bug, one field further down: travelStyles is interpolated
+    // with .join() when building the prompt. A truthy non-array (a bare string,
+    // an object) throws there — outside any try — and takes the process down.
+    (travelStyles != null && !Array.isArray(travelStyles))
   ) {
     return res.status(400).json({ error: 'Missing required parameters' });
   }
@@ -4042,4 +4046,20 @@ app.listen(PORT, () => {
   // arrive before this finishes just miss the cache, exactly as they would
   // have without it.
   warmPlacesCache();
+});
+
+// Last line of defence. Express 4 does not catch rejections from async route
+// handlers, so a single throw outside a try — a malformed field reaching a
+// .trim()/.join(), a provider client failing in a stray promise — otherwise
+// terminates the process and drops every connected user, not just the one
+// request at fault. That exact failure has now been fixed field-by-field four
+// times (destination, conversationHistory, /api/photos, travelStyles); this
+// keeps the fifth one from being an outage. The request itself still fails —
+// it just fails alone.
+process.on('unhandledRejection', (reason) => {
+  console.error('[FATAL-GUARD] Unhandled rejection:', reason && reason.stack ? reason.stack : reason);
+});
+
+process.on('uncaughtException', (err) => {
+  console.error('[FATAL-GUARD] Uncaught exception:', err && err.stack ? err.stack : err);
 });

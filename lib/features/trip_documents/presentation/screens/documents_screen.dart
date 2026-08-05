@@ -401,6 +401,12 @@ class _DocumentsScreenState extends State<DocumentsScreen> {
   }
 
   void _showAddDocumentSheet(BuildContext context) {
+    // Captured here, not read inside the sheet. The sheet is a new route rooted
+    // in the Navigator's Overlay — above the BlocProvider created in build() —
+    // and StatefulBuilder shadows this `context` with its own parameter, so a
+    // `context.read<DocumentCubit>()` down there walks up past the provider and
+    // throws, silently leaving the sheet open with nothing saved.
+    final cubit = context.read<DocumentCubit>();
     final titleCtrl = TextEditingController();
     final notesCtrl = TextEditingController();
     String docType = 'passport';
@@ -596,7 +602,7 @@ class _DocumentsScreenState extends State<DocumentsScreen> {
                           createdAt: DateTime.now(),
                         );
 
-                        context.read<DocumentCubit>().addDocument(doc);
+                        cubit.addDocument(doc);
                         _scheduleExpiryReminder(doc);
                         Navigator.pop(ctx);
                       },
