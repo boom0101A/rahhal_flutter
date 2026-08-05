@@ -154,6 +154,7 @@ class BudgetRepositoryImpl implements BudgetRepository {
         theme: m['theme'] as String?,
         themeEn: m['theme_en'] as String?,
         summary: m['summary'] as String?,
+        summaryEn: m['summary_en'] as String?,
       )).toList());
     } catch (e) {
       return Left(DatabaseFailure(e.toString()));

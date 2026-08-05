@@ -266,8 +266,8 @@ class _RestaurantCard extends StatelessWidget {
                 Wrap(
                   spacing: 6,
                   children: [
-                    if (restaurant.cuisineType != null)
-                      Text(restaurant.cuisineType!,
+                    if (restaurant.displayCuisineType(context) != null)
+                      Text(restaurant.displayCuisineType(context)!,
                           style: AppTextStyles.bodySmall),
                     if (restaurant.halalCertified)
                       Container(

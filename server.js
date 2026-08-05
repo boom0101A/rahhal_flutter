@@ -1076,8 +1076,35 @@ app.get('/api/status', (req, res) => {
 
 // Helper function to call Google Gemini API using official SDK & REST API fallback
 // Supports both legacy AIzaSy... and new AQ.... key formats
+// Per-attempt ceiling for Gemini.
+//
+// This was 60s, but callGemini makes up to THREE attempts (two SDK models plus
+// a REST fallback), so a stalled model could consume 180s against a request
+// that the Flutter client abandons at 120s. Measured live on a 6-day trip:
+// gemini-flash-latest stalled for its full 60s, gemini-flash-lite-latest then
+// answered fine — total 99s, which left no budget for restaurants or hotels
+// and put the whole request one hiccup away from the client timeout.
+//
+// 40s is comfortably longer than a healthy large generation takes (~30s
+// observed for a 14k-character itinerary) while capping the damage a stuck
+// model can do.
+const GEMINI_ATTEMPT_TIMEOUT_MS = 40000;
+
+// Above this, prefer the lite model FIRST.
+//
+// `gemini-flash-latest` stalls out on very large generations — observed twice
+// in a row on a 6-day itinerary (11k output tokens), each time burning its
+// entire attempt timeout before `gemini-flash-lite-latest` produced a valid
+// 20k-character reply in about half a minute. The lite model is built for
+// exactly this throughput case. Below the threshold (chat replies,
+// translation batches) the order is unchanged, since the bigger model is the
+// better answer there and latency isn't the constraint.
+const GEMINI_PREFER_LITE_ABOVE_TOKENS = 8000;
+
 async function callGemini(systemPrompt, messages, maxTokens = 4000, apiKey) {
-  const modelsToTry = ['gemini-flash-latest', 'gemini-flash-lite-latest'];
+  const modelsToTry = maxTokens > GEMINI_PREFER_LITE_ABOVE_TOKENS
+      ? ['gemini-flash-lite-latest', 'gemini-flash-latest']
+      : ['gemini-flash-latest', 'gemini-flash-lite-latest'];
   let lastError = null;
 
   // ─── Attempt 1: Official Google Generative AI SDK ─────────────────────────
@@ -1100,7 +1127,7 @@ async function callGemini(systemPrompt, messages, maxTokens = 4000, apiKey) {
         // Google could then block this call far longer than intended instead
         // of failing over to the REST fallback below. 60s matches that
         // REST fallback's own timeout for the same kind of call.
-        timeout: 60000,
+        timeout: GEMINI_ATTEMPT_TIMEOUT_MS,
       });
 
       const history = messages.slice(0, -1).map(m => ({
@@ -1144,7 +1171,7 @@ async function callGemini(systemPrompt, messages, maxTokens = 4000, apiKey) {
       },
       {
         headers: { 'Content-Type': 'application/json' },
-        timeout: 60000,
+        timeout: GEMINI_ATTEMPT_TIMEOUT_MS,
       }
     );
 
@@ -1179,6 +1206,14 @@ async function callGemini(systemPrompt, messages, maxTokens = 4000, apiKey) {
 // (not 120b) because both share the free tier's 8000 tokens-per-minute cap,
 // and 20b returns cleaner, non-truncated output for our prompt size.
 const GROQ_MODEL = process.env.GROQ_MODEL || 'openai/gpt-oss-20b';
+
+// Groq's free tier caps tokens-per-minute at 8000 for the gpt-oss models, and
+// (prompt + max_tokens) — not actual usage — counts against it. With a
+// ~1700-token system prompt that leaves this much for output. callAI checks it
+// BEFORE calling, because asking gpt-oss for more than it can emit does not
+// truncate gracefully: the model burns the whole allowance on reasoning tokens
+// and returns an empty message.
+const GROQ_MAX_OUTPUT_TOKENS = 6000;
 async function callGroq(systemPrompt, messages, maxTokens = 4000, apiKey) {
   // Groq's free tier caps tokens-per-minute at 8000 for the gpt-oss models,
   // and (prompt + max_tokens) — not actual usage — counts against it. With a
@@ -1186,7 +1221,7 @@ async function callGroq(systemPrompt, messages, maxTokens = 4000, apiKey) {
   // about what a 3-day Arabic itinerary genuinely needs. The practical
   // consequence is roughly one generation per minute on the free tier;
   // anything more falls through to the Gemini fallback.
-  const outputBudget = Math.max(1024, Math.min(maxTokens, 6000));
+  const outputBudget = Math.max(1024, Math.min(maxTokens, GROQ_MAX_OUTPUT_TOKENS));
 
   const chatMessages = [];
   if (systemPrompt) chatMessages.push({ role: 'system', content: systemPrompt });
@@ -1254,8 +1289,16 @@ async function callAI(systemPrompt, messages, maxTokens = 4000) {
     throw new Error('missing-api-key');
   }
 
-  // 1. Try Groq first if configured (much larger free daily quota).
-  if (hasGroqKey) {
+  // 1. Try Groq first if configured (much larger free daily quota) — but only
+  //    when the reply can actually fit in what Groq is allowed to emit.
+  //
+  //    Groq's free tier caps output at GROQ_MAX_OUTPUT_TOKENS. A trip needs
+  //    2000 + days*1500, so anything from 3 days up exceeds it, and the
+  //    gpt-oss models then spend that whole allowance on reasoning tokens and
+  //    return an EMPTY message. Measured: every 3+ day trip lost ~8s to a
+  //    guaranteed-useless Groq call before failing over. Skipping it outright
+  //    is both faster and strictly more reliable — Gemini has the headroom.
+  if (hasGroqKey && maxTokens <= GROQ_MAX_OUTPUT_TOKENS) {
     try {
       console.log('[AI Engine] Using Groq...');
       return await callGroq(systemPrompt, messages, maxTokens, groqKey);
@@ -1263,6 +1306,10 @@ async function callAI(systemPrompt, messages, maxTokens = 4000) {
       console.warn('[AI Engine] GROQ_API_KEY failed:', e.message);
       // Fall through to Gemini below instead of failing immediately.
     }
+  } else if (hasGroqKey) {
+    console.log(
+      `[AI Engine] Skipping Groq — needs ${maxTokens} output tokens, its cap is ${GROQ_MAX_OUTPUT_TOKENS}.`
+    );
   }
 
   // 2. Try primary Gemini key
@@ -1914,6 +1961,10 @@ async function fetchRealRestaurants(cityEn, centerLat, centerLng, countryCode, l
       name: p.displayName.text,
       name_en: en?.displayName?.text || p.displayName.text,
       cuisine_type: cuisine,
+      // The English Places result is already fetched for the name; its type
+      // label rides along for free, so the card's 'Restaurant' chip never has
+      // to be sent through the paid translation pass.
+      cuisine_type_en: en?.primaryTypeDisplayName?.text || '',
       halal_certified: halalByDefault,
       rating: p.rating,
       price_per_person_usd: PRICE_LEVEL_USD[p.priceLevel] ?? 20,
@@ -2132,6 +2183,7 @@ async function fetchRealHotels(cityEn, centerLat, centerLng, limit) {
       name: p.displayName.text,
       name_en: en?.displayName?.text || p.displayName.text,
       hotel_type: category,
+      hotel_type_en: en?.primaryTypeDisplayName?.text || '',
       rating: p.rating || 0,
       price_per_night_usd: HOTEL_PRICE_LEVEL_USD[p.priceLevel] ?? 70,
       address: p.formattedAddress || '',
@@ -2657,7 +2709,21 @@ ${countryCode ? `- Country: ${countryCode}` : ''}`;
     // attempts (each ~5.5s, plus the Gemini fallback inside callAI) used to
     // stretch a failed generation past 30 seconds.
     const maxAttempts = 2;
-    const GENERATION_BUDGET_MS = 22000;
+    // Wall-clock cut-off for STARTING a second attempt.
+    //
+    // This was 22s, chosen when a Groq attempt took ~5.5s. But Groq can no
+    // longer serve trips of 3+ days (see GROQ_MAX_OUTPUT_TOKENS) and a Gemini
+    // attempt takes 20-45s — so the budget was always already spent by the
+    // time the first attempt returned, and the retry NEVER ran. That made a
+    // single malformed reply a hard failure, which is exactly the intermittent
+    // "خطأ في الخادم" users saw: the model occasionally emits an unescaped
+    // quote inside Arabic text, and there was no second chance.
+    //
+    // Now that generation itself is far quicker (a 6-day trip went from 99s to
+    // ~20s), a real retry fits: two attempts still land inside
+    // REQUEST_BUDGET_MS, and if they don't, the enrichment steps below skip
+    // themselves rather than overrun the client.
+    const GENERATION_BUDGET_MS = 45000;
     const startedAt = Date.now();
 
     // Hard wall-clock ceiling for the WHOLE request, enforced by the optional

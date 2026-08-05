@@ -14,6 +14,9 @@ class DayEntity extends Equatable {
   final String? themeEn;
   final String? summary;
 
+  /// English copy of [summary], filled in on demand.
+  final String? summaryEn;
+
   const DayEntity({
     required this.id,
     required this.tripId,
@@ -22,7 +25,12 @@ class DayEntity extends Equatable {
     this.theme,
     this.themeEn,
     this.summary,
+    this.summaryEn,
   });
+
+  /// The day's one-line description in the app's current language.
+  String? displaySummary(BuildContext context) =>
+      localizedProse(context, summary, summaryEn);
 
   /// The day theme in the app's current language.
   String? displayTheme(BuildContext context) =>
@@ -30,5 +38,5 @@ class DayEntity extends Equatable {
 
   @override
   List<Object?> get props =>
-      [id, tripId, dayNumber, date, theme, themeEn, summary];
+      [id, tripId, dayNumber, date, theme, themeEn, summary, summaryEn];
 }

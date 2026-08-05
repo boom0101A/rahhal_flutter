@@ -91,10 +91,10 @@ class ItineraryTab extends StatelessWidget {
                         state.selectedDay.displayTheme(context)!,
                         style: AppTextStyles.titleMedium,
                       ),
-                      if (state.selectedDay.summary != null) ...[
+                      if (state.selectedDay.displaySummary(context) != null) ...[
                         const SizedBox(height: 4),
                         Text(
-                          state.selectedDay.summary!,
+                          state.selectedDay.displaySummary(context)!,
                           style: AppTextStyles.bodySmall,
                         ),
                       ],

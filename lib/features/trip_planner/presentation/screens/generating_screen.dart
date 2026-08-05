@@ -11,6 +11,7 @@ import '../../../../core/services/notification_service.dart';
 import '../../domain/entities/trip_entity.dart';
 import '../../../../core/config/app_config.dart';
 import '../../../../core/di/injection.dart';
+import '../../../../core/network/trip_translation_service.dart';
 import '../../../../core/utils/haptics.dart';
 import '../cubit/trip_planner_cubit.dart';
 
@@ -134,11 +135,24 @@ class _GeneratingScreenBodyState extends State<_GeneratingScreenBody>
     }
   }
 
-  void _navigateToSuccess(TripPlannerState state) {
-    if (state is TripPlannerSuccess && mounted) {
-      _scheduleTripReminder(state.trip);
-      context.go('/trip/${state.trip.id}', extra: state.trip);
+  Future<void> _navigateToSuccess(TripPlannerState state) async {
+    if (state is! TripPlannerSuccess || !mounted) return;
+    _scheduleTripReminder(state.trip);
+
+    // The model always writes its prose in Arabic. When the app is in English,
+    // translate before opening the trip rather than after, so it never appears
+    // in Arabic and then flips — which is what a user creating a trip in the
+    // English app was seeing. Measured at ~2s for a whole trip, and the
+    // progress animation is still on screen while it runs.
+    if (AppStrings.of(context).languageCode == 'en') {
+      await sl<TripTranslationService>().ensureEnglish(state.trip.id);
+      if (!mounted) return;
     }
+
+    // Deliberately re-read from the database rather than passing state.trip:
+    // that instance was built before the translation, so passing it would show
+    // the stale Arabic summary in the header.
+    context.go('/trip/${state.trip.id}');
   }
 
   /// If the trip has a start date, schedule a "your trip is coming up"

@@ -31,6 +31,7 @@ class HotelRepositoryImpl implements HotelRepository {
         name: m['name'] as String,
         nameEn: m['name_en'] as String?,
         hotelType: m['hotel_type'] as String?,
+        hotelTypeEn: m['hotel_type_en'] as String?,
         rating: (m['rating'] as num? ?? 0).toDouble(),
         pricePerNight: (m['price_per_night'] as num? ?? 0).toDouble(),
         address: m['address'] as String?,

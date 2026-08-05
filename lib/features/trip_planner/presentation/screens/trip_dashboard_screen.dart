@@ -51,6 +51,10 @@ class _TripDashboardScreenState extends State<TripDashboardScreen>
   bool _isSharing = false;
   bool _isSharingLocation = false;
 
+  /// Bumped when a translation lands, and used as the tab providers key so
+  /// their cubits are rebuilt and re-read the freshly translated rows.
+  int _dataRevision = 0;
+
   List<(IconData, String)> _tabs(BuildContext context) {
     final strings = AppStrings.of(context);
     return [
@@ -90,9 +94,16 @@ class _TripDashboardScreenState extends State<TripDashboardScreen>
         await sl<TripTranslationService>().ensureEnglish(widget.tripId);
     if (!didTranslate || !mounted) return;
 
-    // The tabs read their data through their own cubits, which loaded before
-    // the translation landed — reload so the English text actually shows.
-    setState(() {});
+    // Each tab's data lives in its own cubit, and those cubits loaded their
+    // entities out of SQLite BEFORE the translation wrote the *_en columns.
+    // A plain setState only rebuilds widgets — the cubits keep their stale
+    // Arabic state, which is why the day theme, the stop tip and the
+    // restaurant/hotel blurbs all stayed Arabic after translating.
+    //
+    // Every cubit loads inside its `create:`, so bumping this counter (used as
+    // the MultiBlocProvider's key) disposes them and builds fresh ones, which
+    // re-read the now-translated rows.
+    setState(() => _dataRevision++);
     _reloadTripAfterTranslation();
   }
 
@@ -159,6 +170,7 @@ class _TripDashboardScreenState extends State<TripDashboardScreen>
       );
     }
     return MultiBlocProvider(
+      key: ValueKey(_dataRevision),
       providers: [
         BlocProvider(
           create: (_) =>

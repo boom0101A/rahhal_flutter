@@ -10,6 +10,10 @@ class RestaurantEntity extends Equatable {
   final String name;
   final String? nameEn;
   final String? cuisineType;
+
+  /// English copy of [cuisineType] — usually supplied for free by the
+  /// server from the English Places result.
+  final String? cuisineTypeEn;
   final bool halalCertified;
   final double rating;
   final double pricePerPerson;
@@ -39,6 +43,7 @@ class RestaurantEntity extends Equatable {
     required this.name,
     this.nameEn,
     this.cuisineType,
+    this.cuisineTypeEn,
     required this.halalCertified,
     required this.rating,
     required this.pricePerPerson,
@@ -85,6 +90,10 @@ class RestaurantEntity extends Equatable {
     }
     return name;
   }
+
+  /// The cuisine/type chip in the app's current language.
+  String? displayCuisineType(BuildContext context) =>
+      localizedProse(context, cuisineType, cuisineTypeEn);
 
   /// The restaurant blurb in the app's current language.
   String? displayAiDescription(BuildContext context) =>

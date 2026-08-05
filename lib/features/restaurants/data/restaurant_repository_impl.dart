@@ -48,6 +48,7 @@ class RestaurantRepositoryImpl implements RestaurantRepository {
         name: m['name'] as String,
         nameEn: m['name_en'] as String?,
         cuisineType: m['cuisine_type'] as String?,
+        cuisineTypeEn: m['cuisine_type_en'] as String?,
         halalCertified: (m['halal_certified'] as int? ?? 0) == 1,
         rating: (m['rating'] as num? ?? 0).toDouble(),
         pricePerPerson: (m['price_per_person'] as num? ?? 0).toDouble(),

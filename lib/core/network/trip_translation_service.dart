@@ -41,9 +41,12 @@ class TripTranslationService {
     'trip.summary': (table: 'trips', column: 'ai_summary_en'),
     'trip.best_time': (table: 'trips', column: 'best_time_to_visit_en'),
     'day.theme': (table: 'days', column: 'theme_en'),
+    'day.summary': (table: 'days', column: 'summary_en'),
     'stop.tip': (table: 'stops', column: 'ai_tip_en'),
     'rest.desc': (table: 'restaurants', column: 'ai_description_en'),
+    'rest.cuisine': (table: 'restaurants', column: 'cuisine_type_en'),
     'hotel.desc': (table: 'hotels', column: 'ai_description_en'),
+    'hotel.type': (table: 'hotels', column: 'hotel_type_en'),
   };
 
   /// Ensures [tripId] has English prose, translating whatever is still missing.
@@ -121,9 +124,15 @@ class TripTranslationService {
     }
 
     await gather('days', 'theme', 'theme_en', 'day.theme');
+    await gather('days', 'summary', 'summary_en', 'day.summary');
     await gather('stops', 'ai_tip', 'ai_tip_en', 'stop.tip');
     await gather('restaurants', 'ai_description', 'ai_description_en', 'rest.desc');
     await gather('hotels', 'ai_description', 'ai_description_en', 'hotel.desc');
+    // The type chips ("مطعم" / "فندق"). The server fills these for free from
+    // its English Places result, so this only picks up AI-invented entries and
+    // trips generated before that was in place.
+    await gather('restaurants', 'cuisine_type', 'cuisine_type_en', 'rest.cuisine');
+    await gather('hotels', 'hotel_type', 'hotel_type_en', 'hotel.type');
 
     return out;
   }

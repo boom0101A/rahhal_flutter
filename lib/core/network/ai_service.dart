@@ -179,6 +179,10 @@ class RestaurantResponse {
   final String name;
   final String? nameEn;
   final String cuisineType;
+
+  /// English label the server took from the English Places result — free,
+  /// so the type chip never needs the paid translation pass.
+  final String? cuisineTypeEn;
   final bool halalCertified;
   final double rating;
   final double pricePerPersonUsd;
@@ -197,6 +201,7 @@ class RestaurantResponse {
     required this.name,
     this.nameEn,
     required this.cuisineType,
+    this.cuisineTypeEn,
     required this.halalCertified,
     required this.rating,
     required this.pricePerPersonUsd,
@@ -217,6 +222,7 @@ class RestaurantResponse {
       name: json['name'] as String? ?? '',
       nameEn: json['name_en'] as String?,
       cuisineType: json['cuisine_type'] as String? ?? '',
+      cuisineTypeEn: json['cuisine_type_en'] as String?,
       halalCertified: json['halal_certified'] as bool? ?? false,
       rating: (json['rating'] as num? ?? 0).toDouble(),
       pricePerPersonUsd: _nonNegativeUsd(json['price_per_person_usd']),
@@ -238,6 +244,10 @@ class HotelResponse {
   final String name;
   final String? nameEn;
   final String? hotelType;
+
+  /// English label the server took from the English Places result — free,
+  /// so the type chip never needs the paid translation pass.
+  final String? hotelTypeEn;
   final double rating;
   final double pricePerNightUsd;
   final String address;
@@ -254,6 +264,7 @@ class HotelResponse {
     required this.name,
     this.nameEn,
     this.hotelType,
+    this.hotelTypeEn,
     required this.rating,
     required this.pricePerNightUsd,
     required this.address,
@@ -272,6 +283,7 @@ class HotelResponse {
       name: json['name'] as String? ?? '',
       nameEn: json['name_en'] as String?,
       hotelType: json['hotel_type'] as String?,
+      hotelTypeEn: json['hotel_type_en'] as String?,
       rating: (json['rating'] as num? ?? 0).toDouble(),
       pricePerNightUsd: _nonNegativeUsd(json['price_per_night_usd']),
       address: json['address'] as String? ?? '',

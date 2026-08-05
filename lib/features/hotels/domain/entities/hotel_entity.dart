@@ -9,6 +9,10 @@ class HotelEntity extends Equatable {
   final String name;
   final String? nameEn;
   final String? hotelType;
+
+  /// English copy of [hotelType] — usually supplied for free by the
+  /// server from the English Places result.
+  final String? hotelTypeEn;
   final double rating;
   final double pricePerNight;
   final String? address;
@@ -30,6 +34,7 @@ class HotelEntity extends Equatable {
     required this.name,
     this.nameEn,
     this.hotelType,
+    this.hotelTypeEn,
     required this.rating,
     required this.pricePerNight,
     this.address,
@@ -65,6 +70,10 @@ class HotelEntity extends Equatable {
     }
     return name;
   }
+
+  /// The hotel-type chip in the app's current language.
+  String? displayHotelType(BuildContext context) =>
+      localizedProse(context, hotelType, hotelTypeEn);
 
   /// The hotel blurb in the app's current language.
   String? displayAiDescription(BuildContext context) =>

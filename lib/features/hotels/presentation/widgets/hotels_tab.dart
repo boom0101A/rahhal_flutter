@@ -183,9 +183,10 @@ class _HotelCard extends StatelessWidget {
                     ),
                   ],
                 ),
-                if (hotel.hotelType != null && hotel.hotelType!.isNotEmpty) ...[
+                if (hotel.displayHotelType(context) != null &&
+                    hotel.displayHotelType(context)!.isNotEmpty) ...[
                   const SizedBox(height: 4),
-                  Text(hotel.hotelType!, style: AppTextStyles.bodySmall),
+                  Text(hotel.displayHotelType(context)!, style: AppTextStyles.bodySmall),
                 ],
                 const SizedBox(height: 8),
                 // Rating + price/night

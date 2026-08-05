@@ -17,7 +17,7 @@ class DatabaseHelper {
 
   // ─── Init ─────────────────────────────────────────────────────────────────
 
-  static const int _dbVersion = 14;
+  static const int _dbVersion = 15;
   static const String _dbName = 'rahhal_ai.db';
 
   static final Map<int, List<String>> _migrations = {
@@ -361,6 +361,19 @@ class DatabaseHelper {
       'ALTER TABLE stops ADD COLUMN ai_tip_en TEXT;',
       'ALTER TABLE restaurants ADD COLUMN ai_description_en TEXT;',
       'ALTER TABLE hotels ADD COLUMN ai_description_en TEXT;',
+    ],
+    // The three prose fields v14 missed, all of which stayed Arabic on an
+    // otherwise-English screen:
+    //   * days.summary        — the line under each day's title
+    //   * restaurants.cuisine_type — the "مطعم" chip on a restaurant card
+    //   * hotels.hotel_type        — the "فندق" chip on a hotel card
+    // The two type labels usually cost nothing to fill: the server already
+    // fetches the English Places result for the name, so it now sends the
+    // English label alongside. Only AI-invented entries need translating.
+    15: [
+      'ALTER TABLE days ADD COLUMN summary_en TEXT;',
+      'ALTER TABLE restaurants ADD COLUMN cuisine_type_en TEXT;',
+      'ALTER TABLE hotels ADD COLUMN hotel_type_en TEXT;',
     ],
   };
 

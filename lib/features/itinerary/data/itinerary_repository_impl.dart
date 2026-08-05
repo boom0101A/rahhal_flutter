@@ -118,6 +118,7 @@ class ItineraryRepositoryImpl implements ItineraryRepository {
         theme: m['theme'] as String?,
         themeEn: m['theme_en'] as String?,
         summary: m['summary'] as String?,
+        summaryEn: m['summary_en'] as String?,
       );
 
   StopEntity _stopFromMap(Map<String, dynamic> m) => StopEntity(
