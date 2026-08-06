@@ -386,6 +386,10 @@ class AppStrings {
   String get savedSectionUpcoming => _t('القادمة', 'Upcoming');
   String get savedSectionCompleted => _t('المنتهية', 'Completed');
   String get tripDeleted => _t('تم حذف الرحلة', 'Trip deleted');
+  /// Shown when the delete the undo bar already announced turns out to have
+  /// failed — otherwise the trip just silently reappears later.
+  String get tripDeleteFailed => _t(
+      'تعذّر حذف الرحلة، حاول مرة أخرى', 'Couldn\'t delete the trip. Please try again');
 
   String savedDaysUntil(int days) {
     if (days <= 0) return _t('اليوم', 'Today');

@@ -370,7 +370,25 @@ class _SavedTripsScreenState extends State<SavedTripsScreen> {
   }
 
   Widget _buildTripsSection(BuildContext context) {
-    return BlocBuilder<SavedTripsCubit, SavedTripsState>(
+    return BlocConsumer<SavedTripsCubit, SavedTripsState>(
+      listener: (context, state) {
+        if (state is! SavedTripsDeleteFailed) return;
+        // The card was hidden the moment the undo window opened and the bar
+        // said "deleted". The delete has now definitively failed, so put the
+        // card back rather than leave a list missing a trip the user still has.
+        _deleteTimers.remove(state.tripId)?.cancel();
+        setState(() => _pendingDeleteIds.remove(state.tripId));
+        ScaffoldMessenger.of(context)
+          ..clearSnackBars()
+          ..showSnackBar(SnackBar(
+            backgroundColor: AppColors.error,
+            behavior: SnackBarBehavior.fixed,
+            content: Text(
+              AppStrings.of(context).tripDeleteFailed,
+              style: const TextStyle(color: Colors.white),
+            ),
+          ));
+      },
       builder: (context, state) {
         if (state is SavedTripsLoading) {
           return ListView(

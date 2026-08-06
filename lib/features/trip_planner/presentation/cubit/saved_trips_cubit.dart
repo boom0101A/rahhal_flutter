@@ -23,11 +23,26 @@ class SavedTripsCubit extends Cubit<SavedTripsState> {
   }
 
   Future<void> deleteTrip(String tripId) async {
+    final before = state;
     final result = await _repository.deleteTrip(tripId);
     if (isClosed) return;
-    result.fold(
-      (failure) => null,
-      (_) => loadTrips(),
+    await result.fold(
+      (failure) async {
+        // Was `(failure) => null`. By the time this runs the screen has already
+        // hidden the card and the snackbar has said "deleted", so staying
+        // quiet here is a lie: the trip simply reappears on the next load with
+        // no explanation. No emit(Loading) on this path, so the list doesn't
+        // flash a shimmer on the way to an error.
+        emit(SavedTripsDeleteFailed(
+          trips: before is SavedTripsLoaded ? before.trips : const [],
+          tripId: tripId,
+          message: failure.message,
+        ));
+        // Degenerate case only — a delete that raced a reload leaves us with no
+        // list to carry forward, and an empty screen would be its own bug.
+        if (before is! SavedTripsLoaded) await loadTrips();
+      },
+      (_) async => loadTrips(),
     );
   }
 

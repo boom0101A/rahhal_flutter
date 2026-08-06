@@ -700,8 +700,14 @@ class _TripInputScreenState extends State<TripInputScreen> {
   void _pickSuggestion(IraqPlace place) {
     FocusScope.of(context).unfocus();
     setState(() {
-      // The Arabic name is what the user sees; the server's dictionary resolves
-      // it to the canonical English city, so no extra plumbing is needed.
+      // Always the Arabic name, even when the UI is in English. The server
+      // resolves an Arabic name through its zero-cost dictionary and attaches
+      // the governorate's real centre coordinates, and those coordinates are
+      // the trusted anchor its out-of-governorate stop filter measures against.
+      // An English name resolves too, but via a pass-through branch that
+      // returns no coordinates — so sending it would quietly disable that
+      // filter for every English-language user. The suggestion list is
+      // translated instead; see _suggestionTitle.
       _destinationCtrl.text = place.ar;
       _suggestions = const [];
     });
@@ -712,6 +718,27 @@ class _TripInputScreenState extends State<TripInputScreen> {
         IraqPlaceKind.city => s.searchKindCity,
         IraqPlaceKind.landmark => s.searchKindLandmark,
       };
+
+  /// What the suggestion row shows. The dataset's `en` is the canonical
+  /// planner key, which also makes it the best English label available.
+  ///
+  /// This is display only — [_pickSuggestion] still writes the Arabic name into
+  /// the field, and for a real reason: the server resolves an Arabic name
+  /// through its dictionary and attaches the governorate's true centre
+  /// coordinates, which is what its out-of-governorate stop filter measures
+  /// against. An English name takes a pass-through branch with no coordinates,
+  /// so the trip would lose that anchor.
+  String _suggestionTitle(IraqPlace p, AppStrings s) =>
+      s.languageCode == 'en' ? p.en : p.ar;
+
+  String _suggestionSubtitle(IraqPlace p, AppStrings s) {
+    final kind = _kindLabel(p.kind, s);
+    if (s.languageCode != 'en') return '$kind · ${p.governorate}';
+    final gov = governorateEn(p.governorate);
+    // Foreign entries store a country name here and have no English row —
+    // show the kind alone rather than an Arabic word inside an English UI.
+    return gov == null ? kind : '$kind · $gov';
+  }
 
   (IconData, Color) _kindStyle(IraqPlaceKind kind) => switch (kind) {
         IraqPlaceKind.governorate => (Icons.account_balance_rounded, AppColors.accentAmber),
@@ -758,13 +785,13 @@ class _TripInputScreenState extends State<TripInputScreen> {
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        Text(p.ar,
+                        Text(_suggestionTitle(p, strings),
                             style: AppTextStyles.titleSmall,
                             maxLines: 1,
                             overflow: TextOverflow.ellipsis),
                         const SizedBox(height: 2),
                         Text(
-                          '${_kindLabel(p.kind, strings)} · ${p.governorate}',
+                          _suggestionSubtitle(p, strings),
                           style: AppTextStyles.labelSmall.copyWith(
                             color: AppColors.adaptiveTextSecondary(context),
                           ),

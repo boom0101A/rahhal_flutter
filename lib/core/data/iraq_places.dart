@@ -64,6 +64,12 @@ List<IraqPlace> searchIraqPlaces(String query, {int limit = 12}) {
     final candidates = <String>[
       normalizeArabic(p.ar),
       p.en.toLowerCase(),
+      // The English name normalised the SAME way as the query. Without this the
+      // query side had its punctuation collapsed and the candidate side didn't,
+      // so "al hillah" never matched "Al-Hillah" and "mada in" never matched
+      // "Al-Mada'in". normalizeArabic is safe on Latin text: its \w class keeps
+      // [A-Za-z0-9_] and the leading-"ال" strip only fires on Arabic letters.
+      normalizeArabic(p.en),
       ...p.aliases.map(normalizeArabic),
     ];
 
@@ -106,6 +112,24 @@ List<IraqPlace> searchIraqPlaces(String query, {int limit = 12}) {
   }
   return out;
 }
+
+/// English label for a governorate, derived from the dataset itself.
+///
+/// Every Iraqi governorate is already in the list as its own [IraqPlace] with
+/// `kind == governorate`, so its `en` IS the English label. Deriving it beats
+/// adding a second English column: `places_dictionary_sync_test` parses each
+/// `IraqPlace(...)` field by field, so a new field would mean editing 400+
+/// entries and reworking that test for a subtitle.
+///
+/// Foreign entries carry a country name in `governorate` ('تركيا', 'الأردن')
+/// and have no such row, so they return null and the caller drops that half of
+/// the subtitle instead of inventing a translation.
+final Map<String, String> _governorateEnByAr = {
+  for (final p in iraqPlaces)
+    if (p.kind == IraqPlaceKind.governorate) p.ar: p.en,
+};
+
+String? governorateEn(String governorateAr) => _governorateEnByAr[governorateAr];
 
 const List<IraqPlace> iraqPlaces = [
   // ─── Baghdad ──────────────────────────────────────────────────────────────

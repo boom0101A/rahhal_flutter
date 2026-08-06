@@ -529,7 +529,23 @@ class TripRepositoryImpl implements TripRepository {
         where: 'id = ? AND user_id = ?',
         whereArgs: [tripId, _currentUid],
       );
-      if (owned == null) return const Right(null);
+      if (owned == null) {
+        // Returning Right for both "already gone" and "not yours" is what let
+        // a delete that deleted nothing be reported to the user as done.
+        // Separate them: an id that no longer exists genuinely satisfies the
+        // intent (a double tap, or a cloud delete that already landed), so
+        // that stays a success. A row that exists but belongs to another
+        // account is a real failure and has to reach the UI. The extra query
+        // only runs on this miss path.
+        final exists = await _dbHelper.queryOne(
+          'trips',
+          where: 'id = ?',
+          whereArgs: [tripId],
+        );
+        if (exists == null) return const Right(null);
+        return const Left(
+            DatabaseFailure('Trip does not belong to the current account'));
+      }
 
       // Read before the transaction and delete after it commits: file I/O has
       // no business inside a DB transaction, and the rows are gone by then.
