@@ -1000,7 +1000,14 @@ const corsOptions = {
       /^https:\/\/.*\.firebaseapp\.com$/,
     ];
     const ok = allowed.some(r => r instanceof RegExp ? r.test(origin) : r === origin);
-    callback(ok ? null : new Error('CORS blocked'), ok);
+    // Reject by passing `false`, not an Error. Passing an Error makes the
+    // `cors` package call next(err), and with no error-handling middleware in
+    // this file that fell through to Express's default handler — which
+    // writes the full stack trace into the response body whenever NODE_ENV
+    // isn't 'production' (never set anywhere in this deployment). A rejected
+    // origin should just get no CORS headers, not a 500 with an internal
+    // stack trace.
+    callback(null, ok);
   },
   credentials: true,
 };
@@ -1204,11 +1211,24 @@ const GEMINI_ATTEMPT_TIMEOUT_MS = 40000;
 // better answer there and latency isn't the constraint.
 const GEMINI_PREFER_LITE_ABOVE_TOKENS = 8000;
 
-async function callGemini(systemPrompt, messages, maxTokens = 4000, apiKey) {
+async function callGemini(systemPrompt, messages, maxTokens = 4000, apiKey, deadlineAt) {
   const modelsToTry = maxTokens > GEMINI_PREFER_LITE_ABOVE_TOKENS
       ? ['gemini-flash-lite-latest', 'gemini-flash-latest']
       : ['gemini-flash-latest', 'gemini-flash-lite-latest'];
   let lastError = null;
+
+  // Each sub-call below gets GEMINI_ATTEMPT_TIMEOUT_MS by default — but this
+  // function can be tried twice per request (primary key, then a fallback
+  // key in callAI), across up to 3 sub-calls each, so unconstrained that's up
+  // to 240s for one generation attempt while the client gives up at 120s.
+  // `deadlineAt`, when the caller supplies one, shrinks each sub-call's
+  // timeout to whatever's left of the overall request budget instead of
+  // always granting the full nominal ceiling. Left undefined (as every
+  // caller except the trip route does), this is a no-op — the exact
+  // GEMINI_ATTEMPT_TIMEOUT_MS constant, unchanged.
+  const remainingAttemptTimeout = () => deadlineAt
+    ? Math.max(3000, Math.min(GEMINI_ATTEMPT_TIMEOUT_MS, deadlineAt - Date.now()))
+    : GEMINI_ATTEMPT_TIMEOUT_MS;
 
   // ─── Attempt 1: Official Google Generative AI SDK ─────────────────────────
   for (const modelName of modelsToTry) {
@@ -1230,7 +1250,7 @@ async function callGemini(systemPrompt, messages, maxTokens = 4000, apiKey) {
         // Google could then block this call far longer than intended instead
         // of failing over to the REST fallback below. 60s matches that
         // REST fallback's own timeout for the same kind of call.
-        timeout: GEMINI_ATTEMPT_TIMEOUT_MS,
+        timeout: remainingAttemptTimeout(),
       });
 
       const history = messages.slice(0, -1).map(m => ({
@@ -1274,7 +1294,7 @@ async function callGemini(systemPrompt, messages, maxTokens = 4000, apiKey) {
       },
       {
         headers: { 'Content-Type': 'application/json' },
-        timeout: GEMINI_ATTEMPT_TIMEOUT_MS,
+        timeout: remainingAttemptTimeout(),
       }
     );
 
@@ -1372,7 +1392,7 @@ async function callGroq(systemPrompt, messages, maxTokens = 4000, apiKey) {
 
 // Unified AI Engine Call: prefers Groq (generous free tier), falls back
 // to Google Gemini so the app keeps working if either provider is down.
-async function callAI(systemPrompt, messages, maxTokens = 4000) {
+async function callAI(systemPrompt, messages, maxTokens = 4000, deadlineAt) {
   const groqKey = process.env.GROQ_API_KEY;
   const geminiKey = process.env.GEMINI_API_KEY;
   const placesKey = process.env.GOOGLE_PLACES_API_KEY;
@@ -1419,7 +1439,7 @@ async function callAI(systemPrompt, messages, maxTokens = 4000) {
   if (hasGeminiKey) {
     try {
       console.log('[AI Engine] Using Google Gemini...');
-      return await callGemini(systemPrompt, messages, maxTokens, geminiKey);
+      return await callGemini(systemPrompt, messages, maxTokens, geminiKey, deadlineAt);
     } catch (e) {
       console.warn('[AI Engine] GEMINI_API_KEY failed:', e.message);
       // Fall through to GOOGLE_PLACES_API_KEY fallback below instead of failing immediately
@@ -1430,7 +1450,7 @@ async function callAI(systemPrompt, messages, maxTokens = 4000) {
   if (hasPlacesFallbackKey) {
     try {
       console.log('[AI Engine] Trying GOOGLE_PLACES_API_KEY fallback for Gemini...');
-      return await callGemini(systemPrompt, messages, maxTokens, placesKey);
+      return await callGemini(systemPrompt, messages, maxTokens, placesKey, deadlineAt);
     } catch (e) {
       console.warn('[AI Engine] Fallback GOOGLE_PLACES_API_KEY failed:', e.message);
     }
@@ -1554,7 +1574,13 @@ async function verifyPlaceWithGoogle(nameEn, cityEn, centerLat, centerLng) {
     if (!tripPlacesBreaker(message)) {
       console.error(`[PLACES] Text Search error for "${nameEn}":`, message);
     }
-    placesCacheSet(cacheKey, { data: null, timestamp: now });
+    // Deliberately NOT cached: this branch means the REQUEST failed (a
+    // network blip, a 5xx, our own 6s timeout, quota) — not that Google
+    // genuinely returned zero results (that's cached above, on the success
+    // path). Caching a negative result here would freeze a transient failure
+    // into a 7-day false "doesn't exist" — mirrored to Firestore, surviving a
+    // redeploy — that silently replaces a real landmark with a substitute
+    // stop for every trip to that city in the meantime.
     return null;
   }
 }
@@ -1970,8 +1996,24 @@ async function fetchRealRestaurants(cityEn, centerLat, centerLng, countryCode, l
     console.warn('[RESTAURANTS] Places not configured — keeping AI-generated restaurants.');
     return [];
   }
+  // Mirrors fetchRealHotels below: with both surfaces exhausted, every call
+  // this function could make (text, then its nearby fallback) is doomed —
+  // skip straight to keeping the AI-generated restaurants instead of
+  // spending two guaranteed-to-fail searchText calls per trip.
+  if (isPlacesQuotaBlocked('text') && isPlacesQuotaBlocked('nearby')) {
+    return [];
+  }
 
-  const cacheKey = `__restaurants__|${cityEn.toLowerCase().trim()}|${limit}`;
+  // The search center materially changes results (locationBias below, plus a
+  // max-distance filter downstream), so two different centers for the same
+  // city must never collide on one cache entry — mirrors the pattern already
+  // used in verifyPlaceWithGoogle's own cache key.
+  const nCenterLat = centerLat != null ? parseFloat(centerLat) : NaN;
+  const nCenterLng = centerLng != null ? parseFloat(centerLng) : NaN;
+  const centerKeyPart = Number.isFinite(nCenterLat) && Number.isFinite(nCenterLng)
+    ? `|${nCenterLat.toFixed(2)},${nCenterLng.toFixed(2)}`
+    : '';
+  const cacheKey = `__restaurants__|${cityEn.toLowerCase().trim()}|${limit}${centerKeyPart}`;
   const now = Date.now();
   if (placesCache.has(cacheKey)) {
     const cached = placesCache.get(cacheKey);
@@ -2012,8 +2054,9 @@ async function fetchRealRestaurants(cityEn, centerLat, centerLng, countryCode, l
       ]);
       console.log(`[RESTAURANTS] Recovered ${arPlaces.length} via searchNearby fallback.`);
     } catch (err2) {
-      console.error('[RESTAURANTS] Nearby fallback also failed:',
-        err2.response?.data?.error?.message || err2.message);
+      const msg2 = err2.response?.data?.error?.message || err2.message;
+      tripPlacesBreaker(msg2, 'nearby');
+      console.error('[RESTAURANTS] Nearby fallback also failed:', msg2);
       return [];
     }
   }
@@ -2206,7 +2249,15 @@ async function fetchRealHotels(cityEn, centerLat, centerLng, limit) {
 
   // Capped here too, not only at the route: cityEn can also arrive from
   // Google's own displayName, which this function does not control.
-  const cacheKey = `__hotels__|${cityEn.toLowerCase().trim().slice(0, 120)}|${limit}`;
+  // Same reasoning as fetchRealRestaurants: the search center changes
+  // results, so it has to be part of the key or two different centers for
+  // the same city name collide and serve each other's results for a week.
+  const nCenterLat = centerLat != null ? parseFloat(centerLat) : NaN;
+  const nCenterLng = centerLng != null ? parseFloat(centerLng) : NaN;
+  const centerKeyPart = Number.isFinite(nCenterLat) && Number.isFinite(nCenterLng)
+    ? `|${nCenterLat.toFixed(2)},${nCenterLng.toFixed(2)}`
+    : '';
+  const cacheKey = `__hotels__|${cityEn.toLowerCase().trim().slice(0, 120)}|${limit}${centerKeyPart}`;
   const now = Date.now();
   if (placesCache.has(cacheKey)) {
     const cached = placesCache.get(cacheKey);
@@ -2244,8 +2295,9 @@ async function fetchRealHotels(cityEn, centerLat, centerLng, limit) {
       ]);
       console.log(`[HOTELS] Recovered ${arPlaces.length} via searchNearby fallback.`);
     } catch (err2) {
-      console.error('[HOTELS] Nearby fallback also failed:',
-        err2.response?.data?.error?.message || err2.message);
+      const msg2 = err2.response?.data?.error?.message || err2.message;
+      tripPlacesBreaker(msg2, 'nearby');
+      console.error('[HOTELS] Nearby fallback also failed:', msg2);
       return [];
     }
   }
@@ -2467,6 +2519,12 @@ async function resolveDestinationEN(rawDestination) {
   // 3. Arabic name not in the dictionary → fall back to Google Places.
   const placesKey = process.env.GOOGLE_PLACES_API_KEY;
   if (!placesKey || placesKey === 'your_google_places_api_key_here') return null;
+  // This runs first on every /api/generate-trip and every
+  // /api/hotels?destination= call, so during a quota event it was neither
+  // skipped (wasting a guaranteed-to-fail call before the rest of the
+  // request even starts) nor did its own failure register with the breaker
+  // that every other Places call site already reports to.
+  if (isPlacesQuotaBlocked()) return null;
   try {
     const res = await axios.post(
       'https://places.googleapis.com/v1/places:searchText',
@@ -2506,7 +2564,9 @@ async function resolveDestinationEN(rawDestination) {
       lng: p.location?.longitude ?? null,
     };
   } catch (err) {
-    console.warn('[RESOLVE] Places resolution failed:', err.response?.data?.error?.message || err.message);
+    const msg = err.response?.data?.error?.message || err.message;
+    tripPlacesBreaker(msg);
+    console.warn('[RESOLVE] Places resolution failed:', msg);
     return null;
   }
 }
@@ -2542,7 +2602,14 @@ app.post('/api/generate-trip', async (req, res) => {
     // an attempt to pack extra instructions into a field that gets embedded
     // straight into the system prompt below — cap it before that happens.
     destination.trim().length > 100 ||
-    !durationDays || !budgetTier ||
+    // !durationDays alone let a non-integer or an out-of-range value through:
+    // 90 clamps the token budget to its ceiling, guarantees a
+    // day-count mismatch, and burns a second full-size retry; {} or "abc"
+    // become NaN and flow into maxOutputTokens as null. The UI's slider is
+    // 2-21 days; 1 is allowed here as a bit more permissive on the low end,
+    // since the real risk this bug class carries is on the upper/type side.
+    !Number.isInteger(durationDays) || durationDays < 1 || durationDays > 21 ||
+    !budgetTier ||
     // Same class of bug, one field further down: travelStyles is interpolated
     // with .join() when building the prompt. A truthy non-array (a bare string,
     // an object) throws there — outside any try — and takes the process down.
@@ -2739,7 +2806,7 @@ ${countryCode ? `- Country: ${countryCode}` : ''}`;
       const msgs = extraInstruction
         ? [{ role: 'user', content: userPrompt + '\n\n' + extraInstruction }]
         : messages;
-      const rawReply = await callAI(systemPrompt, msgs, MAX_TOKENS);
+      const rawReply = await callAI(systemPrompt, msgs, MAX_TOKENS, deadlineAt);
 
       let cleanJson = rawReply.trim();
       if (cleanJson.includes('```')) {
@@ -2845,6 +2912,17 @@ ${countryCode ? `- Country: ${countryCode}` : ''}`;
     // enhancement, so running out of budget degrades quality, never the trip.
     const REQUEST_BUDGET_MS = 95000;
     const budgetLeftMs = () => REQUEST_BUDGET_MS - (Date.now() - startedAt);
+    // Generation itself must also respect this budget, not just the
+    // enrichment steps below: callGemini can try up to 3 sub-calls per key
+    // and callAI up to 2 keys, so one attempt was unbounded up to ~240s, and
+    // since the between-attempt check above only fires BEFORE starting a
+    // second attempt, a fast-failing first attempt followed by a slow second
+    // one could reach ~285s total — well past the client's 120s timeout,
+    // burning Gemini quota on a response nobody would ever read. This is a
+    // stable snapshot shared by BOTH attempts (not reset per attempt), so
+    // cumulative generation time across the whole request is capped near
+    // REQUEST_BUDGET_MS regardless of how the attempts split it.
+    const deadlineAt = startedAt + REQUEST_BUDGET_MS;
     for (let attempt = 0; attempt < maxAttempts; attempt++) {
       if (attempt > 0 && Date.now() - startedAt > GENERATION_BUDGET_MS) {
         console.warn('[TRIP] generation budget exhausted — not starting another attempt');
@@ -2875,7 +2953,21 @@ ${countryCode ? `- Country: ${countryCode}` : ''}`;
       }
     }
     if (lastError) {
-      // Whatever the underlying cause, surface it as the friendly, already-handled error.
+      if (
+        lastError.message === 'missing-api-key' ||
+        lastError.message === 'invalid-api-key' ||
+        lastError.message === 'rate-limit'
+      ) {
+        // Preserve the specific, already-classified error instead of
+        // collapsing it below — the outer catch has dedicated 401/403/429
+        // branches for exactly these three, but they were unreachable
+        // because this rethrow always overwrote them with the generic one.
+        // A misconfigured key or an exhausted quota was reported to the user
+        // as "reduce your trip duration", which has nothing to do with it.
+        throw lastError;
+      }
+      // Genuinely malformed/incomplete JSON (or wrong-destination) after a
+      // real retry — collapse to the friendly, already-handled error.
       throw new Error('malformed-response');
     }
 
@@ -4102,6 +4194,25 @@ app.get('/api/hotels', async (req, res) => {
     let cityEn = destClean;
     let cLat = lat ? parseFloat(lat) : null;
     let cLng = lng ? parseFloat(lng) : null;
+    if ((cLat !== null && isNaN(cLat)) || (cLng !== null && isNaN(cLng))) {
+      if (!destClean) {
+        // No destination to fall back on and the coordinates are garbage —
+        // matches /api/nearby-places and /api/resolve-place, which both
+        // already 400 on this instead of silently succeeding with nothing.
+        return res.status(400).json({ error: 'invalid lat/lng', hotels: [] });
+      }
+      // A destination was also given — discard the garbage coordinates and
+      // let resolveDestinationEN's own coordinates fill in below, instead of
+      // letting NaN silently ride along into the Places/Overpass calls
+      // (NaN is falsy, so the code below already treats it like null — but
+      // relying on that was exactly the bug: the Overpass fallback gate,
+      // `cLat && cLng`, is also falsy on NaN, so a destination-less request
+      // with bad coordinates got a silent empty success instead of a 400,
+      // and a request WITH a destination carried NaN out of this block for
+      // no reason).
+      cLat = null;
+      cLng = null;
+    }
 
     if (destClean) {
       const resolved = await resolveDestinationEN(destClean);
@@ -4219,6 +4330,19 @@ function startSelfPing() {
     }
   }, SELF_PING_INTERVAL_MS);
 }
+
+// Global error handler — must be the LAST middleware registered, after every
+// route. Express's default finalhandler writes err.stack into the response
+// body whenever app.get('env') isn't 'production', and NODE_ENV is never set
+// anywhere in this deployment (no railway.json/Dockerfile sets it either),
+// so any unhandled error here — including a rejected CORS origin, before its
+// own fix above — would otherwise leak the container's absolute paths and
+// middleware stack to the client. Generic response, no NODE_ENV dependency.
+app.use((err, req, res, next) => {
+  console.error('[UNHANDLED ERROR]', err && err.stack ? err.stack : err);
+  if (res.headersSent) return next(err);
+  res.status(500).json({ error: 'Internal server error' });
+});
 
 app.listen(PORT, () => {
   console.log(`🚀 Rahhal AI Backend Proxy is running on http://localhost:${PORT}`);
