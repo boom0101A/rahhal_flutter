@@ -957,18 +957,31 @@ function pruneOutOfGovernorateStops(tripData, centerLat, centerLng, maxKm) {
   let dropped = 0;
   for (const day of tripData.days || []) {
     if (Array.isArray(day.stops)) {
-      day.stops = day.stops.filter((stop) => {
+      const original = day.stops;
+      const kept = original.filter((stop) => {
         const lat = parseFloat(stop.latitude);
         const lng = parseFloat(stop.longitude);
         if (isNaN(lat) || isNaN(lng)) return true; // no coords to judge — keep
         const distKm = haversineDistance(cLat, cLng, lat, lng);
         if (distKm > maxKm) {
           console.warn(`[GOVERNORATE] Dropped "${stop.name_en || stop.name}" — ${distKm.toFixed(0)}km from center (outside governorate)`);
-          dropped++;
           return false;
         }
         return true;
       });
+      // Never hand back a day with zero stops — mirrors verifyAllPlacesInTrip's
+      // own backstop. If every stop in a day would be pruned, that's a strong
+      // signal the CENTER is wrong (e.g. GPS noise, a bad resolved city) more
+      // than that every stop is genuinely misplaced, and an empty day is a
+      // worse outcome for the user than one carrying unpruned stops.
+      if (kept.length > 0) {
+        dropped += original.length - kept.length;
+        day.stops = kept;
+      } else if (original.length > 0) {
+        console.warn(
+          `[GOVERNORATE] Day ${day.day_number}: every stop is outside the governorate radius — keeping them unpruned rather than emptying the day`
+        );
+      }
       day.stops.forEach((s, i) => { s.order_index = i; });
     }
   }
@@ -1821,12 +1834,24 @@ async function findReplacementStop(stop, centerLat, centerLng, seenPlaceIds) {
       nearbySearchGoogleGroup(anchorLat, anchorLng, radius, 'en', includedTypes),
     ]);
     const enById = new Map(enResults.map((p) => [p.id, p]));
+    const validResults = arResults.filter((p) => p.location && p.displayName?.text);
+    if (validResults.length === 0) {
+      // Places found nothing of this category near the anchor at all — real
+      // evidence the stop is fake.
+      return REPLACEMENT_NONE;
+    }
     // rankPreference: DISTANCE already sorts closest-first, so the first
     // not-yet-used candidate is both the closest AND non-duplicate choice.
-    const candidate = arResults.find(
-      (p) => p.location && p.displayName?.text && !seenPlaceIds.has(p.id)
-    );
-    if (!candidate) return REPLACEMENT_NONE;
+    const candidate = validResults.find((p) => !seenPlaceIds.has(p.id));
+    if (!candidate) {
+      // Places DID return real nearby places of this category — every one is
+      // just already claimed by an earlier stop in this trip. That's
+      // contention between stops, not evidence this one is fake, so it gets
+      // the same treatment as REPLACEMENT_UNAVAILABLE: keep the original,
+      // unverified, instead of dropping a possibly-real stop.
+      console.log(`[PLACES] All ${validResults.length} nearby candidate(s) for "${stop.name_en}" already claimed by other stops — keeping original unverified`);
+      return REPLACEMENT_UNAVAILABLE;
+    }
     const en = enById.get(candidate.id);
     return {
       status: 'replaced',
@@ -2145,7 +2170,6 @@ function applyRealRestaurants(tripData, realRestaurants) {
   const dayCount = Array.isArray(tripData.days) ? tripData.days.length : 0;
   // Highest-ranked go to the per-day recommendations.
   const recommended = realRestaurants.slice(0, dayCount);
-  const rest = realRestaurants.slice(dayCount);
 
   for (let i = 0; i < dayCount; i++) {
     if (recommended[i]) {
@@ -2157,7 +2181,14 @@ function applyRealRestaurants(tripData, realRestaurants) {
 
   // Keep the recommended ones in the full list too — the app dedupes by name
   // and flags them with is_recommended, so the Restaurants tab shows everything.
-  tripData.all_restaurants = rest.length ? rest : realRestaurants;
+  // Was `rest.length ? rest : realRestaurants`, which excluded every
+  // recommended restaurant from all_restaurants whenever supply was
+  // plentiful (rest.length > 0) — the opposite of this comment, and only
+  // matching it by accident in the short-supply case. The client's own
+  // name-keyed dedupe (confirmed in trip_repository_impl.dart) is what
+  // actually prevents a visual duplicate, so the full list can always be
+  // sent unconditionally.
+  tripData.all_restaurants = realRestaurants;
   return tripData;
 }
 
@@ -3004,8 +3035,13 @@ ${countryCode ? `- Country: ${countryCode}` : ''}`;
     // to the resolved city's real coordinates as the search/verify center when
     // the user gave no GPS — both make the "wrong city" rejection far tighter.
     const destinationEn = (resolved && resolved.cityEn) || parsedData.destination_en || destination;
-    const centerLat = userLat || (resolved && resolved.lat) || null;
-    const centerLng = userLng || (resolved && resolved.lng) || null;
+    // hasGPS-gated, not the raw body value: a truthy-but-near-(0,0) string
+    // (GPS noise, or a device without a real fix) used to pass this `||`
+    // chain unfiltered and become the trusted center for verification,
+    // restaurant/hotel search bias, AND pruneOutOfGovernorateStops below —
+    // hasGPS's precision check is what's supposed to reject exactly that.
+    const centerLat = (hasGPS ? parseFloat(userLat) : null) || (resolved && resolved.lat) || null;
+    const centerLng = (hasGPS ? parseFloat(userLng) : null) || (resolved && resolved.lng) || null;
     parsedData = await verifyAllPlacesInTrip(
       parsedData, destinationEn, centerLat, centerLng, budgetLeftMs
     );
