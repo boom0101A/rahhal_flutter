@@ -3754,19 +3754,33 @@ app.get('/api/weather', async (req, res) => {
   }
 
   try {
-    const cleanCity = sanitizePhotoQuery(city);
-    const query = countryCode ? `${cleanCity},${countryCode}` : cleanCity;
-    const response = await axios.get(
-      'https://api.openweathermap.org/data/2.5/weather',
-      {
-        params: {
-          q: query,
+    // sanitizePhotoQuery is built for the /api/photos image-search feature —
+    // its Arabic→English map covers a handful of famous non-Iraqi capitals,
+    // and everything else gets every Arabic letter stripped, so an Iraqi city
+    // (this app's actual market — كربلاء, النجف, الموصل, بغداد, ...) reduced
+    // to an empty string, silently became 'travel destination', which
+    // OpenWeather 404s on every time — every Iraqi city got fake weather.
+    //
+    // AR_CITY_DICTIONARY + IQ_CITY_CENTERS (already relied on everywhere else
+    // in this file to resolve a trip's destination) give an exact, zero-cost
+    // resolution for every Iraqi city. Querying by those coordinates instead
+    // of by name is also just more reliable than a name-based lookup, even
+    // for a city OpenWeather does recognise — so prefer it whenever the
+    // dictionary has a match, and only fall back to the old name-based
+    // search for a destination outside Iraq.
+    const dict = lookupCityDictionary(city);
+    const iqCenter = dict ? iqCenterFor(dict.en) : null;
+    const params = iqCenter
+      ? { lat: iqCenter.lat, lon: iqCenter.lng, appid: owmKey, units: 'metric', lang: 'ar' }
+      : {
+          q: countryCode ? `${sanitizePhotoQuery(city)},${countryCode}` : sanitizePhotoQuery(city),
           appid: owmKey,
           units: 'metric',
           lang: 'ar',
-        },
-        timeout: 6000,
-      }
+        };
+    const response = await axios.get(
+      'https://api.openweathermap.org/data/2.5/weather',
+      { params, timeout: 6000 }
     );
     const d = response.data;
     return res.status(200).json({
