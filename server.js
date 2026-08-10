@@ -1028,6 +1028,17 @@ app.use(cors(corsOptions));
 app.options('*', cors(corsOptions)); // Handle preflight
 app.use(express.json());
 
+// A few of the cheap, always-safe security headers, applied by hand rather
+// than pulling in the `helmet` package — this is a JSON API with no HTML
+// pages and no third-party embeds, so most of what helmet covers (CSP, iframe
+// framing policy nuances, etc.) doesn't apply here.
+app.use((req, res, next) => {
+  res.setHeader('X-Content-Type-Options', 'nosniff');
+  res.setHeader('X-Frame-Options', 'DENY');
+  res.setHeader('Referrer-Policy', 'no-referrer');
+  next();
+});
+
 // Rate Limiter: Protect API from DDoS & quota drain (Max 100 requests per 15 min per IP)
 const limiter = rateLimit({
   windowMs: 15 * 60 * 1000,
@@ -1112,6 +1123,19 @@ const resolvePlaceLimiter = rateLimit({
   message: { error: 'Too many place lookups, please try again shortly.', place_id: null },
 });
 
+// Unsplash's free tier is 50 requests/HOUR for this entire deployment — a
+// single client hammering /api/photos (previously covered only by the
+// generic 100/15min IP limiter) could burn the whole shared quota alone. 20
+// is generous for a real user (one or two hero images per trip) while
+// meaningfully bounding that.
+const photosLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: 20,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { error: 'Too many photo requests, please try again shortly.' },
+});
+
 // ─── Firebase ID Token Verification Middleware ──────────────────────────────
 // Validates Firebase Auth Bearer Token sent by Flutter app via _FirebaseTokenInterceptor
 //
@@ -1161,7 +1185,7 @@ app.use('/api/translate', translateLimiter, authenticateFirebaseToken);
 // the deployment URL — the generic IP limiter alone let a single client drain
 // the daily allowance. Every app screen that calls them already sits behind
 // the router's auth gate, so a Firebase ID token is always available.
-app.use('/api/photos', authenticateFirebaseToken);
+app.use('/api/photos', photosLimiter, authenticateFirebaseToken);
 app.use('/api/weather', authenticateFirebaseToken);
 app.use('/api/currency', authenticateFirebaseToken);
 // Limiter before auth on purpose: a flood should be rejected by the cheapest
@@ -3415,18 +3439,25 @@ The traveler can ask you ANYTHING about their trip — answer helpfully and spec
   // Map client history format to Gemini format
   const mappedMessages = [];
   if (conversationHistory && Array.isArray(conversationHistory)) {
-    conversationHistory.forEach((msg) => {
+    // The real client already trims to its last 20 messages before sending
+    // (chat_repository_impl.dart), so 40 is double what normal use ever
+    // needs — this bounds a non-standard/abusive caller, not real traffic.
+    // Only express.json()'s default 100kB body cap stood in the way before.
+    conversationHistory.slice(0, 40).forEach((msg) => {
       // A malformed entry (null, a string, a number — anything that isn't a
       // plain object) must be skipped, not crash: reading `.role` off it
       // would throw synchronously inside this async route handler with no
       // enclosing try/catch yet, which becomes an unhandled promise
       // rejection and kills the whole Node process for every concurrent user.
       if (!msg || typeof msg !== 'object') return;
+      // content must be a string too — an object/number here would ride
+      // straight into the prompt sent to the AI provider unchanged.
+      if (typeof msg.content !== 'string') return;
       // role must be either 'user' or 'assistant'
       const role = (msg.role === 'model' || msg.role === 'ai' || msg.role === 'bot') ? 'assistant' : 'user';
       mappedMessages.push({
         role: role,
-        content: msg.content
+        content: msg.content.slice(0, 4000)
       });
     });
   }
@@ -3582,6 +3613,13 @@ const CURRENCY_CACHE_TTL_MS = 6 * 60 * 60 * 1000; // 6 hours
 app.get('/api/currency', async (req, res) => {
   const { base = 'USD', target } = req.query;
   if (!target) return res.status(400).json({ error: 'target currency code is required' });
+  // ISO-4217 shape only — not a maintained allow-list of real currency codes,
+  // which would need updating as providers add coverage. A malformed value
+  // costs two free, keyless calls to nothing; this just stops the obviously
+  // garbage ones before that.
+  if (!/^[A-Za-z]{3}$/.test(base) || !/^[A-Za-z]{3}$/.test(target)) {
+    return res.status(400).json({ error: 'base and target must be 3-letter currency codes' });
+  }
 
   const cacheKey = `${base}-${target}`;
   const now = Date.now();
