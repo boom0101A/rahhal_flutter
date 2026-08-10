@@ -1374,7 +1374,7 @@ const GROQ_MODEL = process.env.GROQ_MODEL || 'openai/gpt-oss-20b';
 // truncate gracefully: the model burns the whole allowance on reasoning tokens
 // and returns an empty message.
 const GROQ_MAX_OUTPUT_TOKENS = 6000;
-async function callGroq(systemPrompt, messages, maxTokens = 4000, apiKey) {
+async function callGroq(systemPrompt, messages, maxTokens = 4000, apiKey, deadlineAt) {
   // Groq's free tier caps tokens-per-minute at 8000 for the gpt-oss models,
   // and (prompt + max_tokens) — not actual usage — counts against it. With a
   // ~1700-token system prompt that leaves ~6000 for output, which is also
@@ -1407,7 +1407,15 @@ async function callGroq(systemPrompt, messages, maxTokens = 4000, apiKey) {
           'Content-Type': 'application/json',
           Authorization: `Bearer ${apiKey}`,
         },
-        timeout: 60000,
+        // Groq handles the majority of trips (the short ones this app's
+        // token cap routes here), so a stalled call eating a fixed 60s was
+        // exactly the case the shared request deadline was built to close —
+        // callGemini already shrinks against it; this didn't, undermining
+        // that fix for the most common path. Same fallback shape: no
+        // deadlineAt (chat/translate never pass one) keeps the original 60s.
+        timeout: deadlineAt
+          ? Math.max(3000, Math.min(60000, deadlineAt - Date.now()))
+          : 60000,
       }
     );
 
@@ -1461,7 +1469,7 @@ async function callAI(systemPrompt, messages, maxTokens = 4000, deadlineAt) {
   if (hasGroqKey && maxTokens <= GROQ_MAX_OUTPUT_TOKENS) {
     try {
       console.log('[AI Engine] Using Groq...');
-      return await callGroq(systemPrompt, messages, maxTokens, groqKey);
+      return await callGroq(systemPrompt, messages, maxTokens, groqKey, deadlineAt);
     } catch (e) {
       console.warn('[AI Engine] GROQ_API_KEY failed:', e.message);
       // Fall through to Gemini below instead of failing immediately.
@@ -2532,6 +2540,31 @@ function applyHotels(tripData, hotels) {
   return tripData;
 }
 
+// The AI's own budget arithmetic is never re-derived from the real
+// Places-sourced hotel/restaurant prices swapped in above — deliberately not
+// attempted here, since deciding how to reconcile a user's requested budget
+// cap against real prices that may exceed it is a product decision, not a
+// validation one. This only guards against the field being missing, the
+// wrong type, or nonsensical (negative/NaN) — every other numeric field this
+// route accepts from the AI already gets this; these two never did, and
+// would otherwise reach the client as "$NaN" or a raw string.
+function sanitizeBudgetFields(tripData) {
+  const finiteOrDefault = (v) =>
+    (typeof v === 'number' && Number.isFinite(v) && v >= 0) ? v : 0;
+
+  tripData.budget_total_usd = finiteOrDefault(tripData.budget_total_usd);
+
+  const b = tripData.budget_breakdown;
+  const keys = ['accommodation_usd', 'food_usd', 'transport_usd', 'activities_usd', 'shopping_usd'];
+  if (b && typeof b === 'object' && !Array.isArray(b)) {
+    for (const key of keys) b[key] = finiteOrDefault(b[key]);
+  } else {
+    tripData.budget_breakdown = Object.fromEntries(keys.map((key) => [key, 0]));
+  }
+
+  return tripData;
+}
+
 // ─── POST /api/generate-trip ────────────────────────────────────────────────
 // Resolve a possibly-Arabic destination string to a canonical English city
 // name + country using Google Places (New). Doing this here — rather than
@@ -3134,6 +3167,7 @@ ${countryCode ? `- Country: ${countryCode}` : ''}`;
       }
     }
     parsedData = applyHotels(parsedData, hotels);
+    parsedData = sanitizeBudgetFields(parsedData);
 
     console.log(
       `[TRIP] Completed in ${((Date.now() - startedAt) / 1000).toFixed(1)}s for "${destinationEn}"`
@@ -3187,7 +3221,8 @@ function deduplicateTripPlan(plan) {
   if (plan.days && Array.isArray(plan.days)) {
     for (const day of plan.days) {
       if (day.stops && Array.isArray(day.stops)) {
-        day.stops = day.stops.filter(stop => {
+        const original = day.stops;
+        const kept = original.filter(stop => {
           const key = stop.name_en?.toLowerCase().trim() || stop.name?.toLowerCase().trim();
           if (!key) return true;
           if (seenPlaces.has(key)) {
@@ -3197,6 +3232,22 @@ function deduplicateTripPlan(plan) {
           seenPlaces.add(key);
           return true;
         });
+        // Never hand back a day with zero stops — same backstop already used
+        // in verifyAllPlacesInTrip and pruneOutOfGovernorateStops, missing
+        // here. The system prompt explicitly warns the model against
+        // repeating a whole day's stops in another day, which means an
+        // entire day getting flagged as duplicate-of-an-earlier-one is a
+        // real failure mode, not hypothetical — and it ran BEFORE either of
+        // those two backstops, so nothing downstream could have caught it.
+        // A day that's a content duplicate of another is a lesser problem
+        // for the user than a day that renders with nothing in it at all.
+        if (kept.length > 0) {
+          day.stops = kept;
+        } else if (original.length > 0) {
+          console.warn(
+            `[DEDUP] Day ${day.day_number}: every stop looked like a duplicate of an earlier day — keeping them rather than emptying the day`
+          );
+        }
 
         day.stops.forEach((stop, i) => {
           stop.order_index = i;
@@ -3247,16 +3298,29 @@ function dedupeTripByPlaceId(tripData) {
   let dropped = 0;
   for (const day of tripData.days || []) {
     if (!Array.isArray(day.stops)) continue;
-    day.stops = day.stops.filter((stop) => {
+    const original = day.stops;
+    const kept = original.filter((stop) => {
       if (!stop.place_id) return true; // never verified — nothing to compare
       if (seenPlaceIds.has(stop.place_id)) {
         console.warn(`[DEDUP] Removed place_id-duplicate stop: ${stop.name_en || stop.name}`);
-        dropped++;
         return false;
       }
       seenPlaceIds.add(stop.place_id);
       return true;
     });
+    // Same backstop as deduplicateTripPlan just above and every other
+    // pruning step in this pipeline: the exact scenario this function's own
+    // header comment describes ("Grand Bazaar" and "Kapalıçarşı" resolving
+    // to the same place_id) can hit every stop in a single-stop day, and
+    // without this, that day would ship to the client with zero stops.
+    if (kept.length > 0) {
+      dropped += original.length - kept.length;
+      day.stops = kept;
+    } else if (original.length > 0) {
+      console.warn(
+        `[DEDUP] Day ${day.day_number}: every stop resolved to an already-used place — keeping them rather than emptying the day`
+      );
+    }
     day.stops.forEach((s, i) => { s.order_index = i; });
   }
   if (dropped) console.log(`[DEDUP] Removed ${dropped} place_id duplicate stop(s).`);
@@ -3398,7 +3462,11 @@ app.post('/api/chat', async (req, res) => {
   if (
     typeof destination !== 'string' || !destination.trim() ||
     destination.trim().length > 100 ||
-    typeof userMessage !== 'string' || !userMessage.trim() ||
+    // Every other user-text field here is length-capped (destination 100,
+    // tripSummary 2000, translate items 24000 total) — this one wasn't,
+    // bounded only by express.json()'s default 100KB body limit. A single
+    // chat message has no legitimate reason to approach that.
+    typeof userMessage !== 'string' || !userMessage.trim() || userMessage.length > 2000 ||
     // tripSummary is optional, but if present it must still be a bounded
     // string — both fields get embedded straight into the system prompt.
     (tripSummary !== undefined && tripSummary !== null &&
