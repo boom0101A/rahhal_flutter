@@ -873,14 +873,32 @@ function isLatinScriptDestination(s) {
 // Look up a destination in the static dictionary. Matches the whole string
 // first, then tries each known Arabic name as a substring (handles inputs
 // like "كربلاء، العراق" or "مدينة النجف").
+//
+// The substring pass picks the LONGEST matching key, not the first one found
+// in object-insertion order. With 500+ entries spanning many countries, short
+// names collide inside longer, unrelated ones — e.g. "دبي" (Dubai) is a
+// substring of "أردبيل" (Ardabil, Iran), and "دبا" (Dibba, UAE) is a
+// substring of "مادبا" (Madaba, Jordan). Returning the first hit meant a
+// completely natural query like "أردبيل، إيران" (exactly the "city، country"
+// pattern this function exists to handle) silently resolved to Dubai — and
+// because the wrong-destination check later compares the AI's output against
+// THIS SAME wrong value, it never caught the mismatch; the whole trip just
+// silently generated for the wrong country. The longest key is always the
+// more specific match, so preferring it fixes every case found without a
+// list of exceptions to maintain.
 function lookupCityDictionary(rawDestination) {
   if (typeof rawDestination !== 'string' || !rawDestination) return null;
   const q = rawDestination.trim();
   if (AR_CITY_DICTIONARY[q]) return AR_CITY_DICTIONARY[q];
+  let best = null;
+  let bestLen = 0;
   for (const [ar, info] of Object.entries(AR_CITY_DICTIONARY)) {
-    if (q.includes(ar)) return info;
+    if (ar.length > bestLen && q.includes(ar)) {
+      best = info;
+      bestLen = ar.length;
+    }
   }
-  return null;
+  return best;
 }
 
 // City-center coordinates for every Iraqi governorate capital + major cities.
@@ -4226,7 +4244,9 @@ const RESOLVE_MAX_KM = 12;
 const RESOLVE_BOX_DEG = 0.09;
 
 app.get('/api/resolve-place', async (req, res) => {
-  const { name, lat, lng, city } = req.query;
+  // `city` used to be destructured here too but was never referenced anywhere
+  // in this route — dead parameter, silently ignored by any caller sending it.
+  const { name, lat, lng } = req.query;
   // typeof, not truthiness: `?name=a&name=b` arrives as an ARRAY, and the
   // String(name) below flattened it to "a,b" — a distinct cache key and a
   // meaningless textQuery for what is really one lookup. Same malformed-input
