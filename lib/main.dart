@@ -12,6 +12,7 @@ import 'core/network/cloud_sync_service.dart';
 import 'core/services/notification_service.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'core/theme/app_theme.dart';
+import 'core/constants/app_text_styles.dart';
 import 'core/router/app_router.dart';
 import 'features/favorites/presentation/cubit/favorites_cubit.dart';
 import 'features/auth/presentation/cubit/auth_cubit.dart';
@@ -163,6 +164,12 @@ class RahhalAppState extends State<RahhalApp> {
         child: ValueListenableBuilder<Locale>(
         valueListenable: appLocale,
         builder: (context, currentLocale, _) {
+          // Single point of truth for every AppTextStyles getter's font
+          // choice (Cairo for Arabic, Inter for English) — runs before
+          // AppTheme.lightTheme/darkTheme are built below, and on every
+          // locale change (including the very first build), so it never
+          // lags behind what's actually on screen.
+          AppTextStyles.setLanguage(currentLocale.languageCode);
           return MaterialApp.router(
             title: 'رحّال AI',
             debugShowCheckedModeBanner: false,

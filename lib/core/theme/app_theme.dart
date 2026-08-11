@@ -1,7 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/services.dart';
-import 'package:google_fonts/google_fonts.dart';
 import '../constants/app_colors.dart';
 import '../constants/app_text_styles.dart';
 
@@ -139,11 +138,11 @@ class AppTheme {
           unselectedItemColor: AppColors.textSecondary,
           type: BottomNavigationBarType.fixed,
           elevation: 0,
-          selectedLabelStyle: GoogleFonts.cairo(
+          selectedLabelStyle: AppTextStyles.custom(
             fontSize: 10,
             fontWeight: FontWeight.w600,
           ),
-          unselectedLabelStyle: GoogleFonts.cairo(
+          unselectedLabelStyle: AppTextStyles.custom(
             fontSize: 10,
           ),
         ),
@@ -235,17 +234,25 @@ class AppTheme {
         ),
 
         // AppBar Theme
-        appBarTheme: const AppBarTheme(
-          backgroundColor: Color(0xFFF5F7FA),
+        //
+        // Was `const AppBarTheme(...)` with a raw `TextStyle` for
+        // titleTextStyle — being const meant it couldn't call
+        // AppTextStyles.headlineMedium (not a const constructor), so it fell
+        // back to Flutter's default system font instead of Cairo/Inter, the
+        // one title in the app that didn't match the rest of the type
+        // system. darkTheme's own appBarTheme already isn't const and
+        // already uses AppTextStyles.headlineMedium — this now matches it.
+        appBarTheme: AppBarTheme(
+          backgroundColor: const Color(0xFFF5F7FA),
           surfaceTintColor: Colors.transparent,
           elevation: 0,
           scrolledUnderElevation: 0,
-          systemOverlayStyle: SystemUiOverlayStyle(
+          systemOverlayStyle: const SystemUiOverlayStyle(
             statusBarBrightness: Brightness.light,
             statusBarIconBrightness: Brightness.dark,
           ),
-          titleTextStyle: TextStyle(color: Color(0xFF0D1B2A), fontSize: 18, fontWeight: FontWeight.bold),
-          iconTheme: IconThemeData(color: Color(0xFF0D1B2A)),
+          titleTextStyle: AppTextStyles.headlineMedium.copyWith(color: const Color(0xFF0D1B2A)),
+          iconTheme: const IconThemeData(color: Color(0xFF0D1B2A)),
         ),
 
         // Card Theme
@@ -333,11 +340,11 @@ class AppTheme {
           unselectedItemColor: const Color(0xFF6B7280),
           type: BottomNavigationBarType.fixed,
           elevation: 0,
-          selectedLabelStyle: GoogleFonts.cairo(
+          selectedLabelStyle: AppTextStyles.custom(
             fontSize: 10,
             fontWeight: FontWeight.w600,
           ),
-          unselectedLabelStyle: GoogleFonts.cairo(
+          unselectedLabelStyle: AppTextStyles.custom(
             fontSize: 10,
           ),
         ),
