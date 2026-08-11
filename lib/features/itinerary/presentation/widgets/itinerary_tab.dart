@@ -36,7 +36,16 @@ class ItineraryTab extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return BlocBuilder<ItineraryCubit, ItineraryState>(
+    return BlocConsumer<ItineraryCubit, ItineraryState>(
+      listenWhen: (previous, current) =>
+          current is ItineraryLoaded && current.actionError != null,
+      listener: (context, state) {
+        final message = (state as ItineraryLoaded).actionError!;
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text(message), backgroundColor: AppColors.error),
+        );
+        context.read<ItineraryCubit>().clearActionError();
+      },
       builder: (context, state) {
         if (state is ItineraryLoading) {
           return _buildSkeleton();

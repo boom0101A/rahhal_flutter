@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import '../../../../core/services/notification_preferences.dart';
+import '../../../../core/services/notification_service.dart';
 import '../../../../core/constants/app_colors.dart';
 import '../../../../core/constants/app_text_styles.dart';
 import '../../../../core/constants/app_strings.dart';
@@ -16,6 +17,10 @@ class _NotificationSettingsScreenState extends State<NotificationSettingsScreen>
   bool _tripReminders = true;
   bool _aiSuggestions = true;
   bool _loading = true;
+  // Checked, not requested — this screen only ever reads the current OS
+  // state so it can tell the user their toggle isn't actually doing
+  // anything, rather than re-prompting every time Settings is opened.
+  bool _hasOsPermission = true;
 
   @override
   void initState() {
@@ -28,10 +33,12 @@ class _NotificationSettingsScreenState extends State<NotificationSettingsScreen>
         await NotificationPreferences.isEnabled(NotificationPreferences.tripReminders);
     final ai =
         await NotificationPreferences.isEnabled(NotificationPreferences.aiSuggestions);
+    final hasPermission = await NotificationService.hasPermission();
     if (!mounted) return;
     setState(() {
       _tripReminders = trip;
       _aiSuggestions = ai;
+      _hasOsPermission = hasPermission;
       _loading = false;
     });
   }
@@ -82,6 +89,35 @@ class _NotificationSettingsScreenState extends State<NotificationSettingsScreen>
           : ListView(
               padding: const EdgeInsets.all(20),
               children: [
+                // Both toggles default to "on" and neither reflects OS state
+                // on its own — this is the one honest signal that a reminder
+                // won't actually arrive no matter what the switches show.
+                if (!_hasOsPermission && (_tripReminders || _aiSuggestions)) ...[
+                  Container(
+                    padding: const EdgeInsets.all(14),
+                    decoration: BoxDecoration(
+                      color: AppColors.error.withValues(alpha: 0.12),
+                      borderRadius: BorderRadius.circular(14),
+                      border: Border.all(color: AppColors.error.withValues(alpha: 0.4)),
+                    ),
+                    child: Row(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        const Icon(Icons.notifications_off_rounded,
+                            color: AppColors.error, size: 20),
+                        const SizedBox(width: 10),
+                        Expanded(
+                          child: Text(
+                            strings.notifPermissionDenied,
+                            style: AppTextStyles.bodySmall
+                                .copyWith(color: AppColors.error),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                  const SizedBox(height: 16),
+                ],
                 _buildToggleCard(
                   title: strings.notifTripReminders,
                   subtitle: strings.notifTripRemindersDesc,
@@ -94,18 +130,6 @@ class _NotificationSettingsScreenState extends State<NotificationSettingsScreen>
                   subtitle: strings.notifAiSuggestionsDesc,
                   value: _aiSuggestions,
                   onChanged: _toggleAiSuggestions,
-                ),
-                const SizedBox(height: 24),
-                Padding(
-                  padding: const EdgeInsets.all(16),
-                  child: Text(
-                    strings.notifComingSoon,
-                    style: AppTextStyles.bodySmall.copyWith(
-                      color: AppColors.adaptiveTextSecondary(context),
-                      fontStyle: FontStyle.italic,
-                    ),
-                    textAlign: TextAlign.center,
-                  ),
                 ),
               ],
             ),

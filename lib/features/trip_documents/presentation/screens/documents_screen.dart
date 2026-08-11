@@ -109,7 +109,16 @@ class _DocumentsScreenState extends State<DocumentsScreen> {
               ),
               centerTitle: true,
             ),
-            body: BlocBuilder<DocumentCubit, DocumentsState>(
+            body: BlocConsumer<DocumentCubit, DocumentsState>(
+              listenWhen: (previous, current) =>
+                  current is DocumentsLoaded && current.actionError != null,
+              listener: (context, state) {
+                final message = (state as DocumentsLoaded).actionError!;
+                ScaffoldMessenger.of(context).showSnackBar(
+                  SnackBar(content: Text(message), backgroundColor: AppColors.error),
+                );
+                context.read<DocumentCubit>().clearActionError();
+              },
               builder: (context, state) {
                 if (state is DocumentsLoading) {
                   return const Center(
@@ -338,7 +347,10 @@ class _DocumentsScreenState extends State<DocumentsScreen> {
     }
     if (!mounted) return;
     final strings = AppStrings.of(context);
-    await NotificationService.requestPermission();
+    // See generating_screen.dart's identical guard — a denied OS prompt used
+    // to leave the reminder "scheduled" as far as this code knew, silently
+    // dropped by the OS.
+    if (!await NotificationService.requestPermission()) return;
     await NotificationService.scheduleDocumentExpiryReminder(
       documentId: doc.id,
       title: strings.notifDocExpiryTitle,

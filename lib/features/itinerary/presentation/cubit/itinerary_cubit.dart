@@ -18,8 +18,17 @@ class ItineraryCubit extends Cubit<ItineraryState> {
 
     final daysResult = await _repository.getDaysForTrip(tripId);
     if (isClosed) return;
-    daysResult.fold(
-      (failure) => emit(ItineraryError(failure.message)),
+    // Either.fold() is synchronous and does not await a callback's returned
+    // Future — the success branch below does real async work (a second
+    // repository call), so without the `await` on fold() itself and async
+    // returns from BOTH branches, loadItinerary() could return to its caller
+    // before the days/stops it just kicked off had actually loaded. Any
+    // caller doing `await cubit.loadItinerary(...)` then immediately reading
+    // `state` (or calling another cubit method that requires
+    // ItineraryLoaded) could see the wrong thing — including this cubit's
+    // own reorderStops/selectDay, and any UI or test relying on the await.
+    await daysResult.fold(
+      (failure) async => emit(ItineraryError(failure.message)),
       (days) async {
         if (days.isEmpty) {
           emit(const ItineraryError('no-days-found'));
@@ -70,9 +79,27 @@ class ItineraryCubit extends Cubit<ItineraryState> {
     final current = state;
     if (current is! ItineraryLoaded) return;
 
-    await _repository.reorderStops(dayId, orderedStopIds);
+    final result = await _repository.reorderStops(dayId, orderedStopIds);
     if (isClosed) return;
+    // The Either used to be discarded entirely. selectDay() below reloads
+    // from SQLite regardless, and on failure that pulls back the OLD order
+    // (nothing was actually persisted) — this at least tells the user why
+    // their drag-and-drop just reverted, instead of it looking like nothing
+    // happened.
+    result.fold(
+      (failure) => emit(current.withError(failure.message)),
+      (_) {},
+    );
     await selectDay(current.selectedDayIndex);
+  }
+
+  /// Called by the UI right after it shows the action-error snackbar, so a
+  /// later failure with the same message still triggers a fresh notice.
+  void clearActionError() {
+    final current = state;
+    if (current is ItineraryLoaded && current.actionError != null) {
+      emit(current.clearError());
+    }
   }
 
   /// Toggle a stop's "visited" flag. Updates the UI immediately (optimistic)

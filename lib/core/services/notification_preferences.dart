@@ -10,10 +10,10 @@ import 'notification_service.dart';
 /// [isEnabled], so the toggles actually mean something.
 class NotificationPreferences {
   /// Trip-start reminders, per-day plans and document-expiry warnings.
-  static const tripReminders = 'notifications_trip_reminders';
+  static const tripReminders = NotificationService.categoryTripReminders;
 
   /// The assistant's contextual nudges: book today's restaurant, closing soon.
-  static const aiSuggestions = 'notifications_ai_suggestions';
+  static const aiSuggestions = NotificationService.categoryAiSuggestions;
 
   static Future<bool> isEnabled(String key) async {
     final prefs = await SharedPreferences.getInstance();
@@ -31,11 +31,13 @@ class NotificationPreferences {
     if (!value) await _cancelScheduled(key);
   }
 
-  /// flutter_local_notifications can't cancel by category, so anything already
-  /// queued for the disabled group is dropped and the still-enabled groups are
-  /// rebuilt the next time a trip is opened (ids are stable, so nothing
-  /// duplicates).
+  /// Cancels only what's tracked under this category — trip-start and
+  /// document-expiry reminders (scheduled once, never rebuilt) now stay
+  /// cancelled correctly instead of the whole app's notifications being
+  /// wiped every time any single category is turned off. Ids for the
+  /// still-enabled groups are untouched, and day-plan/booking/closing
+  /// reminders re-track fresh ids the next time a trip is opened anyway.
   static Future<void> _cancelScheduled(String key) async {
-    await NotificationService.cancelAll();
+    await NotificationService.cancelCategory(key);
   }
 }

@@ -16,9 +16,16 @@ class DocumentsLoaded extends DocumentsState {
   final List<DocumentEntity> documents;
   final bool isActionLoading;
 
+  /// Set when add/update/delete fails while the list is already on screen —
+  /// a transient notice, not a reason to replace the loaded view with a
+  /// full-screen error (that used to wipe every document the user could see
+  /// over one failed action).
+  final String? actionError;
+
   const DocumentsLoaded({
     required this.documents,
     this.isActionLoading = false,
+    this.actionError,
   });
 
   DocumentsLoaded copyWith({
@@ -31,8 +38,19 @@ class DocumentsLoaded extends DocumentsState {
     );
   }
 
+  DocumentsLoaded withError(String message) => DocumentsLoaded(
+        documents: documents,
+        isActionLoading: false,
+        actionError: message,
+      );
+
+  DocumentsLoaded clearError() => DocumentsLoaded(
+        documents: documents,
+        isActionLoading: isActionLoading,
+      );
+
   @override
-  List<Object?> get props => [documents, isActionLoading];
+  List<Object?> get props => [documents, isActionLoading, actionError];
 }
 
 class DocumentsError extends DocumentsState {

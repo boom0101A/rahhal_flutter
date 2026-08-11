@@ -1,5 +1,6 @@
 import 'package:flutter/foundation.dart';
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import 'package:timezone/data/latest_all.dart' as tz;
 import 'package:timezone/timezone.dart' as tz;
 
@@ -10,6 +11,46 @@ class NotificationService {
   static final _plugin = FlutterLocalNotificationsPlugin();
 
   static const _channelId = 'trip_reminders';
+
+  /// The two toggleable groups in Settings. Defined here (not in
+  /// NotificationPreferences) because this is the file that actually knows
+  /// which schedule method belongs to which group — NotificationPreferences
+  /// just reads these back as SharedPreferences keys.
+  static const categoryTripReminders = 'notifications_trip_reminders';
+  static const categoryAiSuggestions = 'notifications_ai_suggestions';
+
+  /// flutter_local_notifications has no concept of categories — only
+  /// individual numeric ids or cancel-everything. So each schedule call also
+  /// records its id under its category here, and turning a category off
+  /// cancels exactly those ids instead of every pending notification in the
+  /// app. Without this, disabling "AI suggestions" alone silently cancelled a
+  /// trip-start reminder and a passport-expiry warning too — both scheduled
+  /// once at creation time and never rebuilt, so they were simply gone.
+  static Future<void> _trackId(String category, int id) async {
+    final prefs = await SharedPreferences.getInstance();
+    final key = 'notif_ids_$category';
+    final ids = prefs.getStringList(key) ?? <String>[];
+    final idStr = id.toString();
+    if (!ids.contains(idStr)) {
+      await prefs.setStringList(key, [...ids, idStr]);
+    }
+  }
+
+  /// Cancels every notification tracked under [category] and forgets them —
+  /// the counterpart to [_trackId]. Call sites that rebuild on trip-open
+  /// (day plan, booking, closing) will simply re-track fresh ids next time;
+  /// the ones that don't (trip-start, document-expiry) stay cancelled until
+  /// the user re-enables the category and reopens the relevant screen.
+  static Future<void> cancelCategory(String category) async {
+    final prefs = await SharedPreferences.getInstance();
+    final key = 'notif_ids_$category';
+    final ids = prefs.getStringList(key) ?? <String>[];
+    for (final idStr in ids) {
+      final id = int.tryParse(idStr);
+      if (id != null) await _cancel(id);
+    }
+    await prefs.remove(key);
+  }
 
   static Future<void> initialize() async {
     try {
@@ -50,6 +91,32 @@ class NotificationService {
     } catch (e) {
       debugPrint('NotificationService requestPermission error: $e');
       return false;
+    }
+  }
+
+  /// Reads the OS permission state WITHOUT prompting — for showing the user
+  /// whether a reminder they've toggled "on" will actually fire. Both
+  /// scheduling call sites request permission but never checked the result,
+  /// so denying the OS prompt once left every reminder toggle showing "on"
+  /// while nothing was ever actually scheduled, with no way to discover why.
+  static Future<bool> hasPermission() async {
+    try {
+      final android = _plugin.resolvePlatformSpecificImplementation<
+          AndroidFlutterLocalNotificationsPlugin>();
+      if (android != null) {
+        return await android.areNotificationsEnabled() ?? true;
+      }
+      final ios = _plugin.resolvePlatformSpecificImplementation<
+          IOSFlutterLocalNotificationsPlugin>();
+      if (ios != null) {
+        final perms = await ios.checkPermissions();
+        return perms?.isEnabled ?? true;
+      }
+      return true;
+    } catch (e) {
+      debugPrint('NotificationService hasPermission error: $e');
+      // Unknown, not denied — don't scare the user over a platform quirk.
+      return true;
     }
   }
 
@@ -101,12 +168,14 @@ class NotificationService {
     required DateTime tripStartDate,
     int daysBefore = 3,
   }) async {
+    final id = _idFor('trip_$tripId');
     await _scheduleAt(
-      id: _idFor('trip_$tripId'),
+      id: id,
       title: title,
       body: body,
       when: tripStartDate.subtract(Duration(days: daysBefore)),
     );
+    await _trackId(categoryTripReminders, id);
   }
 
   /// Warns before a travel document (passport/visa) expires.
@@ -117,12 +186,14 @@ class NotificationService {
     required DateTime expiryDate,
     int daysBefore = 30,
   }) async {
+    final id = _idFor('doc_$documentId');
     await _scheduleAt(
-      id: _idFor('doc_$documentId'),
+      id: id,
       title: title,
       body: body,
       when: expiryDate.subtract(Duration(days: daysBefore)),
     );
+    await _trackId(categoryTripReminders, id);
   }
 
   /// Morning briefing on each day of the trip: what today's plan is.
@@ -136,12 +207,14 @@ class NotificationService {
     required DateTime dayDate,
     int hour = 8,
   }) async {
+    final id = _idFor('day_${tripId}_$dayNumber');
     await _scheduleAt(
-      id: _idFor('day_${tripId}_$dayNumber'),
+      id: id,
       title: title,
       body: body,
       when: DateTime(dayDate.year, dayDate.month, dayDate.day, hour),
     );
+    await _trackId(categoryTripReminders, id);
   }
 
   /// Nudge to reserve the day's recommended restaurant, a few hours ahead of
@@ -154,12 +227,14 @@ class NotificationService {
     required DateTime dayDate,
     int hour = 10,
   }) async {
+    final id = _idFor('book_${tripId}_$dayNumber');
     await _scheduleAt(
-      id: _idFor('book_${tripId}_$dayNumber'),
+      id: id,
       title: title,
       body: body,
       when: DateTime(dayDate.year, dayDate.month, dayDate.day, hour),
     );
+    await _trackId(categoryAiSuggestions, id);
   }
 
   /// "Closes in an hour" warning for a place the plan visits that day.
@@ -173,12 +248,14 @@ class NotificationService {
     required DateTime closingTime,
     Duration before = const Duration(hours: 1),
   }) async {
+    final id = _idFor('close_$key');
     await _scheduleAt(
-      id: _idFor('close_$key'),
+      id: id,
       title: title,
       body: body,
       when: closingTime.subtract(before),
     );
+    await _trackId(categoryAiSuggestions, id);
   }
 
   static Future<void> cancelTrip(String tripId) => _cancel(_idFor('trip_$tripId'));

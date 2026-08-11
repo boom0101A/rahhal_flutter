@@ -113,6 +113,23 @@ class _TripDashboardScreenState extends State<TripDashboardScreen>
     result.fold((_) {}, (trip) => setState(() => _trip = trip));
   }
 
+  /// Opens the AI chat and refreshes the dashboard on return.
+  ///
+  /// The chat's TripCommandExecutor can delete a stop, delete a whole day, or
+  /// mark a stop visited directly in SQLite — but each tab's data lives in
+  /// its own cubit loaded once inside `create:`, so without this the
+  /// itinerary/budget tabs kept showing pre-chat data until the dashboard
+  /// happened to rebuild for some unrelated reason. Reuses the exact
+  /// bump-_dataRevision-to-remount-every-cubit mechanism already proven for
+  /// the translation flow above — a command that touched nothing still costs
+  /// only a cheap re-read, not a wrong screen.
+  Future<void> _openChat(BuildContext context, {Object? extra}) async {
+    await context.push('/trip/${widget.tripId}/chat', extra: extra);
+    if (!mounted) return;
+    setState(() => _dataRevision++);
+    _reloadTripAfterTranslation();
+  }
+
   /// Refreshes this trip's contextual reminders (morning plan, restaurant
   /// booking, closing warning). Runs on open so trips created before the
   /// feature existed get them too; ids are stable, so re-running replaces
@@ -316,7 +333,7 @@ class _TripDashboardScreenState extends State<TripDashboardScreen>
         ),
         IconButton(
           tooltip: AppStrings.of(context).chatTitle,
-          onPressed: () => context.push('/trip/${widget.tripId}/chat'),
+          onPressed: () => _openChat(context),
           icon: Icon(Icons.chat_bubble_outline_rounded,
               color: iconColor, size: 22),
         ),
@@ -561,8 +578,7 @@ class _TripDashboardScreenState extends State<TripDashboardScreen>
 
   Widget _buildChatFAB(BuildContext context) {
     return FloatingActionButton(
-      onPressed: () =>
-          context.push('/trip/${widget.tripId}/chat', extra: _trip),
+      onPressed: () => _openChat(context, extra: _trip),
       backgroundColor: AppColors.accentAmber,
       elevation: 8,
       shape: const CircleBorder(),

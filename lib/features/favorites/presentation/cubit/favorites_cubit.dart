@@ -60,7 +60,11 @@ class FavoritesCubit extends Cubit<FavoritesState> {
     if (isClosed) return;
     result.fold(
       (failure) {
-        emit(FavoritesError(failure.message));
+        // Was a bare emit(FavoritesError(...)) — replaced the whole list with
+        // a full-screen error for one failed toggle. loadFavorites() right
+        // after is what actually rolls back the optimistic update above; the
+        // error is now surfaced without destroying the list in between.
+        _emitActionError(failure.message);
         loadFavorites();
       },
       (_) => loadFavorites(),
@@ -83,8 +87,28 @@ class FavoritesCubit extends Cubit<FavoritesState> {
     final result = await _repository.updateNotes(itemType, itemRefId, notes);
     if (isClosed) return;
     result.fold(
-      (failure) => emit(FavoritesError(failure.message)),
+      (failure) => _emitActionError(failure.message),
       (_) => loadFavorites(),
     );
+  }
+
+  /// Keeps whatever's already on screen instead of replacing it with a
+  /// full-screen error — mirrors BudgetCubit._emitActionError. Only a
+  /// failure during the initial loadFavorites() (nothing loaded yet to
+  /// preserve) falls back to FavoritesError.
+  void _emitActionError(String message) {
+    final current = state;
+    emit(current is FavoritesLoaded
+        ? current.withError(message)
+        : FavoritesError(message));
+  }
+
+  /// Called by the UI right after it shows the action-error snackbar, so a
+  /// later failure with the same message still triggers a fresh notice.
+  void clearActionError() {
+    final current = state;
+    if (current is FavoritesLoaded && current.actionError != null) {
+      emit(current.clearError());
+    }
   }
 }

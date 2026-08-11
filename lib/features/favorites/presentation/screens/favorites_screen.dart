@@ -56,7 +56,16 @@ class _FavoritesScreenState extends State<FavoritesScreen> {
         ),
         centerTitle: true,
       ),
-      body: BlocBuilder<FavoritesCubit, FavoritesState>(
+      body: BlocConsumer<FavoritesCubit, FavoritesState>(
+        listenWhen: (previous, current) =>
+            current is FavoritesLoaded && current.actionError != null,
+        listener: (context, state) {
+          final message = (state as FavoritesLoaded).actionError!;
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(content: Text(message), backgroundColor: AppColors.error),
+          );
+          context.read<FavoritesCubit>().clearActionError();
+        },
         builder: (context, state) {
           if (state is FavoritesLoading) {
             return ListView(

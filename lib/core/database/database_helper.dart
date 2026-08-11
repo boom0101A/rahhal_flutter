@@ -461,8 +461,11 @@ class DatabaseHelper {
       status          TEXT NOT NULL DEFAULT 'planned' CHECK (status IN ('planned','active','completed')),
       hero_image_url  TEXT,
       ai_summary      TEXT,
+      ai_summary_en   TEXT,
       travel_tips     TEXT DEFAULT '[]',
+      travel_tips_en  TEXT,
       best_time_to_visit TEXT,
+      best_time_to_visit_en TEXT,
       currency        TEXT DEFAULT 'USD',
       timezone        TEXT DEFAULT 'UTC',
       created_at      TEXT NOT NULL,
@@ -479,7 +482,9 @@ class DatabaseHelper {
       day_number  INTEGER NOT NULL,
       date        TEXT,
       theme       TEXT,
-      summary     TEXT
+      theme_en    TEXT,
+      summary     TEXT,
+      summary_en  TEXT
     )
   ''';
 
@@ -500,6 +505,7 @@ class DatabaseHelper {
       address           TEXT,
       cost_usd          REAL DEFAULT 0,
       ai_tip            TEXT,
+      ai_tip_en         TEXT,
       image_url         TEXT,
       booking_required  INTEGER DEFAULT 0,
       booking_url       TEXT,
@@ -517,6 +523,7 @@ class DatabaseHelper {
       name              TEXT NOT NULL,
       name_en           TEXT,
       cuisine_type      TEXT,
+      cuisine_type_en   TEXT,
       halal_certified   INTEGER DEFAULT 0,
       rating            REAL DEFAULT 0,
       price_per_person  REAL DEFAULT 0,
@@ -527,6 +534,7 @@ class DatabaseHelper {
       opening_hours     TEXT,
       image_url         TEXT,
       ai_description    TEXT,
+      ai_description_en TEXT,
       is_recommended    INTEGER DEFAULT 0,
       place_id          TEXT,
       coords_verified   INTEGER DEFAULT 0,
@@ -542,6 +550,7 @@ class DatabaseHelper {
       name              TEXT NOT NULL,
       name_en           TEXT,
       hotel_type        TEXT,
+      hotel_type_en     TEXT,
       rating            REAL DEFAULT 0,
       price_per_night   REAL DEFAULT 0,
       address           TEXT,
@@ -550,6 +559,7 @@ class DatabaseHelper {
       phone             TEXT,
       image_url         TEXT,
       ai_description    TEXT,
+      ai_description_en TEXT,
       booking_url       TEXT,
       place_id          TEXT,
       coords_verified   INTEGER DEFAULT 0

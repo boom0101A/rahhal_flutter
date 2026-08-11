@@ -168,7 +168,12 @@ class _GeneratingScreenBodyState extends State<_GeneratingScreenBody>
     }
     if (!mounted) return;
     final strings = AppStrings.of(context);
-    await NotificationService.requestPermission();
+    // The result used to be discarded — scheduling was attempted regardless,
+    // so a denied OS prompt left the Settings toggle showing "on" with
+    // nothing actually queued. Skipping the call outright when denied is
+    // just avoiding wasted plugin work; notification_settings_screen is
+    // where the user actually finds out why.
+    if (!await NotificationService.requestPermission()) return;
     await NotificationService.scheduleTripReminder(
       tripId: trip.id,
       title: strings.notifTripSoonTitle(trip.destination),

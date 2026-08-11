@@ -16,11 +16,18 @@ class ItineraryLoaded extends ItineraryState {
   final List<StopEntity> selectedDayStops;
   final bool isLoadingStops;
 
+  /// Set when reorderStops fails — the reload that follows it pulls the
+  /// OLD order back from SQLite (nothing was actually persisted), which
+  /// without this looked like a drag-and-drop that silently snapped back
+  /// for no reason.
+  final String? actionError;
+
   const ItineraryLoaded({
     required this.days,
     required this.selectedDayIndex,
     required this.selectedDayStops,
     this.isLoadingStops = false,
+    this.actionError,
   });
 
   DayEntity get selectedDay => days[selectedDayIndex];
@@ -40,9 +47,19 @@ class ItineraryLoaded extends ItineraryState {
         isLoadingStops: isLoadingStops ?? this.isLoadingStops,
       );
 
+  ItineraryLoaded withError(String message) => ItineraryLoaded(
+        days: days,
+        selectedDayIndex: selectedDayIndex,
+        selectedDayStops: selectedDayStops,
+        isLoadingStops: isLoadingStops,
+        actionError: message,
+      );
+
+  ItineraryLoaded clearError() => copyWith();
+
   @override
   List<Object?> get props =>
-      [days, selectedDayIndex, selectedDayStops, isLoadingStops];
+      [days, selectedDayIndex, selectedDayStops, isLoadingStops, actionError];
 }
 
 class ItineraryError extends ItineraryState {

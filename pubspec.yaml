@@ -77,6 +77,11 @@ dev_dependencies:
   mocktail: ^1.0.4
   flutter_launcher_icons: ^0.14.3
   flutter_native_splash: ^2.4.4
+  # Already resolved transitively (pulled in by sqflite_common_ffi_web); made
+  # explicit because database_fresh_install_schema_test.dart imports it
+  # directly to drive a real SQLite engine against DatabaseHelper's actual
+  # onCreate path — the only way to prove the schema fix without a device.
+  sqflite_common_ffi: ^2.3.3
 
 flutter_launcher_icons:
   android: "launcher_icon"

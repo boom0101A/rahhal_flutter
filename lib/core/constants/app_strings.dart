@@ -464,9 +464,15 @@ class AppStrings {
     'احصل على نصائح سفر وتوصيات مخصصة',
     'Get personalized travel tips and recommendations',
   );
-  String get notifComingSoon => _t(
-    'الإشعارات الفعلية قادمة في تحديث قريب',
-    'Actual notifications coming in a future update',
+  /// Shown when a category is toggled on but the OS notification permission
+  /// is actually denied, so the toggle alone doesn't guarantee anything fires.
+  /// No in-app "open settings" action — this app has no native-settings
+  /// package as a dependency, and adding one is a bigger, riskier change
+  /// (a native rebuild, which breaks Shorebird's OTA patching) than this
+  /// fix warrants; the message tells the user where to look instead.
+  String get notifPermissionDenied => _t(
+    'إذن الإشعارات مرفوض من إعدادات النظام — لن تصل أي تذكيرات حتى تُفعّله يدوياً من إعدادات التطبيق على جهازك',
+    'Notification permission is denied in system settings — no reminders will arrive until you enable it manually in your device\'s app settings',
   );
 
   // Errors
