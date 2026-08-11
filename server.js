@@ -1475,6 +1475,15 @@ async function callAI(systemPrompt, messages, maxTokens = 4000, deadlineAt) {
     throw new Error('missing-api-key');
   }
 
+  // Every caller's catch block special-cases 'rate-limit'/'invalid-api-key'
+  // into a specific status code — but if every provider is tried and every
+  // one fails, the LAST real reason must survive to that check. Losing it
+  // (see below) meant a genuine rate-limit or provider outage was reported
+  // to the client, and to whoever reads the logs, as "your API key is
+  // invalid" — sending them hunting for a credentials problem that doesn't
+  // exist.
+  let lastError = null;
+
   // 1. Try Groq first if configured (much larger free daily quota) — but only
   //    when the reply can actually fit in what Groq is allowed to emit.
   //
@@ -1490,6 +1499,7 @@ async function callAI(systemPrompt, messages, maxTokens = 4000, deadlineAt) {
       return await callGroq(systemPrompt, messages, maxTokens, groqKey, deadlineAt);
     } catch (e) {
       console.warn('[AI Engine] GROQ_API_KEY failed:', e.message);
+      lastError = e;
       // Fall through to Gemini below instead of failing immediately.
     }
   } else if (hasGroqKey) {
@@ -1505,6 +1515,7 @@ async function callAI(systemPrompt, messages, maxTokens = 4000, deadlineAt) {
       return await callGemini(systemPrompt, messages, maxTokens, geminiKey, deadlineAt);
     } catch (e) {
       console.warn('[AI Engine] GEMINI_API_KEY failed:', e.message);
+      lastError = e;
       // Fall through to GOOGLE_PLACES_API_KEY fallback below instead of failing immediately
     }
   }
@@ -1516,10 +1527,13 @@ async function callAI(systemPrompt, messages, maxTokens = 4000, deadlineAt) {
       return await callGemini(systemPrompt, messages, maxTokens, placesKey, deadlineAt);
     } catch (e) {
       console.warn('[AI Engine] Fallback GOOGLE_PLACES_API_KEY failed:', e.message);
+      lastError = e;
     }
   }
 
-  throw new Error('invalid-api-key');
+  // lastError is guaranteed set here: the missing-api-key guard above is the
+  // only way this point could be reached with no attempt having run at all.
+  throw lastError || new Error('invalid-api-key');
 }
 
 // ─── Google Places API: verify a place and return real coordinates ────────────
@@ -3758,7 +3772,14 @@ app.get('/api/currency', async (req, res) => {
       base, target, rate: currencyCache.get(cacheKey).rate, cached: true, stale: true,
     });
   }
-  return res.status(404).json({ error: `No rate found for ${target}` });
+  // 503, not 404: every sibling route (weather/photos/hotels/nearby) degrades
+  // to a 200 with mock/fallback/empty data on a full provider outage, so a
+  // generic Flutter error handler treating non-2xx as "show an error" only
+  // ever sees this one route fail hard. 404 also reads as "this currency
+  // doesn't exist" (permanent, don't retry) when the actual cause is almost
+  // always both providers being briefly unreachable for a code that's
+  // perfectly valid — 503 correctly signals "try again shortly" instead.
+  return res.status(503).json({ error: `Exchange rate temporarily unavailable for ${target}` });
 });
 
 // Builds a same-shape mock forecast for the /api/weather lat/lon branch —
@@ -4199,10 +4220,16 @@ app.get('/api/nearby-places', async (req, res) => {
     });
   }
 
+  // Tracks whether Overpass was already tried inside the main path, so the
+  // catch block below doesn't call it a second time against the same two
+  // (already-unreachable) mirrors when both Places and Overpass are down at
+  // once — that used to double the latency before an inevitable 500.
+  let overpassAttempted = false;
   try {
     let places = await nearbyViaGoogle(nLat, nLng, r, language);
     let source = 'google';
     if (!places || !places.length) {
+      overpassAttempted = true;
       places = await nearbyViaOverpass(nLat, nLng, r);
       source = 'osm';
     }
@@ -4214,7 +4241,11 @@ app.get('/api/nearby-places', async (req, res) => {
     return res.status(200).json({ places: places || [], source });
   } catch (error) {
     console.error('[NEARBY] primary path error:', error.message);
-    // Last resort: try Overpass directly before giving up.
+    if (overpassAttempted) {
+      return res.status(500).json({ error: 'Failed to fetch nearby places', places: [] });
+    }
+    // Google itself threw before Overpass was ever tried (as opposed to
+    // succeeding with zero results) — still worth one last-resort attempt.
     try {
       const places = await nearbyViaOverpass(nLat, nLng, r);
       return res.status(200).json({ places, source: 'osm' });
