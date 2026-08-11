@@ -51,9 +51,9 @@ class PeriodBadge extends StatelessWidget {
   Widget build(BuildContext context) {
     final strings = AppStrings.of(context);
     final (label, color, emoji) = switch (period) {
-      'morning' => (strings.periodMorning, AppColors.accentAmber, '🌅'),
-      'afternoon' => (strings.periodAfternoon, AppColors.accentTurquoise, '☀️'),
-      'evening' => (strings.periodEvening, const Color(0xFF9B7FD4), '🌙'),
+      'morning' => (strings.periodMorning, AppColors.adaptivePeriodMorning(context), '🌅'),
+      'afternoon' => (strings.periodAfternoon, AppColors.adaptivePeriodAfternoon(context), '☀️'),
+      'evening' => (strings.periodEvening, AppColors.adaptivePeriodEvening(context), '🌙'),
       _ => ('', AppColors.adaptiveTextSecondary(context), '⏰'),
     };
 

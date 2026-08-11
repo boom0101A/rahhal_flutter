@@ -157,7 +157,7 @@ class _SavedTripsScreenState extends State<SavedTripsScreen> {
         ),
         action: SnackBarAction(
           label: strings.undo,
-          textColor: AppColors.accentAmber,
+          textColor: AppColors.adaptiveAccentAmberText(context),
           onPressed: () {
             _deleteTimers[trip.id]?.cancel();
             _deleteTimers.remove(trip.id);
@@ -657,9 +657,9 @@ class _TripCard extends StatelessWidget {
                     ),
                   ),
                   // Status badge
-                  Positioned(
+                  PositionedDirectional(
                     top: 12,
-                    left: 12,
+                    start: 12,
                     child: StatusBadge(status: effectiveStatus),
                   ),
                 ],

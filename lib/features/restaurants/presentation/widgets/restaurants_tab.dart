@@ -236,7 +236,7 @@ class _RestaurantCard extends StatelessWidget {
                               ? AppStrings.of(context).removeFromFavorites
                               : AppStrings.of(context).addToFavorites,
                           padding: EdgeInsets.zero,
-                          constraints: const BoxConstraints(),
+                          constraints: const BoxConstraints(minWidth: 44, minHeight: 44),
                           onPressed: () {
                             Haptics.toggle();
                             context.read<FavoritesCubit>().toggleFavorite(

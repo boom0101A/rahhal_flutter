@@ -172,6 +172,8 @@ class AppStrings {
   String get profileNameEmpty =>
       _t('الاسم لا يمكن أن يكون فارغاً', 'Name can\'t be empty');
   String get profileNameUpdated => _t('تم تحديث الاسم ✅', 'Name updated ✅');
+  String get profileAvatarUpdated =>
+      _t('تم تحديث الصورة الشخصية ✅', 'Profile photo updated ✅');
   String get profileUpdateFailed =>
       _t('تعذّر تحديث الملف الشخصي', 'Couldn\'t update the profile');
   String get avatarPermissionDenied => _t(

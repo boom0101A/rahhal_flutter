@@ -461,7 +461,7 @@ class _StopTimelineItem extends StatelessWidget {
                                     ? AppStrings.of(context).markNotVisited
                                     : AppStrings.of(context).markVisited,
                                 padding: EdgeInsets.zero,
-                                constraints: const BoxConstraints(),
+                                constraints: const BoxConstraints(minWidth: 44, minHeight: 44),
                                 onPressed: () {
                                   Haptics.toggle();
                                   context
@@ -924,7 +924,11 @@ class _TravelConnector extends StatelessWidget {
         : strings.travelDrive(est.minutes);
 
     return Padding(
-      padding: const EdgeInsets.only(left: 52, top: 2, bottom: 6),
+      // Must match _StopTimelineItem's timeline thread (40 width + 12 gap),
+      // which is a Row's first child and so flips to the physical right in
+      // RTL — a physical `left` here kept indenting from the wrong side
+      // once the thread moved, so this stopped lining up under it.
+      padding: const EdgeInsetsDirectional.only(start: 52, top: 2, bottom: 6),
       child: Row(
         mainAxisSize: MainAxisSize.min,
         children: [

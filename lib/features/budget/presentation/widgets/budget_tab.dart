@@ -554,7 +554,12 @@ class _BudgetTabState extends State<BudgetTab> {
           ...days.map((day) {
             final label = '${strings.dayPrefix} ${day.dayNumber}';
             return Padding(
-              padding: const EdgeInsets.only(right: 8),
+              // EdgeInsetsDirectional so the gap lands on the trailing side of
+            // each chip in BOTH directions — a physical `right` padding here
+            // put the gap on the wrong side in RTL (it faced the previous
+            // chip instead of the next one), leaving consecutive day chips
+            // touching with no visible gap between them.
+            padding: const EdgeInsetsDirectional.only(end: 8),
               child: _buildDayChip(
                 label: label,
                 isSelected: _selectedDayId == day.id,
@@ -685,7 +690,12 @@ class _BudgetTabState extends State<BudgetTab> {
         children: days.map((day) {
           final label = '${strings.dayPrefix} ${day.dayNumber}';
           return Padding(
-            padding: const EdgeInsets.only(right: 8),
+            // EdgeInsetsDirectional so the gap lands on the trailing side of
+            // each chip in BOTH directions — a physical `right` padding here
+            // put the gap on the wrong side in RTL (it faced the previous
+            // chip instead of the next one), leaving consecutive day chips
+            // touching with no visible gap between them.
+            padding: const EdgeInsetsDirectional.only(end: 8),
             child: _buildDayChip(
               label: label,
               isSelected: selectedDayId == day.id,
@@ -789,7 +799,7 @@ class _BudgetTabState extends State<BudgetTab> {
                   icon: Icon(Icons.delete_outline_rounded,
                       color: AppColors.adaptiveTextSecondary(context), size: 18),
                   padding: EdgeInsets.zero,
-                  constraints: const BoxConstraints(),
+                  constraints: const BoxConstraints(minWidth: 44, minHeight: 44),
                 ),
               ],
             ),

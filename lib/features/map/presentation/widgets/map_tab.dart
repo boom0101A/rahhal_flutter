@@ -88,10 +88,18 @@ class _MapViewState extends State<_MapView> with WidgetsBindingObserver {
       _userLocation = widget.state.userLocation;
     }
 
-    // Start location fetch after first frame
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      _fetchUserLocation();
-      _startLocationStream();
+    // Start location fetch after first frame. _fetchUserLocation is the one
+    // that actually triggers the OS permission prompt (via LocationService/
+    // Geolocator.requestPermission) — _startLocationStream only ever CHECKS
+    // permission, it never requests it. Running them concurrently used to
+    // race: the stream's one-time check could see "denied" and give up
+    // before the prompt was even answered, so a user who then granted
+    // permission never got live position updates for the rest of the
+    // session. Awaiting the fetch first means permission is settled by the
+    // time the stream checks it.
+    WidgetsBinding.instance.addPostFrameCallback((_) async {
+      await _fetchUserLocation();
+      if (mounted) _startLocationStream();
     });
   }
 
@@ -116,8 +124,12 @@ class _MapViewState extends State<_MapView> with WidgetsBindingObserver {
         ).listen((pos) {
           if (mounted) {
             final newLocation = LatLng(pos.latitude, pos.longitude);
+            // Must be captured before setState — by the time the callback
+            // below runs, _userLocation is already reassigned, so checking
+            // it for null afterwards was always false and this never fired.
+            final hadNoLocation = _userLocation == null;
             setState(() => _userLocation = newLocation);
-            if (_mapReady && _userLocation == null) {
+            if (_mapReady && hadNoLocation && widget.state.stops.isEmpty) {
               _mapController.move(newLocation, 14.0);
             }
           }

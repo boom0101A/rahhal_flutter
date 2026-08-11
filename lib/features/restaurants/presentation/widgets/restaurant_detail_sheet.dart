@@ -79,11 +79,11 @@ class RestaurantDetailSheet extends StatelessWidget {
                 ),
               ),
 
-              if (restaurant.cuisineType != null &&
-                  restaurant.cuisineType!.isNotEmpty) ...[
+              if (restaurant.displayCuisineType(context) != null &&
+                  restaurant.displayCuisineType(context)!.isNotEmpty) ...[
                 const SizedBox(height: 6),
                 Text(
-                  restaurant.cuisineType!,
+                  restaurant.displayCuisineType(context)!,
                   style: AppTextStyles.bodySmall
                       .copyWith(color: AppColors.adaptiveTextSecondary(context)),
                 ),

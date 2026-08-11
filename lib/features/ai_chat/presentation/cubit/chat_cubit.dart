@@ -28,20 +28,24 @@ class ChatCubit extends Cubit<ChatState> {
     final result = await _repository.getMessages(tripId);
     if (isClosed) return;
     result.fold(
-      (_) => emit(const ChatState()),
+      // A failed load must not look identical to a brand-new chat with no
+      // messages yet — carry the error so the UI can tell the user their
+      // history didn't come back, instead of silently showing "welcome".
+      (failure) => emit(ChatState(errorMessage: failure.message)),
       (messages) => emit(ChatState(messages: messages)),
     );
   }
 
   Future<void> sendMessage(String text) async {
     if (_tripId == null || text.trim().isEmpty) return;
+    final content = text.trim();
 
     // Add user message to UI immediately
     final userMsg = ChatMessageEntity(
       id: 'temp_${DateTime.now().millisecondsSinceEpoch}',
       tripId: _tripId!,
       role: 'user',
-      content: text.trim(),
+      content: content,
       timestamp: DateTime.now(),
     );
 
@@ -55,7 +59,7 @@ class ChatCubit extends Cubit<ChatState> {
       tripId: _tripId!,
       destination: _destination,
       tripSummary: _tripSummary,
-      userMessage: text.trim(),
+      userMessage: content,
       history: state.messages.where((m) => m.id != userMsg.id).toList(),
     );
 
@@ -70,6 +74,9 @@ class ChatCubit extends Cubit<ChatState> {
           messages: withoutTemp,
           isTyping: false,
           errorMessage: failure.message,
+          // What the user typed is otherwise gone — nothing else restores
+          // it to the input field.
+          failedMessageText: content,
         ));
       },
       (assistantMsg) {
@@ -97,5 +104,13 @@ class ChatCubit extends Cubit<ChatState> {
     await _repository.clearHistory(_tripId!);
     if (isClosed) return;
     emit(const ChatState());
+  }
+
+  /// Called by the UI right after it's shown the error snackbar (and, if
+  /// applicable, restored a failed message's text), so a later failure with
+  /// the same message still triggers a fresh notice.
+  void clearError() {
+    if (state.errorMessage == null && state.failedMessageText == null) return;
+    emit(ChatState(messages: state.messages, isTyping: state.isTyping));
   }
 }

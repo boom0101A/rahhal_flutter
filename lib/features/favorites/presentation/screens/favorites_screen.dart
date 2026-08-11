@@ -397,7 +397,7 @@ class _FavoritesScreenState extends State<FavoritesScreen> {
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
                         Text(
-                          rest.name,
+                          rest.displayName(context),
                           style: AppTextStyles.titleMedium.copyWith(
                             color: isDark
                                 ? AppColors.adaptiveTextPrimary(context)
@@ -406,10 +406,11 @@ class _FavoritesScreenState extends State<FavoritesScreen> {
                           maxLines: 1,
                           overflow: TextOverflow.ellipsis,
                         ),
-                        if (rest.cuisineType != null && rest.cuisineType!.isNotEmpty) ...[
+                        if (rest.displayCuisineType(context) != null &&
+                            rest.displayCuisineType(context)!.isNotEmpty) ...[
                           const SizedBox(height: 4),
                           Text(
-                            rest.cuisineType!,
+                            rest.displayCuisineType(context)!,
                             style: AppTextStyles.bodySmall.copyWith(
                               fontSize: 10,
                               color: isDark

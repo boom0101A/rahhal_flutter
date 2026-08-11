@@ -35,6 +35,23 @@ class SavedTripsDeleteFailed extends SavedTripsLoaded {
   List<Object?> get props => [trips, tripId, message];
 }
 
+/// A status change (planned/active/completed) the UI already applied did
+/// not actually persist. Mirrors [SavedTripsDeleteFailed] for the same
+/// reason: extends [SavedTripsLoaded] so existing `is SavedTripsLoaded`
+/// branches keep rendering the list, with a signal the screen can listen
+/// for once something actually calls [SavedTripsCubit.updateStatus].
+class SavedTripsStatusUpdateFailed extends SavedTripsLoaded {
+  final String tripId;
+  final String message;
+  const SavedTripsStatusUpdateFailed({
+    required super.trips,
+    required this.tripId,
+    required this.message,
+  });
+  @override
+  List<Object?> get props => [trips, tripId, message];
+}
+
 class SavedTripsError extends SavedTripsState {
   final String message;
   const SavedTripsError(this.message);

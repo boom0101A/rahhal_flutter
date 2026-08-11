@@ -202,22 +202,34 @@ class _ProfileScreenState extends State<ProfileScreen> {
                 // Editing a Google/Firebase profile makes no sense for a
                 // signed-out visitor — there's no account to write to.
                 if (user != null)
+                  // Offset shifted out by (44-26)/2 = 9px from the visual
+                  // badge's own -2/-2 so a 44x44 tap target is centred on
+                  // it without moving the badge itself — the bare
+                  // GestureDetector used to hit-test only the ~26px visual
+                  // circle, well under the touch-target minimum.
                   Positioned(
-                    bottom: -2,
-                    right: -2,
+                    bottom: -11,
+                    right: -11,
                     child: GestureDetector(
                       onTap: () => _showEditProfileSheet(user),
-                      child: Container(
-                        padding: const EdgeInsets.all(6),
-                        decoration: BoxDecoration(
-                          color: AppColors.accentAmber,
-                          shape: BoxShape.circle,
-                          // Ring matches the header behind it so the badge
-                          // reads as lifted off the avatar in both themes.
-                          border: Border.all(color: headerColors.last, width: 2),
+                      behavior: HitTestBehavior.opaque,
+                      child: SizedBox(
+                        width: 44,
+                        height: 44,
+                        child: Center(
+                          child: Container(
+                            padding: const EdgeInsets.all(6),
+                            decoration: BoxDecoration(
+                              color: AppColors.accentAmber,
+                              shape: BoxShape.circle,
+                              // Ring matches the header behind it so the badge
+                              // reads as lifted off the avatar in both themes.
+                              border: Border.all(color: headerColors.last, width: 2),
+                            ),
+                            child: const Icon(Icons.edit_rounded,
+                                size: 14, color: Colors.black),
+                          ),
                         ),
-                        child: const Icon(Icons.edit_rounded,
-                            size: 14, color: Colors.black),
                       ),
                     ),
                   ),
@@ -459,7 +471,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
       if (!mounted) return;
       // UserAvatar listens to LocalAvatarService.version itself, so no manual
       // setState is needed here for the picture to update.
-      messenger.showSnackBar(SnackBar(content: Text(strings.profileNameUpdated)));
+      messenger.showSnackBar(SnackBar(content: Text(strings.profileAvatarUpdated)));
     } on AvatarPermissionDeniedException {
       if (!mounted) return;
       messenger.showSnackBar(SnackBar(

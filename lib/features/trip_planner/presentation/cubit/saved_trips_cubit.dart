@@ -47,8 +47,22 @@ class SavedTripsCubit extends Cubit<SavedTripsState> {
   }
 
   Future<void> updateStatus(String tripId, String status) async {
-    await _repository.updateTripStatus(tripId, status);
+    final before = state;
+    final result = await _repository.updateTripStatus(tripId, status);
     if (isClosed) return;
-    await loadTrips();
+    // The Either used to be discarded outright, so a failed status change
+    // reloaded silently and just reverted with no explanation — the same
+    // defect deleteTrip above was fixed for.
+    await result.fold(
+      (failure) async {
+        emit(SavedTripsStatusUpdateFailed(
+          trips: before is SavedTripsLoaded ? before.trips : const [],
+          tripId: tripId,
+          message: failure.message,
+        ));
+        if (before is! SavedTripsLoaded) await loadTrips();
+      },
+      (_) async => loadTrips(),
+    );
   }
 }

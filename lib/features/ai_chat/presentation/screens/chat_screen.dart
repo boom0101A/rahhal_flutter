@@ -259,12 +259,18 @@ class _ChatScreenState extends State<ChatScreen> {
             current.errorMessage != null &&
             current.errorMessage != previous.errorMessage,
         listener: (context, state) {
+          if (state.failedMessageText != null) {
+            _msgCtrl.text = state.failedMessageText!;
+            _msgCtrl.selection =
+                TextSelection.collapsed(offset: _msgCtrl.text.length);
+          }
           ScaffoldMessenger.of(context).showSnackBar(
             SnackBar(
               content: Text(state.errorMessage!),
               backgroundColor: AppColors.error,
             ),
           );
+          context.read<ChatCubit>().clearError();
         },
         child: Scaffold(
           backgroundColor: AppColors.adaptiveBgPrimary(context),

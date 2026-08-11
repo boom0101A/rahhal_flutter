@@ -65,30 +65,31 @@ class _SettingsScreenState extends State<SettingsScreen> {
   Future<void> _updateLanguage(String code) async {
     final prefs = await SharedPreferences.getInstance();
     await prefs.setString('language_code', code);
+    // Both awaits above can outlive the widget — check before the setState
+    // that follows, not after it, so a since-disposed widget never gets an
+    // invalid setState() call.
+    if (!mounted) return;
     setState(() {
       _languageCode = code;
     });
-    if (mounted) {
-      final countryCode = code == 'ar' ? 'AE' : 'US';
-      RahhalApp.of(context)?.setLocale(Locale(code, countryCode));
-    }
+    final countryCode = code == 'ar' ? 'AE' : 'US';
+    RahhalApp.of(context)?.setLocale(Locale(code, countryCode));
   }
 
   Future<void> _updateTheme(String themeVal) async {
     final prefs = await SharedPreferences.getInstance();
     await prefs.setString('theme_mode', themeVal);
+    if (!mounted) return;
     setState(() {
       _themeModeStr = themeVal;
     });
-    if (mounted) {
-      ThemeMode mode = ThemeMode.dark;
-      if (themeVal == 'light') {
-        mode = ThemeMode.light;
-      } else if (themeVal == 'system') {
-        mode = ThemeMode.system;
-      }
-      RahhalApp.of(context)?.setThemeMode(mode);
+    ThemeMode mode = ThemeMode.dark;
+    if (themeVal == 'light') {
+      mode = ThemeMode.light;
+    } else if (themeVal == 'system') {
+      mode = ThemeMode.system;
     }
+    RahhalApp.of(context)?.setThemeMode(mode);
   }
 
   String get _languageSubtitle {

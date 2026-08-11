@@ -171,6 +171,19 @@ class AppTheme {
           selectedTileColor: Colors.transparent,
         ),
 
+        // SnackBar
+        //
+        // With no theme set here, Material 3's default paints on
+        // `inverseSurface` — a pale bar on this dark theme, the one element
+        // that never matched the rest of the app (several screens already
+        // work around it by overriding backgroundColor per call). This
+        // makes the app's own look the default instead.
+        snackBarTheme: SnackBarThemeData(
+          backgroundColor: AppColors.bgCard,
+          contentTextStyle: AppTextStyles.bodyMedium.copyWith(color: AppColors.textPrimary),
+          actionTextColor: AppColors.accentAmber,
+        ),
+
         // Page transitions
         pageTransitionsTheme: const PageTransitionsTheme(
           builders: {
@@ -188,7 +201,10 @@ class AppTheme {
         // Color scheme
         colorScheme: const ColorScheme.light(
           primary: AppColors.accentAmber,
-          onPrimary: Colors.white,
+          // Text/icons drawn on the amber fill — Colors.white here scored a
+          // failing contrast against #F4A235; AppColors.onAmber is the fixed
+          // navy already proven safe against it (see its own doc comment).
+          onPrimary: AppColors.onAmber,
           secondary: AppColors.accentTurquoise,
           onSecondary: Colors.white,
           surface: Colors.white,
@@ -285,9 +301,15 @@ class AppTheme {
         ),
 
         // Text Button Theme
+        //
+        // Raw accentAmber (#F4A235) on this theme's near-white backgrounds
+        // scores ~2.1:1 — under the 4.5:1 minimum for text. Any TextButton
+        // that doesn't override foregroundColor (e.g. SnackBarAction labels
+        // that rely on this theme) inherits this, so it has to be the
+        // light-safe amber, not the raw accent.
         textButtonTheme: TextButtonThemeData(
           style: TextButton.styleFrom(
-            foregroundColor: AppColors.accentAmber,
+            foregroundColor: const Color(0xFF8F5100),
             textStyle: AppTextStyles.titleMedium,
           ),
         ),
@@ -341,6 +363,15 @@ class AppTheme {
         listTileTheme: const ListTileThemeData(
           tileColor: Colors.transparent,
           selectedTileColor: Colors.transparent,
+        ),
+
+        // SnackBar — see darkTheme's comment. Light's inverseSurface default
+        // is a near-black bar, equally out of place against this theme's
+        // white cards.
+        snackBarTheme: SnackBarThemeData(
+          backgroundColor: Colors.white,
+          contentTextStyle: AppTextStyles.bodyMedium.copyWith(color: const Color(0xFF0D1B2A)),
+          actionTextColor: const Color(0xFF8F5100),
         ),
 
         // Page transitions — kept identical to darkTheme so navigation

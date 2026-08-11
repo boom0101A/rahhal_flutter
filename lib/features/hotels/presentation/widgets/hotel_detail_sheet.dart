@@ -79,10 +79,11 @@ class HotelDetailSheet extends StatelessWidget {
                 ),
               ),
 
-              if (hotel.hotelType != null && hotel.hotelType!.isNotEmpty) ...[
+              if (hotel.displayHotelType(context) != null &&
+                  hotel.displayHotelType(context)!.isNotEmpty) ...[
                 const SizedBox(height: 6),
                 Text(
-                  hotel.hotelType!,
+                  hotel.displayHotelType(context)!,
                   style: AppTextStyles.bodySmall
                       .copyWith(color: AppColors.adaptiveTextSecondary(context)),
                 ),

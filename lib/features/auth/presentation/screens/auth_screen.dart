@@ -27,6 +27,7 @@ class _AuthScreenState extends State<AuthScreen> {
   final _confirmPasswordCtrl = TextEditingController();
   late bool _isLogin;
   bool _obscurePassword = true;
+  bool _isResettingPassword = false;
 
   @override
   void initState() {
@@ -207,24 +208,23 @@ class _AuthScreenState extends State<AuthScreen> {
                                   Align(
                                     alignment: AlignmentDirectional.centerEnd,
                                     child: TextButton(
-                                      onPressed: () async {
-                                        if (_emailCtrl.text.trim().isEmpty || !_emailCtrl.text.contains('@')) {
-                                          ScaffoldMessenger.of(context).showSnackBar(
-                                            SnackBar(content: Text(strings.authInvalidEmail)),
-                                          );
-                                          return;
-                                        }
-                                        await firebase_auth.FirebaseAuth.instance
-                                            .sendPasswordResetEmail(email: _emailCtrl.text.trim());
-                                        if (!context.mounted) return;
-                                        ScaffoldMessenger.of(context).showSnackBar(
-                                          SnackBar(content: Text(AppStrings.of(context).passwordResetSent(_emailCtrl.text.trim()))),
-                                        );
-                                      },
-                                      child: Text(
-                                        strings.authForgotPassword,
-                                        style: AppTextStyles.bodySmall.copyWith(color: AppColors.accentAmber),
-                                      ),
+                                      onPressed: _isResettingPassword
+                                          ? null
+                                          : _sendPasswordReset,
+                                      child: _isResettingPassword
+                                          ? SizedBox(
+                                              width: 14,
+                                              height: 14,
+                                              child: CircularProgressIndicator(
+                                                strokeWidth: 2,
+                                                color: AppColors.accentAmber,
+                                              ),
+                                            )
+                                          : Text(
+                                              strings.authForgotPassword,
+                                              style: AppTextStyles.bodySmall.copyWith(
+                                                  color: AppColors.adaptiveAccentAmberText(context)),
+                                            ),
                                     ),
                                   ),
                               ],
@@ -262,51 +262,68 @@ class _AuthScreenState extends State<AuthScreen> {
                       const SizedBox(height: 16),
 
                       // Google Sign In
-                      SizedBox(
-                        width: double.infinity,
-                        child: OutlinedButton(
-                          onPressed: () =>
-                              context.read<AuthCubit>().signInWithGoogle(),
-                          style: OutlinedButton.styleFrom(
-                            foregroundColor: AppColors.adaptiveTextPrimary(context),
-                            side: BorderSide(color: AppColors.adaptiveBorder(context)),
-                            padding: const EdgeInsets.symmetric(vertical: 14),
-                            shape: RoundedRectangleBorder(
-                              borderRadius: BorderRadius.circular(50),
-                            ),
-                          ),
-                          child: Row(
-                            mainAxisAlignment: MainAxisAlignment.center,
-                            children: [
-                              Container(
-                                width: 22,
-                                height: 22,
-                                decoration: BoxDecoration(
-                                  shape: BoxShape.circle,
-                                  color: Colors.white,
-                                  boxShadow: [
-                                    BoxShadow(
-                                      color: Colors.black12,
-                                      blurRadius: 2,
-                                    )
-                                  ],
-                                ),
-                                child: const Center(
-                                  child: Text(
-                                    'G',
-                                    style: TextStyle(
-                                      color: Color(0xFF4285F4),
-                                      fontWeight: FontWeight.bold,
-                                      fontSize: 14,
-                                    ),
-                                  ),
+                      BlocBuilder<AuthCubit, AuthState>(
+                        builder: (context, state) {
+                          final isLoading = state is AuthLoading;
+                          return SizedBox(
+                            width: double.infinity,
+                            child: OutlinedButton(
+                              onPressed: isLoading
+                                  ? null
+                                  : () => context
+                                      .read<AuthCubit>()
+                                      .signInWithGoogle(),
+                              style: OutlinedButton.styleFrom(
+                                foregroundColor: AppColors.adaptiveTextPrimary(context),
+                                side: BorderSide(color: AppColors.adaptiveBorder(context)),
+                                padding: const EdgeInsets.symmetric(vertical: 14),
+                                shape: RoundedRectangleBorder(
+                                  borderRadius: BorderRadius.circular(50),
                                 ),
                               ),
-                              const SizedBox(width: 12),
-                              Text(strings.authGoogleSignIn),
-                            ],
-                          ),
-                        ),
+                              child: Row(
+                                mainAxisAlignment: MainAxisAlignment.center,
+                                children: [
+                                  isLoading
+                                      ? SizedBox(
+                                          width: 22,
+                                          height: 22,
+                                          child: CircularProgressIndicator(
+                                            strokeWidth: 2,
+                                            color: AppColors.adaptiveTextSecondary(context),
+                                          ),
+                                        )
+                                      : Container(
+                                          width: 22,
+                                          height: 22,
+                                          decoration: BoxDecoration(
+                                            shape: BoxShape.circle,
+                                            color: Colors.white,
+                                            boxShadow: [
+                                              BoxShadow(
+                                                color: Colors.black12,
+                                                blurRadius: 2,
+                                              )
+                                            ],
+                                          ),
+                                          child: const Center(
+                                            child: Text(
+                                              'G',
+                                              style: TextStyle(
+                                                color: Color(0xFF4285F4),
+                                                fontWeight: FontWeight.bold,
+                                                fontSize: 14,
+                                              ),
+                                            ),
+                                          ),
+                                        ),
+                                  const SizedBox(width: 12),
+                                  Text(strings.authGoogleSignIn),
+                                ],
+                              ),
+                            ),
+                          );
+                        },
                       ),
 
                       const SizedBox(height: 12),
@@ -362,7 +379,7 @@ class _AuthScreenState extends State<AuthScreen> {
                                 ? strings.authNoAccount
                                 : strings.authHaveAccount,
                             style: AppTextStyles.bodyMedium
-                                .copyWith(color: AppColors.accentAmber),
+                                .copyWith(color: AppColors.adaptiveAccentAmberText(context)),
                           ),
                         ),
                       ),
@@ -403,6 +420,47 @@ class _AuthScreenState extends State<AuthScreen> {
         suffixIcon: suffix,
       ),
     );
+  }
+
+  Future<void> _sendPasswordReset() async {
+    final strings = AppStrings.of(context);
+    if (_emailCtrl.text.trim().isEmpty || !_emailCtrl.text.contains('@')) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(strings.authInvalidEmail)),
+      );
+      return;
+    }
+    // Captured before the await so nothing below needs to read `context`
+    // itself across the async gap — only the State's own `mounted`.
+    final messenger = ScaffoldMessenger.of(context);
+    setState(() => _isResettingPassword = true);
+    final email = _emailCtrl.text.trim();
+    try {
+      await firebase_auth.FirebaseAuth.instance
+          .sendPasswordResetEmail(email: email);
+      if (!mounted) return;
+      messenger.showSnackBar(
+        SnackBar(content: Text(strings.passwordResetSent(email))),
+      );
+    } on firebase_auth.FirebaseAuthException catch (e) {
+      if (!mounted) return;
+      messenger.showSnackBar(
+        SnackBar(
+          content: Text(strings.authErrorMessage(e.code)),
+          backgroundColor: AppColors.error,
+        ),
+      );
+    } catch (_) {
+      if (!mounted) return;
+      messenger.showSnackBar(
+        SnackBar(
+          content: Text(strings.authErrorMessage('unknown')),
+          backgroundColor: AppColors.error,
+        ),
+      );
+    } finally {
+      if (mounted) setState(() => _isResettingPassword = false);
+    }
   }
 
   void _submit() {

@@ -158,7 +158,11 @@ class _HotelCard extends StatelessWidget {
                               ? strings.removeFromFavorites
                               : strings.addToFavorites,
                           padding: EdgeInsets.zero,
-                          constraints: const BoxConstraints(),
+                          // Icon stays 20px, but the tappable area is padded
+                          // out to the WCAG/Material touch-target minimum —
+                          // an empty BoxConstraints() collapsed the hit box
+                          // down to the icon itself.
+                          constraints: const BoxConstraints(minWidth: 44, minHeight: 44),
                           onPressed: () {
                             Haptics.toggle();
                             context.read<FavoritesCubit>().toggleFavorite(

@@ -126,6 +126,36 @@ class AppColors {
           ? const Color(0xFF66D9A5)
           : const Color(0xFF146B41);
 
+  /// PeriodBadge's morning/afternoon/evening colours, drawn as text on their
+  /// own 12%-alpha fill — the same setup that made [adaptiveStatusPlanned]
+  /// necessary. Raw `accentAmber`/`accentTurquoise`/`0xFF9B7FD4` on the light
+  /// theme's white card score 2.09:1, 2.17:1 and 3.29:1 — all under the
+  /// 4.5:1 minimum. These deepen each hue for light while leaving dark alone
+  /// (already legible against the navy card).
+  static Color adaptivePeriodMorning(BuildContext context) =>
+      Theme.of(context).brightness == Brightness.dark
+          ? accentAmber
+          : const Color(0xFF8F5100);
+
+  static Color adaptivePeriodAfternoon(BuildContext context) =>
+      Theme.of(context).brightness == Brightness.dark
+          ? accentTurquoise
+          : const Color(0xFF0F766E);
+
+  static Color adaptivePeriodEvening(BuildContext context) =>
+      Theme.of(context).brightness == Brightness.dark
+          ? const Color(0xFF9B7FD4)
+          : const Color(0xFF6D28D9);
+
+  /// Amber used as ordinary clickable text (links, TextButton labels) on the
+  /// app's own background/card — NOT [onAmber], which is for text drawn ON
+  /// TOP of a solid amber fill. Raw `accentAmber` here scores ~2.1:1 against
+  /// the light theme's near-white backgrounds, well under the 4.5:1 minimum.
+  static Color adaptiveAccentAmberText(BuildContext context) =>
+      Theme.of(context).brightness == Brightness.dark
+          ? accentAmber
+          : const Color(0xFF8F5100);
+
   // ═══ Charts ═══
   static const Color chart1 = accentAmber;
   static const Color chart2 = accentTurquoise;
