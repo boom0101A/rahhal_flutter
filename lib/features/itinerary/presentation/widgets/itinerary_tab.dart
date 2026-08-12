@@ -80,106 +80,45 @@ class ItineraryTab extends StatelessWidget {
         _DaySelector(
           days: state.days,
           selectedIndex: state.selectedDayIndex,
-          onSelect: (i) => context.read<ItineraryCubit>().selectDay(i),
+          onSelect: (i) {
+            // Same day tapped again — avoid a pointless refetch/flash.
+            if (i == state.selectedDayIndex) return;
+            context.read<ItineraryCubit>().selectDay(i);
+          },
         ),
         const SizedBox(height: 16),
 
-        // Day summary
-        if (state.selectedDay.displayTheme(context) != null) ...[
-          GlassCard(
-            padding: const EdgeInsets.all(14),
-            child: Row(
-              children: [
-                const Text('🗓️', style: TextStyle(fontSize: 20)),
-                const SizedBox(width: 10),
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        state.selectedDay.displayTheme(context)!,
-                        style: AppTextStyles.titleMedium,
-                      ),
-                      if (state.selectedDay.displaySummary(context) != null) ...[
-                        const SizedBox(height: 4),
-                        Text(
-                          state.selectedDay.displaySummary(context)!,
-                          style: AppTextStyles.bodySmall,
-                        ),
-                      ],
-                    ],
-                  ),
-                ),
-              ],
+        // The day's theme card, reorder header, progress bar and stops list
+        // all change together as ONE atomic block per day, wrapped so a day
+        // switch crossfades smoothly instead of four separate instant swaps.
+        // AnimatedSize is needed alongside AnimatedSwitcher because days
+        // have different stop counts — without it the container would hold
+        // extra blank space, then snap-shrink once the fade finishes.
+        AnimatedSize(
+          duration: const Duration(milliseconds: 300),
+          curve: Curves.easeOut,
+          alignment: Alignment.topCenter,
+          child: AnimatedSwitcher(
+            duration: const Duration(milliseconds: 300),
+            switchInCurve: Curves.easeOut,
+            switchOutCurve: Curves.easeIn,
+            child: _DayContent(
+              key: ValueKey(state.selectedDayIndex),
+              day: state.selectedDay,
+              stops: state.selectedDayStops,
+              visitedCount: state.visitedCount,
+              countryCode: countryCode,
+              onReorder: () => _openReorderSheet(
+                context,
+                dayId: state.selectedDay.id,
+                stops: state.selectedDayStops,
+              ),
+              onStopTap: (stop) => context.push(
+                  '/trip/${stop.tripId}/stop/${stop.id}',
+                  extra: stop),
             ),
           ),
-          const SizedBox(height: 16),
-        ],
-
-        // Stops header with a reorder action (only when there's >1 stop to move)
-        if (!state.isLoadingStops && state.selectedDayStops.length > 1) ...[
-          Row(
-            children: [
-              Expanded(
-                child: Text(
-                  AppStrings.of(context).itineraryStopsTitle,
-                  style: AppTextStyles.titleMedium,
-                ),
-              ),
-              TextButton.icon(
-                onPressed: () => _openReorderSheet(
-                  context,
-                  dayId: state.selectedDay.id,
-                  stops: state.selectedDayStops,
-                ),
-                icon: const Icon(Icons.swap_vert_rounded,
-                    size: 18, color: AppColors.accentAmber),
-                label: Text(
-                  AppStrings.of(context).reorder,
-                  style: AppTextStyles.labelMedium
-                      .copyWith(color: AppColors.accentAmber),
-                ),
-              ),
-            ],
-          ),
-          const SizedBox(height: 4),
-        ],
-
-        // Day progress ("visited N of M")
-        if (!state.isLoadingStops && state.selectedDayStops.isNotEmpty)
-          _DayProgress(
-            visited: state.visitedCount,
-            total: state.selectedDayStops.length,
-          ),
-
-        // Stops with timeline
-        if (state.isLoadingStops)
-          ...List.generate(3, (_) => const ShimmerStopCard())
-        else if (state.selectedDayStops.isEmpty)
-          _buildEmptyDay(context)
-        else
-          ...state.selectedDayStops.asMap().entries.expand((e) {
-            final i = e.key;
-            final stop = e.value;
-            final isLast = i == state.selectedDayStops.length - 1;
-            return [
-              _StopTimelineItem(
-                stop: stop,
-                isLast: isLast,
-                index: i,
-                countryCode: countryCode,
-                onTap: () => context.push(
-                    '/trip/${stop.tripId}/stop/${stop.id}',
-                    extra: stop),
-              ),
-              // "X min to next stop" hint between consecutive stops.
-              if (!isLast)
-                _TravelConnector(
-                  from: stop,
-                  to: state.selectedDayStops[i + 1],
-                ),
-            ];
-          }),
+        ),
       ],
     );
   }
@@ -242,6 +181,129 @@ class ItineraryTab extends StatelessWidget {
         onSave: (orderedIds) => cubit.reorderStops(dayId, orderedIds),
       ),
     );
+  }
+
+}
+
+// ─── Day Content ───────────────────────────────────────────────────────────
+
+/// The theme card, reorder header, progress bar and stops list for a single
+/// selected day — everything that used to be four independent `if` blocks
+/// directly inside the outer ListView, now one widget so ItineraryTab can
+/// crossfade it as a unit (via AnimatedSwitcher, keyed on the day index)
+/// instead of each piece popping in/out separately.
+class _DayContent extends StatelessWidget {
+  final DayEntity day;
+  final List<StopEntity> stops;
+  final int visitedCount;
+  final String? countryCode;
+  final VoidCallback onReorder;
+  final void Function(StopEntity stop) onStopTap;
+
+  const _DayContent({
+    super.key,
+    required this.day,
+    required this.stops,
+    required this.visitedCount,
+    required this.onReorder,
+    required this.onStopTap,
+    this.countryCode,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        // Day summary
+        if (day.displayTheme(context) != null) ...[
+          GlassCard(
+            padding: const EdgeInsets.all(14),
+            child: Row(
+              children: [
+                const Text('🗓️', style: TextStyle(fontSize: 20)),
+                const SizedBox(width: 10),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        day.displayTheme(context)!,
+                        style: AppTextStyles.titleMedium,
+                      ),
+                      if (day.displaySummary(context) != null) ...[
+                        const SizedBox(height: 4),
+                        Text(
+                          day.displaySummary(context)!,
+                          style: AppTextStyles.bodySmall,
+                        ),
+                      ],
+                    ],
+                  ),
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(height: 16),
+        ],
+
+        // Stops header with a reorder action (only when there's >1 stop to move)
+        if (stops.length > 1) ...[
+          Row(
+            children: [
+              Expanded(
+                child: Text(
+                  AppStrings.of(context).itineraryStopsTitle,
+                  style: AppTextStyles.titleMedium,
+                ),
+              ),
+              TextButton.icon(
+                onPressed: onReorder,
+                icon: const Icon(Icons.swap_vert_rounded,
+                    size: 18, color: AppColors.accentAmber),
+                label: Text(
+                  AppStrings.of(context).reorder,
+                  style: AppTextStyles.labelMedium
+                      .copyWith(color: AppColors.accentAmber),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 4),
+        ],
+
+        // Day progress ("visited N of M")
+        if (stops.isNotEmpty)
+          _DayProgress(visited: visitedCount, total: stops.length),
+
+        // Stops with timeline
+        if (stops.isEmpty)
+          _buildEmptyDay(context)
+        else
+          ...stops.asMap().entries.expand((e) {
+            final i = e.key;
+            final stop = e.value;
+            final isLast = i == stops.length - 1;
+            return [
+              _StopTimelineItem(
+                stop: stop,
+                isLast: isLast,
+                index: i,
+                countryCode: countryCode,
+                onTap: () => onStopTap(stop),
+              ),
+              // "X min to next stop" hint between consecutive stops.
+              if (!isLast)
+                _TravelConnector(from: stop, to: stops[i + 1]),
+            ];
+          }),
+      ],
+    ).animate().fadeIn(duration: 250.ms).slideY(
+          begin: 0.03,
+          end: 0,
+          duration: 250.ms,
+          curve: Curves.easeOut,
+        );
   }
 
   Widget _buildEmptyDay(BuildContext context) {

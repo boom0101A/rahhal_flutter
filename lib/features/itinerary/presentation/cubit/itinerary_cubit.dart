@@ -50,16 +50,21 @@ class ItineraryCubit extends Cubit<ItineraryState> {
     );
   }
 
+  /// Fetches the day's stops and emits ONE state carrying both the new
+  /// index and the new stops together — no intermediate blanked/loading
+  /// state. A local SQLite read is always fast, so the old two-emission
+  /// version (blank stops + isLoadingStops:true, then real stops) just
+  /// produced two abrupt jump-cuts in quick succession instead of one
+  /// smooth transition; the UI now crossfades between the last-shown day's
+  /// content and this new content directly.
+  ///
+  /// Deliberately no "same index, skip" guard here — reorderStops below
+  /// calls this with the CURRENT index specifically to force a reload from
+  /// SQLite after a drag-and-drop write. That guard belongs at the UI tap
+  /// site instead.
   Future<void> selectDay(int dayIndex) async {
     final current = state;
     if (current is! ItineraryLoaded) return;
-
-    emit(ItineraryLoaded(
-      days: current.days,
-      selectedDayIndex: dayIndex,
-      selectedDayStops: const [],
-      isLoadingStops: true,
-    ));
 
     final stopsResult =
         await _repository.getStopsForDay(current.days[dayIndex].id);
