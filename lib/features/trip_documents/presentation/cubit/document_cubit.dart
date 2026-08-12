@@ -1,4 +1,5 @@
 import 'package:flutter_bloc/flutter_bloc.dart';
+import '../../../../core/services/notification_service.dart';
 import '../../domain/entities/document_entity.dart';
 import '../../domain/repositories/document_repository.dart';
 import 'document_state.dart';
@@ -69,6 +70,10 @@ class DocumentCubit extends Cubit<DocumentsState> {
     result.fold(
       (failure) => _emitActionError(failure.message),
       (_) {
+        // Otherwise a document the user explicitly removed still fires its
+        // "expires soon" reminder on schedule, referencing something that
+        // no longer exists in the app.
+        NotificationService.cancelDocument(docId);
         final updatedDocs = current.documents.where((d) => d.id != docId).toList();
         emit(DocumentsLoaded(documents: updatedDocs, isActionLoading: false));
       },

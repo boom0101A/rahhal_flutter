@@ -51,8 +51,12 @@ class PlaceResolverService {
       return id;
     } catch (e) {
       debugPrint('PlaceResolverService.resolvePlaceId error: $e');
-      // Cache the miss briefly so a failing network doesn't stall every tap.
-      _cache[key] = null;
+      // Deliberately NOT cached: this static map has no expiry, so a single
+      // transient failure (one dropped connection) used to poison this key
+      // for the rest of the app session — every later tap fell back to a
+      // coordinate pin instead of the exact place card, even long after the
+      // network recovered. A real resolution is still cached above, since
+      // place ids don't change.
       return null;
     }
   }

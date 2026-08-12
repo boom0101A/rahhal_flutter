@@ -111,16 +111,32 @@ class _RetryInterceptor extends Interceptor {
   @override
   Future<void> onError(
       DioException err, ErrorInterceptorHandler handler) async {
-    // إذا كان الخطأ 401 (Unauthorized)، جرّب تجديد التوكن تلقائياً
-    if (err.response?.statusCode == 401) {
+    // إذا كان الخطأ 401 أو 403، جرّب تجديد التوكن تلقائياً
+    //
+    // The proxy's authenticateFirebaseToken middleware (server.js) returns
+    // 401 for a MISSING Authorization header but 403 for an INVALID one
+    // (verifyIdToken threw — typically just an expired token), so 403 needs
+    // the same refresh-and-retry as 401 or an ordinary expired-token case
+    // gets misdiagnosed as "invalid API key" instead of silently recovering.
+    //
+    // Guarded by `authRetried` so this fires at most once per original
+    // request. _dio.fetch(opts) below re-enters the FULL interceptor chain
+    // — including this same onError — so an account stuck returning 401/403
+    // for a reason a token refresh can't fix (revoked, disabled, clock skew,
+    // or a GENUINE ai-provider-key 401/403 from deeper in the route handler)
+    // used to recurse without bound: refresh → retry → 401 → refresh → ...,
+    // hanging forever instead of ever resolving or rejecting.
+    if ((err.response?.statusCode == 401 || err.response?.statusCode == 403) &&
+        err.requestOptions.extra['authRetried'] != true) {
       try {
         final user = firebase_auth.FirebaseAuth.instance.currentUser;
         if (user != null) {
           // Force refresh the token
           final newToken = await user.getIdToken(true); // forceRefresh = true
-          
+
           // Retry the request with new token
           final opts = err.requestOptions;
+          opts.extra['authRetried'] = true;
           opts.headers['Authorization'] = 'Bearer $newToken';
           final response = await _dio.fetch(opts);
           return handler.resolve(response);
@@ -133,7 +149,15 @@ class _RetryInterceptor extends Interceptor {
     final extra = err.requestOptions.extra;
     final retryCount = (extra['retryCount'] as int?) ?? 0;
 
-    final shouldRetry = retryCount < maxRetries &&
+    // Only idempotent requests are safe to blindly retry on a timeout — a
+    // POST here is /api/generate-trip or /api/chat, both expensive AI calls
+    // that may still be genuinely processing when receiveTimeout fires.
+    // Retrying one fires a SECOND full generation/chat call, doubling
+    // provider cost and risking a rate-limit collision with the original.
+    final isIdempotent = err.requestOptions.method.toUpperCase() == 'GET';
+
+    final shouldRetry = isIdempotent &&
+        retryCount < maxRetries &&
         (err.type == DioExceptionType.connectionTimeout ||
             err.type == DioExceptionType.receiveTimeout ||
             err.type == DioExceptionType.connectionError);

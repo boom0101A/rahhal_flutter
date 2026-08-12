@@ -83,7 +83,11 @@ class CurrencyService {
   static String format(double amount, String currencyCode) {
     final code = currencyCode.toUpperCase();
     final symbol = _symbols[code] ?? code;
-    final whole = _wholeUnitCurrencies.contains(code) || amount >= 1000;
+    // Checked against the ROUNDED value — otherwise e.g. 999.7 read as
+    // amount < 1000, took the 2-decimals-or-none branch below, and rounded
+    // up to "1000" with no thousands separator.
+    final whole =
+        _wholeUnitCurrencies.contains(code) || amount.round() >= 1000;
     final text = whole
         ? _groupThousands(amount.round())
         : amount.toStringAsFixed(amount < 10 ? 2 : 0);

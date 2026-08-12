@@ -19,6 +19,16 @@ void main() {
     expect(CurrencyService.format(9.5, 'USD'), '\$9.50');
   });
 
+  test('an amount that rounds up to 1000 still gets a thousands separator', () {
+    // `whole` used to be decided on the un-rounded amount, so 999.7 (< 1000)
+    // took the decimal branch, which itself rounds to "1000" via
+    // toStringAsFixed(0) — producing "$1000" instead of "$1,000".
+    expect(CurrencyService.format(999.7, 'USD'), '\$1,000');
+    expect(CurrencyService.format(999.5, 'EUR'), '€1,000');
+    // Just under the boundary still rounds to a plain (non-grouped) integer.
+    expect(CurrencyService.format(999.4, 'USD'), '\$999');
+  });
+
   test('unknown currency falls back to its code, not a crash', () {
     expect(CurrencyService.format(100, 'XYZ'), 'XYZ100');
   });

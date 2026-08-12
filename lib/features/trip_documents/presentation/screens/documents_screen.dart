@@ -465,6 +465,10 @@ class _DocumentsScreenState extends State<DocumentsScreen> {
         return;
       }
       if (saved == null) return; // cancelled
+      // pickAndSave() awaits the native camera/gallery UI, which can take an
+      // arbitrary amount of time — the sheet/screen can be gone by the time
+      // it returns, same as the exception branch above already guards for.
+      if (!mounted) return;
       final replaced = selectedFilePath;
       setSheetState(() => selectedFilePath = saved);
       await DocumentFileService.deleteFile(replaced);
@@ -650,7 +654,19 @@ class _DocumentsScreenState extends State<DocumentsScreen> {
                         );
 
                         didSave = true;
-                        cubit.addDocument(doc);
+                        // Fire-and-forget so the sheet closes instantly — a
+                        // slow DB write shouldn't block the UI. But if it
+                        // actually fails, the file `pickAndSave` already
+                        // copied into permanent storage has nothing in the
+                        // DB referencing it and no delete path will ever
+                        // find it again, so clean it up here specifically.
+                        final savedPath = selectedFilePath;
+                        cubit.addDocument(doc).then((_) {
+                          final s = cubit.state;
+                          if (s is DocumentsLoaded && s.actionError != null) {
+                            DocumentFileService.deleteFile(savedPath);
+                          }
+                        });
                         _scheduleExpiryReminder(doc);
                         Navigator.pop(ctx);
                       },

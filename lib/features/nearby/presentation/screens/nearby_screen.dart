@@ -38,9 +38,19 @@ class _NearbyScreenState extends State<NearbyScreen> {
   @override
   void didChangeDependencies() {
     super.didChangeDependencies();
+    final currentLang = AppStrings.of(context).languageCode;
     if (!_started) {
       _started = true;
-      _lang = AppStrings.of(context).languageCode;
+      _lang = currentLang;
+      _load();
+    } else if (currentLang != _lang) {
+      // Without this, `_lang` was captured once and never refreshed — if
+      // this screen's route stayed alive while the user changed the app
+      // language elsewhere and came back, every place name, distance label
+      // and the /api/nearby-places request itself (including the visible
+      // Refresh button, which just re-runs _load() with the stale _lang)
+      // kept using the old language until the route was fully recreated.
+      _lang = currentLang;
       _load();
     }
   }

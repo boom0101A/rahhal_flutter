@@ -34,7 +34,11 @@ class UserLocationResult {
 }
 
 class LocationService {
-  final Dio _dio = Dio();
+  // receiveTimeout alone (set per-call below) only bounds the wait for
+  // response data — it does nothing for a hung DNS lookup or TCP connect on
+  // a degraded network, which could block getCurrentLocation()/
+  // reverseGeocode() indefinitely since neither call has an outer timeout.
+  final Dio _dio = Dio(BaseOptions(connectTimeout: const Duration(seconds: 8)));
 
   Future<UserLocationResult?> getCurrentLocation() async {
     try {

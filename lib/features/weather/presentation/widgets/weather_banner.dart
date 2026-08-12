@@ -29,12 +29,29 @@ class WeatherBanner extends StatefulWidget {
 class _WeatherBannerState extends State<WeatherBanner> {
   WeatherForecast? _forecast;
   bool _loading = true;
-  bool _noKey = false;
 
   @override
   void initState() {
     super.initState();
     _fetch();
+  }
+
+  @override
+  void didUpdateWidget(WeatherBanner old) {
+    super.didUpdateWidget(old);
+    // Without this, switching to a different day in a multi-city trip (each
+    // day's first stop has different coordinates) reused this State object
+    // and kept showing the very first day's forecast for the rest of the
+    // session — the widget has no Key, so Flutter never recreated it.
+    if (old.lat != widget.lat ||
+        old.lon != widget.lon ||
+        old.lang != widget.lang) {
+      setState(() {
+        _loading = true;
+        _forecast = null;
+      });
+      _fetch();
+    }
   }
 
   Future<void> _fetch() async {
@@ -56,12 +73,13 @@ class _WeatherBannerState extends State<WeatherBanner> {
         });
       }
     } catch (e) {
-      if (mounted) {
-        setState(() {
-          _loading = false;
-          _noKey = e.toString().contains('501');
-        });
-      }
+      // getForecast() itself never throws (it falls back to a mock/stale-
+      // cache result), so this only guards the DI lookup above. The old
+      // `_noKey = e.toString().contains('501')` branch chased a status code
+      // /api/weather's lat/lon shape never returns — a missing server-side
+      // key already surfaces as `forecast.isMock`, which the banner already
+      // renders its own badge for below.
+      if (mounted) setState(() => _loading = false);
     }
   }
 
@@ -71,7 +89,7 @@ class _WeatherBannerState extends State<WeatherBanner> {
       return const SizedBox.shrink();
     }
     if (_loading) return _buildSkeleton();
-    if (_noKey || _forecast == null || _forecast!.forecast.isEmpty) {
+    if (_forecast == null || _forecast!.forecast.isEmpty) {
       return const SizedBox.shrink();
     }
     return _buildBanner(context);
@@ -179,8 +197,11 @@ class _WeatherBannerState extends State<WeatherBanner> {
               ],
             ),
             const SizedBox(height: 8),
+            // 70 clipped _WeatherDayChip's own Column by 4px (day label +
+            // icon + temperature range don't fit 70 minus the chip's own
+            // vertical padding) — a real overflow, not just a test artifact.
             SizedBox(
-              height: 70,
+              height: 74,
               child: ListView.builder(
                 scrollDirection: Axis.horizontal,
                 itemCount: _forecast!.forecast.length,
