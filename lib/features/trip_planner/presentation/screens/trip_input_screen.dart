@@ -29,7 +29,7 @@ class _TripInputScreenState extends State<TripInputScreen> {
   bool _isDetectingLocation = false;
   int _days = 7;
   String _budget = 'mid';
-  final Set<String> _styles = {'culture', 'food'};
+  final Set<String> _styles = {'culture', 'food', 'stay'};
   int _adults = 2;
   int _children = 0;
   DateTime? _startDate;
@@ -104,6 +104,7 @@ class _TripInputScreenState extends State<TripInputScreen> {
       ('shopping', strings.styleShopping, '🛍️'),
       ('nature', strings.styleNature, '🌿'),
       ('relax', strings.styleRelax, '🌊'),
+      ('stay', strings.styleStay, '🏨'),
     ];
   }
 
@@ -163,6 +164,19 @@ class _TripInputScreenState extends State<TripInputScreen> {
       if (adults != null) _adults = adults.clamp(1, _maxAdults);
       if (children != null) _children = children.clamp(0, _maxChildren);
     });
+
+    // `stay` is a new style (hotels used to always be included, with no
+    // opt-in). A returning user's saved preferences predate it, so without
+    // this their very next trip would silently lose hotels the first time
+    // they reuse their saved styles — do this once, not every launch, so a
+    // user who deliberately turns `stay` back off later stays off.
+    if (styles != null &&
+        styles.isNotEmpty &&
+        !styles.contains('stay') &&
+        !(prefs.getBool('styles_stay_migrated') ?? false)) {
+      if (mounted) setState(() => _styles.add('stay'));
+      await prefs.setBool('styles_stay_migrated', true);
+    }
   }
 
   Future<void> _saveLastSettings() async {

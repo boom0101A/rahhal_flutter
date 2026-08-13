@@ -23,7 +23,23 @@ class RestaurantsTab extends StatelessWidget {
   /// international WhatsApp number from a national phone number.
   final String? countryCode;
 
-  const RestaurantsTab({super.key, required this.tripId, this.countryCode});
+  /// The trip's chosen travel styles. Used ONLY to pick which empty-state
+  /// message to show — never to decide whether to filter, since the server
+  /// already did that at generation time. A trip that genuinely has zero
+  /// restaurants because "food" wasn't selected gets a dedicated explanation
+  /// instead of the generic "no restaurants match this filter" message,
+  /// which would otherwise look like the app being broken. An older trip
+  /// saved before this feature existed has no "food" entry in its styles but
+  /// DOES have real restaurants — so this only ever affects the copy shown
+  /// when the list is already empty, never which rows render.
+  final List<String>? travelStyles;
+
+  const RestaurantsTab({
+    super.key,
+    required this.tripId,
+    this.countryCode,
+    this.travelStyles,
+  });
 
   static const _filters = [
     RestaurantFilter.all,
@@ -69,6 +85,28 @@ class RestaurantsTab extends StatelessWidget {
   }
 
   Widget _buildContent(BuildContext context, RestaurantsLoaded state) {
+    // Nothing was ever loaded AND the trip's own styles say why — a filter
+    // row and a "0 مطعم" count over a permanently-empty list would just look
+    // broken, so skip straight to a dedicated explanation with no filter UI.
+    final styleExplainsEmpty = state.restaurants.isEmpty &&
+        travelStyles != null &&
+        !travelStyles!.contains('food');
+    if (styleExplainsEmpty) {
+      return Center(
+        child: Padding(
+          padding: const EdgeInsets.all(32),
+          child: Column(
+            children: [
+              const Text('🍽️', style: TextStyle(fontSize: 48)),
+              const SizedBox(height: 16),
+              Text(AppStrings.of(context).restaurantsStyleNotSelected,
+                  style: AppTextStyles.bodyMedium, textAlign: TextAlign.center),
+            ],
+          ),
+        ),
+      );
+    }
+
     return ListView(
       padding: const EdgeInsets.fromLTRB(16, 16, 16, 100),
       children: [

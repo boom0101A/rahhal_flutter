@@ -427,6 +427,13 @@ class AITravelService {
           'durationDays': durationDays,
           'budgetTier': budgetTier,
           'travelStyles': travelStyles,
+          // Tells the server this client actually sends the newer 'stay'
+          // style, so it's safe to strictly gate hotels/restaurants on
+          // selected styles. Older, unpatched clients omit this and never
+          // send 'stay' either — the server falls back to its legacy
+          // always-include behaviour for them so hotels don't silently
+          // disappear before those clients get the corresponding app update.
+          'stylesVersion': 2,
           'travelersCount': travelersCount,
           'startDate': startDate?.toIso8601String().split('T').first,
           'userLat': userLat,

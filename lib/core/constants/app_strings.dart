@@ -119,6 +119,7 @@ class AppStrings {
   String get styleShopping => _t('تسوق', 'Shopping');
   String get styleNature => _t('طبيعة', 'Nature');
   String get styleRelax => _t('استرخاء', 'Relax');
+  String get styleStay => _t('إقامة', 'Stay');
 
   // Generating Screen
   String get generatingTitle => _t('يُحلّل رحّال AI طلبك', 'Rahhal AI is analyzing your request');
@@ -280,6 +281,12 @@ class AppStrings {
   String get restaurantFilterHalal => _t('✓ حلال', '✓ Halal');
   String get restaurantFilterRecommended => _t('✨ موصى به', '✨ Recommended');
   String get noRestaurantsForFilter => _t('لا توجد مطاعم بهذا الفلتر', 'No restaurants found with this filter');
+  String get restaurantsStyleNotSelected => _t(
+      'لم تختر نمط "طعام" لهذه الرحلة، لذلك لم تُدرَج أي مطاعم فيها.',
+      'You didn\'t pick the Food style for this trip, so no restaurants were included.');
+  String get hotelsStyleNotSelected => _t(
+      'لم تختر نمط "إقامة" لهذه الرحلة، لذلك لم تُدرَج أي فنادق فيها.',
+      'You didn\'t pick the Stay style for this trip, so no hotels were included.');
   String get seafoodStyle => _t('بحري', 'Seafood');
   String get traditionalStyle => _t('تقليدي', 'Traditional');
   String get modernStyle => _t('عصري', 'Modern');

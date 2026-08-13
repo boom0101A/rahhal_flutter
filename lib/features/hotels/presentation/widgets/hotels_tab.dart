@@ -25,7 +25,19 @@ class HotelsTab extends StatelessWidget {
   /// international WhatsApp number from a national phone number.
   final String? countryCode;
 
-  const HotelsTab({super.key, required this.tripId, this.countryCode});
+  /// The trip's chosen travel styles. Used only to pick which empty-state
+  /// message to show — an empty list because "stay" wasn't selected gets a
+  /// dedicated explanation instead of the generic "no hotels found" message.
+  /// An older trip saved before this feature existed has no "stay" entry but
+  /// DOES have real hotels, so this never hides rows that actually exist.
+  final List<String>? travelStyles;
+
+  const HotelsTab({
+    super.key,
+    required this.tripId,
+    this.countryCode,
+    this.travelStyles,
+  });
 
   @override
   Widget build(BuildContext context) {
@@ -51,6 +63,8 @@ class HotelsTab extends StatelessWidget {
   Widget _buildContent(BuildContext context, HotelsLoaded state) {
     final strings = AppStrings.of(context);
     if (state.hotels.isEmpty) {
+      final styleExplainsEmpty =
+          travelStyles != null && !travelStyles!.contains('stay');
       return Center(
         child: Padding(
           padding: const EdgeInsets.all(32),
@@ -59,7 +73,10 @@ class HotelsTab extends StatelessWidget {
             children: [
               const Text('🏨', style: TextStyle(fontSize: 48)),
               const SizedBox(height: 16),
-              Text(strings.noHotelsFound,
+              Text(
+                  styleExplainsEmpty
+                      ? strings.hotelsStyleNotSelected
+                      : strings.noHotelsFound,
                   style: AppTextStyles.bodyMedium, textAlign: TextAlign.center),
             ],
           ),

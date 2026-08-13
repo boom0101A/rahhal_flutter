@@ -48,11 +48,13 @@ void main() {
       (tester) async {
     await pumpScreen(tester);
 
-    // Deselect the two travel styles that are pre-selected by default
-    // (culture, food) so the style set becomes empty.
+    // Deselect the three travel styles that are pre-selected by default
+    // (culture, food, stay) so the style set becomes empty.
     await tester.tap(find.text('ثقافة'));
     await tester.pump();
     await tester.tap(find.text('طعام'));
+    await tester.pump();
+    await tester.tap(find.text('إقامة'));
     await tester.pump();
 
     await tester.enterText(find.byType(TextField).first, 'بغداد');

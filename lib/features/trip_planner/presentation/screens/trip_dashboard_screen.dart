@@ -253,10 +253,12 @@ class _TripDashboardScreenState extends State<TripDashboardScreen>
                         countryCode: _trip?.countryCode),
                     RestaurantsTab(
                         tripId: widget.tripId,
-                        countryCode: _trip?.countryCode),
+                        countryCode: _trip?.countryCode,
+                        travelStyles: _trip?.travelStyles),
                     HotelsTab(
                         tripId: widget.tripId,
-                        countryCode: _trip?.countryCode),
+                        countryCode: _trip?.countryCode,
+                        travelStyles: _trip?.travelStyles),
                     BudgetTab(tripId: widget.tripId, countryCode: _trip?.countryCode),
                   ],
                 ),
