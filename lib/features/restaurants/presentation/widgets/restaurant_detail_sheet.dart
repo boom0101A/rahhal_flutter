@@ -6,6 +6,7 @@ import '../../../../core/di/injection.dart';
 import '../../../../core/services/analytics_service.dart';
 import '../../../../shared/widgets/booking_contact_section.dart';
 import '../../../../shared/widgets/cached_hero_image.dart';
+import '../../../../shared/widgets/report_issue_dialog.dart';
 import '../../domain/entities/restaurant_entity.dart';
 
 /// Bottom sheet with a restaurant's details plus an "open in Google Maps"
@@ -177,6 +178,14 @@ class RestaurantDetailSheet extends StatelessWidget {
                 longitude: restaurant.longitude,
                 placeId: restaurant.placeId,
                 countryCode: countryCode,
+                onReport: () => showReportIssueDialog(
+                  context,
+                  sourceType: 'restaurant',
+                  tripId: restaurant.tripId,
+                  itemId: restaurant.id,
+                  itemName: restaurant.name,
+                  placeId: restaurant.placeId,
+                ),
               ),
             ],
           ),

@@ -1,6 +1,7 @@
 import 'package:get_it/get_it.dart';
 import '../network/ai_service.dart';
 import '../network/cloud_sync_service.dart';
+import '../network/issue_report_service.dart';
 import '../network/trip_translation_service.dart';
 import '../network/image_search_service.dart';
 import '../network/weather_service.dart';
@@ -11,6 +12,7 @@ import '../services/notification_service.dart';
 import '../services/location_service.dart';
 import '../services/analytics_service.dart';
 import '../services/fcm_service.dart';
+import '../services/data_export_service.dart';
 import '../services/place_resolver_service.dart';
 import '../services/location_share_service.dart';
 import '../services/offline_prep_service.dart';
@@ -62,6 +64,12 @@ Future<void> setupDependencies() async {
 
   // AI Service
   sl.registerLazySingleton<AITravelService>(() => AITravelService());
+
+  // Issue Report Service ("this AI result is wrong")
+  sl.registerLazySingleton<IssueReportService>(() => IssueReportService());
+
+  // Data Export Service ("export my data")
+  sl.registerLazySingleton<DataExportService>(() => DataExportService());
 
   // Cloud Sync Service
   sl.registerLazySingleton<CloudSyncService>(() => CloudSyncService());

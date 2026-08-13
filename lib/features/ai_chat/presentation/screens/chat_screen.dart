@@ -7,6 +7,7 @@ import '../../../../core/constants/app_text_styles.dart';
 import '../../../../core/di/injection.dart';
 import '../../../../core/constants/app_strings.dart';
 import '../../../../shared/widgets/glass_card.dart';
+import '../../../../shared/widgets/report_issue_dialog.dart';
 import '../cubit/chat_cubit.dart';
 import '../../data/trip_command_executor.dart';
 import '../../domain/trip_command.dart';
@@ -534,27 +535,44 @@ class _MessageBubble extends StatelessWidget {
             const SizedBox(width: 8),
           ],
           Flexible(
-            child: Container(
-              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-              decoration: BoxDecoration(
-                gradient: isUser ? AppColors.amberGradient : null,
-                color: isUser ? null : AppColors.adaptiveBgCard(context),
-                borderRadius: BorderRadius.only(
-                  topLeft: const Radius.circular(20),
-                  topRight: const Radius.circular(20),
-                  bottomLeft: isUser ? const Radius.circular(20) : Radius.zero,
-                  bottomRight: isUser ? Radius.zero : const Radius.circular(20),
+            child: Builder(builder: (context) {
+              Widget bubble = Container(
+                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                decoration: BoxDecoration(
+                  gradient: isUser ? AppColors.amberGradient : null,
+                  color: isUser ? null : AppColors.adaptiveBgCard(context),
+                  borderRadius: BorderRadius.only(
+                    topLeft: const Radius.circular(20),
+                    topRight: const Radius.circular(20),
+                    bottomLeft: isUser ? const Radius.circular(20) : Radius.zero,
+                    bottomRight: isUser ? Radius.zero : const Radius.circular(20),
+                  ),
+                  border: isUser ? null : Border.all(color: AppColors.adaptiveBorder(context)),
                 ),
-                border: isUser ? null : Border.all(color: AppColors.adaptiveBorder(context)),
-              ),
-              child: Text(
-                message.content,
-                style: AppTextStyles.bodyMedium.copyWith(
-                  color: isUser ? AppColors.onAmber : AppColors.adaptiveTextPrimary(context),
+                child: Text(
+                  message.content,
+                  style: AppTextStyles.bodyMedium.copyWith(
+                    color: isUser ? AppColors.onAmber : AppColors.adaptiveTextPrimary(context),
+                  ),
+                  textDirection: isRTL ? TextDirection.rtl : TextDirection.ltr,
                 ),
-                textDirection: isRTL ? TextDirection.rtl : TextDirection.ltr,
-              ),
-            ),
+              );
+              // Only AI-authored messages are reportable — a long-press on
+              // the user's own message does nothing.
+              if (!isUser) {
+                bubble = GestureDetector(
+                  onLongPress: () => showReportIssueDialog(
+                    context,
+                    sourceType: 'chat_message',
+                    tripId: message.tripId,
+                    itemId: message.id,
+                    aiContext: message.content,
+                  ),
+                  child: bubble,
+                );
+              }
+              return bubble;
+            }),
           ),
           if (isUser) const SizedBox(width: 8),
         ],

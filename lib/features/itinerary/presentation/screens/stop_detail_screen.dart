@@ -17,6 +17,7 @@ import '../../../trip_planner/domain/entities/stop_entity.dart';
 import '../../domain/repositories/itinerary_repository.dart';
 import '../../../../core/constants/app_strings.dart';
 import '../../../../shared/widgets/cached_hero_image.dart';
+import '../../../../shared/widgets/report_issue_dialog.dart';
 import '../../../../core/services/map_launcher_service.dart';
 
 class StopDetailScreen extends StatefulWidget {
@@ -161,6 +162,19 @@ class _StopDetailScreenState extends State<StopDetailScreen> {
                         },
                       );
                     },
+                  ),
+                if (_stop != null)
+                  IconButton(
+                    tooltip: AppStrings.of(context).reportIssueTooltip,
+                    icon: Icon(Icons.flag_outlined, color: iconColor),
+                    onPressed: () => showReportIssueDialog(
+                      context,
+                      sourceType: 'stop',
+                      tripId: _stop!.tripId,
+                      itemId: _stop!.id,
+                      itemName: _stop!.name,
+                      placeId: _stop!.placeId,
+                    ),
                   ),
                 const SizedBox(width: 8),
               ],

@@ -6,6 +6,7 @@ import '../../../../../core/di/injection.dart';
 import '../../../../../core/services/analytics_service.dart';
 import '../../../../../shared/widgets/booking_contact_section.dart';
 import '../../../../../shared/widgets/cached_hero_image.dart';
+import '../../../../../shared/widgets/report_issue_dialog.dart';
 import '../../domain/entities/hotel_entity.dart';
 
 /// Professional bottom sheet with a hotel's full details plus an "open in
@@ -144,6 +145,14 @@ class HotelDetailSheet extends StatelessWidget {
                 longitude: hotel.longitude,
                 placeId: hotel.placeId,
                 countryCode: countryCode,
+                onReport: () => showReportIssueDialog(
+                  context,
+                  sourceType: 'hotel',
+                  tripId: hotel.tripId,
+                  itemId: hotel.id,
+                  itemName: hotel.name,
+                  placeId: hotel.placeId,
+                ),
               ),
             ],
           ),

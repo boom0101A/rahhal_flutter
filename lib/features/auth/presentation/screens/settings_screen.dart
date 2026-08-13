@@ -1,13 +1,18 @@
 // ignore_for_file: deprecated_member_use
+import 'dart:convert';
+import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:go_router/go_router.dart';
+import 'package:path_provider/path_provider.dart';
+import 'package:share_plus/share_plus.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:url_launcher/url_launcher.dart';
 import '../../../../core/config/app_info.dart';
 import '../../../../core/constants/app_colors.dart';
 import '../../../../core/constants/app_text_styles.dart';
 import '../../../../core/di/injection.dart';
+import '../../../../core/services/data_export_service.dart';
 import '../../../../core/services/storage_service.dart';
 import '../../../../features/currency/data/currency_service.dart';
 import '../../../../shared/widgets/user_avatar.dart';
@@ -34,6 +39,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
   StorageUsage? _storage;
   bool _clearingCache = false;
   bool _deletingAccount = false;
+  bool _exportingData = false;
 
   @override
   void initState() {
@@ -347,6 +353,28 @@ class _SettingsScreenState extends State<SettingsScreen> {
 
   // ── Account ───────────────────────────────────────────────────────────────
 
+  Future<void> _exportMyData() async {
+    final strings = AppStrings.of(context);
+    final messenger = ScaffoldMessenger.of(context);
+
+    setState(() => _exportingData = true);
+    try {
+      final data = await sl<DataExportService>().buildExport();
+      final jsonStr = const JsonEncoder.withIndent('  ').convert(data);
+      final tempDir = await getTemporaryDirectory();
+      final file = await File(
+        '${tempDir.path}/rahhal_export_${DateTime.now().millisecondsSinceEpoch}.json',
+      ).create();
+      await file.writeAsString(jsonStr);
+      if (!mounted) return;
+      await Share.shareXFiles([XFile(file.path)], subject: strings.exportDataSubject);
+    } catch (e) {
+      if (mounted) messenger.showSnackBar(SnackBar(content: Text(strings.exportDataFailed)));
+    } finally {
+      if (mounted) setState(() => _exportingData = false);
+    }
+  }
+
   Future<void> _confirmDeleteAccount() async {
     final strings = AppStrings.of(context);
     final messenger = ScaffoldMessenger.of(context);
@@ -618,6 +646,21 @@ class _SettingsScreenState extends State<SettingsScreen> {
                   icon: Icons.description_outlined,
                   title: AppStrings.of(context).settingsTermsOfService,
                   onTap: _openTermsOfService,
+                ),
+                // Available regardless of account type — even a guest's
+                // local-only trips are worth exporting.
+                _buildSettingTile(
+                  icon: Icons.download_outlined,
+                  title: AppStrings.of(context).settingsExportData,
+                  trailing: _exportingData
+                      ? const SizedBox(
+                          width: 18,
+                          height: 18,
+                          child: CircularProgressIndicator(
+                              strokeWidth: 2, color: AppColors.accentAmber),
+                        )
+                      : null,
+                  onTap: _exportingData ? null : _exportMyData,
                 ),
                 // Only signed-in users have an account to delete; a guest
                 // session has nothing on the server.

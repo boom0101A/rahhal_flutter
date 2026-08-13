@@ -74,6 +74,10 @@ class BookingContactSection extends StatelessWidget {
   /// Trip country (ISO-2), used to build the international WhatsApp number.
   final String? countryCode;
 
+  /// Shows a small "report this place" icon next to the section title when
+  /// provided. Omitted (null) by default so existing callers are unaffected.
+  final VoidCallback? onReport;
+
   const BookingContactSection({
     super.key,
     required this.placeName,
@@ -84,6 +88,7 @@ class BookingContactSection extends StatelessWidget {
     required this.longitude,
     this.placeId,
     this.countryCode,
+    this.onReport,
   });
 
   bool get _hasPhone => phone != null && phone!.trim().isNotEmpty;
@@ -103,7 +108,21 @@ class BookingContactSection extends StatelessWidget {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Text(strings.bookingSectionTitle, style: AppTextStyles.titleSmall),
+        Row(
+          children: [
+            Expanded(
+              child: Text(strings.bookingSectionTitle, style: AppTextStyles.titleSmall),
+            ),
+            if (onReport != null)
+              IconButton(
+                visualDensity: VisualDensity.compact,
+                tooltip: strings.reportIssueTooltip,
+                icon: Icon(Icons.flag_outlined,
+                    size: 18, color: AppColors.adaptiveTextSecondary(context)),
+                onPressed: onReport,
+              ),
+          ],
+        ),
         const SizedBox(height: 10),
         if (!_hasPhone)
           Padding(

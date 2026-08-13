@@ -185,6 +185,72 @@ async function warmPlacesCache() {
   }
 }
 
+// ─── Critical error logging + Telegram alerting ─────────────────────────────
+// Durable (survives a Railway restart, unlike console.error) and actively
+// alerting — but ONLY for genuinely systemic failures, not every catch block.
+// console.error/console.warn calls elsewhere in this file remain the
+// unconditional, un-throttled per-occurrence record for the Railway log
+// viewer; this is only for "someone should know right now." A single shared
+// cooldown per category throttles BOTH the Firestore write and the Telegram
+// ping together, so a sustained outage produces one alert, not one per
+// failed request.
+const ERROR_ALERT_COOLDOWN_MS = Number(process.env.ERROR_ALERT_COOLDOWN_MS) || 15 * 60 * 1000;
+const _errorAlertState = {}; // category -> { until, occurrencesSinceAlert }
+
+function logCriticalError(category, message, meta = {}) {
+  try {
+    const state = _errorAlertState[category] || { until: 0, occurrencesSinceAlert: 0 };
+    state.occurrencesSinceAlert += 1;
+    _errorAlertState[category] = state;
+    if (Date.now() < state.until) return; // still cooling down — silent by design
+
+    const occurrences = state.occurrencesSinceAlert;
+    state.until = Date.now() + ERROR_ALERT_COOLDOWN_MS;
+    state.occurrencesSinceAlert = 0;
+
+    // Fire-and-forget, both independently caught. Every call site here IS
+    // itself an error-handling path (the AI fallback chain, the global
+    // middleware, both process guards) — a monitoring side-effect failing
+    // must never become a second error on top of the first.
+    persistErrorLog(category, message, meta, occurrences).catch(() => {});
+    sendTelegramAlert(category, message, meta, occurrences).catch(() => {});
+  } catch (_) {
+    // Must be structurally incapable of throwing, full stop.
+  }
+}
+
+async function persistErrorLog(category, message, meta, occurrences) {
+  const db = firestoreDb();
+  if (!db) return;
+  await db.collection('error_logs').add({
+    category,
+    message: String(message ?? '').slice(0, 2000),
+    meta: safeJsonForLog(meta),
+    occurrencesSinceLastAlert: occurrences,
+    createdAt: admin.firestore.FieldValue.serverTimestamp(),
+  });
+}
+
+async function sendTelegramAlert(category, message, meta, occurrences) {
+  const token = process.env.TELEGRAM_BOT_TOKEN;
+  const chatId = process.env.TELEGRAM_CHAT_ID;
+  if (!token || !chatId) return; // not configured — no-op, exactly as required
+  const text = `🚨 Rahhal [${category}]\n${String(message).slice(0, 500)}\n(${occurrences} occurrence(s) since last alert)`;
+  await axios.post(
+    `https://api.telegram.org/bot${token}/sendMessage`,
+    { chat_id: chatId, text },
+    { timeout: 5000 }
+  );
+}
+
+function safeJsonForLog(obj) {
+  try {
+    return JSON.parse(JSON.stringify(obj));
+  } catch (_) {
+    return {};
+  }
+}
+
 // ─── Per-user trip-generation quota ─────────────────────────────────────────
 // Caps how many trips a single authenticated user can generate, independent
 // of the IP-based tripLimiter below (which stops a burst but not one account
@@ -1345,6 +1411,16 @@ const photosLimiter = rateLimit({
   message: { error: 'Too many photo requests, please try again shortly.' },
 });
 
+// Report submissions are cheap (Firestore-only, no paid API calls), but still
+// an abuse surface — generous for a real user reporting a handful of issues.
+const reportLimiter = rateLimit({
+  windowMs: 60 * 60 * 1000,
+  max: 20,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { error: 'Too many reports, please try again later.' },
+});
+
 // ─── Firebase ID Token Verification Middleware ──────────────────────────────
 // Validates Firebase Auth Bearer Token sent by Flutter app via _FirebaseTokenInterceptor
 //
@@ -1402,6 +1478,7 @@ app.use('/api/currency', authenticateFirebaseToken);
 app.use('/api/nearby-places', nearbyLimiter, authenticateFirebaseToken);
 app.use('/api/hotels', hotelsLimiter, authenticateFirebaseToken);
 app.use('/api/resolve-place', resolvePlaceLimiter, authenticateFirebaseToken);
+app.use('/api/report-issue', reportLimiter, authenticateFirebaseToken);
 
 // Health Check Endpoints for cloud hosting services (Render / Railway)
 app.get('/', (req, res) => {
@@ -1724,6 +1801,9 @@ async function callAI(systemPrompt, messages, maxTokens = 4000, deadlineAt) {
 
   // lastError is guaranteed set here: the missing-api-key guard above is the
   // only way this point could be reached with no attempt having run at all.
+  // Every configured provider just failed in the same request — a total
+  // outage, worth an active alert rather than only a console line.
+  logCriticalError('ai_provider_chain_exhausted', (lastError && lastError.message) || 'invalid-api-key');
   throw lastError || new Error('invalid-api-key');
 }
 
@@ -2494,6 +2574,7 @@ async function fetchRealRestaurants(cityEn, centerLat, centerLng, countryCode, l
       const msg2 = err2.response?.data?.error?.message || err2.message;
       tripPlacesBreaker(msg2, 'nearby');
       console.error('[RESTAURANTS] Nearby fallback also failed:', msg2);
+      logCriticalError('places_total_failure', msg2, { surface: 'restaurants' });
       return [];
     }
   }
@@ -2763,6 +2844,7 @@ async function fetchRealHotels(cityEn, centerLat, centerLng, limit, rng) {
       const msg2 = err2.response?.data?.error?.message || err2.message;
       tripPlacesBreaker(msg2, 'nearby');
       console.error('[HOTELS] Nearby fallback also failed:', msg2);
+      logCriticalError('places_total_failure', msg2, { surface: 'hotels' });
       return [];
     }
   }
@@ -4746,6 +4828,7 @@ app.get('/api/nearby-places', async (req, res) => {
       return res.status(200).json({ places, source: 'osm' });
     } catch (e2) {
       console.error('[NEARBY] Overpass fallback error:', e2.message);
+      logCriticalError('places_total_failure', e2.message, { surface: 'nearby' });
       return res.status(500).json({ error: 'Failed to fetch nearby places', places: [] });
     }
   }
@@ -5073,6 +5156,69 @@ app.post('/api/admin/send-test-push', authenticateFirebaseToken, async (req, res
   }
 });
 
+// Manual trigger to verify the Telegram/Firestore alert pipeline end-to-end
+// on a deployed instance without waiting for (or faking) a real outage.
+// Same ADMIN_UIDS gate as the push-test route above.
+app.post('/api/admin/test-alert', authenticateFirebaseToken, async (req, res) => {
+  const adminUids = (process.env.ADMIN_UIDS || '').split(',').map((s) => s.trim()).filter(Boolean);
+  if (!adminUids.includes(req.user.uid)) {
+    return res.status(403).json({ error: 'Not authorized.' });
+  }
+  logCriticalError('test', 'Manual test alert triggered from /api/admin/test-alert', {
+    uid: req.user.uid,
+  });
+  return res.status(200).json({ ok: true });
+});
+
+// ─── POST /api/report-issue ──────────────────────────────────────────────────
+// Lets a signed-in user flag an AI-generated stop/restaurant/hotel or chat
+// message as wrong. Cheap (Firestore-only, no paid API calls), but still an
+// abuse surface, hence the generous-but-bounded rate limit. No AI provider/
+// model attribution is stored — the app never persists which engine
+// generated a given historical item, so there is nothing accurate to attach.
+const REPORT_SOURCE_TYPES = new Set(['stop', 'restaurant', 'hotel', 'chat_message']);
+
+app.post('/api/report-issue', async (req, res) => {
+  const { sourceType, tripId, itemId, itemName, placeId, reason, context } = req.body || {};
+
+  if (!REPORT_SOURCE_TYPES.has(sourceType)) {
+    return res.status(400).json({ error: 'Invalid sourceType.' });
+  }
+  if (
+    typeof tripId !== 'string' || !tripId.trim() ||
+    typeof itemId !== 'string' || !itemId.trim() ||
+    typeof reason !== 'string' || !reason.trim()
+  ) {
+    return res.status(400).json({ error: 'tripId, itemId and reason are required.' });
+  }
+
+  const db = firestoreDb();
+  if (!db) return res.status(503).json({ error: 'Firestore unavailable.' });
+
+  try {
+    const docRef = await db.collection('issue_reports').add({
+      uid: req.user.uid,
+      sourceType,
+      tripId: tripId.trim(),
+      itemId: itemId.trim(),
+      itemName: typeof itemName === 'string' ? itemName.slice(0, 200) : null,
+      placeId: typeof placeId === 'string' ? placeId.slice(0, 200) : null,
+      reason: reason.trim().slice(0, 1000),
+      context: typeof context === 'string' ? context.slice(0, 4000) : null,
+      createdAt: admin.firestore.FieldValue.serverTimestamp(),
+    });
+    return res.status(200).json({ ok: true, reportId: docRef.id });
+  } catch (e) {
+    console.error('[REPORT] Failed to persist report:', e.message);
+    logCriticalError('report_submission_failed', e.message, {
+      uid: req.user.uid,
+      tripId,
+      sourceType,
+    });
+    return res.status(500).json({ error: 'Failed to submit report.' });
+  }
+});
+
 // Global error handler — must be the LAST middleware registered, after every
 // route. Express's default finalhandler writes err.stack into the response
 // body whenever app.get('env') isn't 'production', and NODE_ENV is never set
@@ -5082,6 +5228,11 @@ app.post('/api/admin/send-test-push', authenticateFirebaseToken, async (req, res
 // middleware stack to the client. Generic response, no NODE_ENV dependency.
 app.use((err, req, res, next) => {
   console.error('[UNHANDLED ERROR]', err && err.stack ? err.stack : err);
+  logCriticalError('unhandled_error', err && err.message ? err.message : String(err), {
+    path: req.originalUrl,
+    method: req.method,
+    stack: err && err.stack,
+  });
   if (res.headersSent) return next(err);
   res.status(500).json({ error: 'Internal server error' });
 });
@@ -5107,8 +5258,14 @@ app.listen(PORT, () => {
 // it just fails alone.
 process.on('unhandledRejection', (reason) => {
   console.error('[FATAL-GUARD] Unhandled rejection:', reason && reason.stack ? reason.stack : reason);
+  logCriticalError('unhandled_rejection', (reason && reason.message) || String(reason), {
+    stack: reason && reason.stack,
+  });
 });
 
 process.on('uncaughtException', (err) => {
   console.error('[FATAL-GUARD] Uncaught exception:', err && err.stack ? err.stack : err);
+  logCriticalError('uncaught_exception', (err && err.message) || String(err), {
+    stack: err && err.stack,
+  });
 });

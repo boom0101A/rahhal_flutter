@@ -201,6 +201,18 @@ class AppStrings {
   String get bookingLaunchFailed =>
       _t('تعذّر فتح التطبيق', 'Couldn\'t open the app');
 
+  // Report an AI result as wrong
+  String get reportIssueTooltip => _t('الإبلاغ عن خطأ', 'Report an issue');
+  String get reportIssueTitle => _t('ما الخطأ في هذا؟', 'What\'s wrong with this?');
+  String get reportIssueHint => _t(
+      'صف المشكلة (مثلاً: الاسم أو الموقع غير صحيح)',
+      'Describe the problem (e.g. wrong name or location)');
+  String get reportIssueSubmit => _t('إرسال', 'Submit');
+  String get reportIssueSuccess =>
+      _t('تم استلام بلاغك، شكراً لك 🙏', 'Your report was received, thank you 🙏');
+  String get reportIssueFailed =>
+      _t('تعذّر إرسال البلاغ، حاول مجدداً', 'Couldn\'t submit the report, try again');
+
   // Share my live location
   String get shareMyLocation => _t('شارك موقعي', 'Share my location');
   String get shareLocationBody => _t('أنا هنا الآن 📍', 'I\'m here right now 📍');
@@ -321,6 +333,10 @@ class AppStrings {
 
   // ── Settings: account & legal ─────────────────────────────────────────────
   String get accountSection => _t('الحساب', 'Account');
+  String get settingsExportData => _t('تصدير بياناتي', 'Export my data');
+  String get exportDataSubject => _t('بيانات رحّال', 'Rahhal data export');
+  String get exportDataFailed =>
+      _t('تعذّر تصدير البيانات، حاول مجدداً', 'Couldn\'t export your data, try again');
   String get settingsDeleteAccount => _t('حذف الحساب نهائياً', 'Delete account');
   String get deleteAccountConfirmTitle => _t('حذف الحساب نهائياً؟', 'Delete account?');
   String get deleteAccountConfirmBody => _t(
