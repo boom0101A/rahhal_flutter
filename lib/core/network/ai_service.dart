@@ -350,6 +350,14 @@ class AITravelService {
         return AIException(message: 'invalid-api-key', statusCode: code);
       }
       if (code == 429) {
+        final data = e.response?.data;
+        if (data is Map && data['error'] == 'quota-exceeded') {
+          final scope = data['scope'];
+          return AIException(
+            message: scope == 'monthly' ? 'quota-exceeded-monthly' : 'quota-exceeded-daily',
+            statusCode: code,
+          );
+        }
         return AIException(message: 'rate-limit', statusCode: code);
       }
       if (code >= 500) {

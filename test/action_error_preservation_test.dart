@@ -2,6 +2,7 @@ import 'package:dartz/dartz.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:mocktail/mocktail.dart';
 import 'package:rahhal_flutter/core/errors/failures.dart';
+import 'package:rahhal_flutter/core/services/analytics_service.dart';
 import 'package:rahhal_flutter/features/favorites/domain/repositories/favorites_repository.dart';
 import 'package:rahhal_flutter/features/favorites/presentation/cubit/favorites_cubit.dart';
 import 'package:rahhal_flutter/features/trip_documents/domain/entities/document_entity.dart';
@@ -18,6 +19,8 @@ import 'package:rahhal_flutter/features/trip_documents/presentation/cubit/docume
 class _MockDocumentRepository extends Mock implements DocumentRepository {}
 
 class _MockFavoritesRepository extends Mock implements FavoritesRepository {}
+
+class _MockAnalyticsService extends Mock implements AnalyticsService {}
 
 DocumentEntity _doc(String id) => DocumentEntity(
       id: id,
@@ -76,7 +79,7 @@ void main() {
 
     setUp(() {
       repo = _MockFavoritesRepository();
-      cubit = FavoritesCubit(repository: repo);
+      cubit = FavoritesCubit(repository: repo, analytics: _MockAnalyticsService());
     });
 
     test('a failed updateNotes keeps the loaded list, with actionError set',

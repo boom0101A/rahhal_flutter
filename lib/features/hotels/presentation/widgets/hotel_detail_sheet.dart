@@ -2,6 +2,8 @@ import 'package:flutter/material.dart';
 import '../../../../../core/constants/app_colors.dart';
 import '../../../../../core/constants/app_strings.dart';
 import '../../../../../core/constants/app_text_styles.dart';
+import '../../../../../core/di/injection.dart';
+import '../../../../../core/services/analytics_service.dart';
 import '../../../../../shared/widgets/booking_contact_section.dart';
 import '../../../../../shared/widgets/cached_hero_image.dart';
 import '../../domain/entities/hotel_entity.dart';
@@ -19,6 +21,7 @@ class HotelDetailSheet extends StatelessWidget {
 
   static Future<void> show(BuildContext context, HotelEntity hotel,
       {String? countryCode}) {
+    sl<AnalyticsService>().logDetailView(itemType: 'hotel', itemId: hotel.id);
     return showModalBottomSheet(
       context: context,
       isScrollControlled: true,

@@ -3,14 +3,23 @@ import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:equatable/equatable.dart';
 import '../../domain/entities/user_entity.dart';
 import '../../domain/repositories/auth_repository.dart';
+import '../../../../core/services/analytics_service.dart';
+import '../../../../core/services/fcm_service.dart';
 
 part 'auth_state.dart';
 
 class AuthCubit extends Cubit<AuthState> {
   final AuthRepository _repository;
+  final AnalyticsService _analytics;
+  final FcmService? _fcm;
 
-  AuthCubit({required AuthRepository repository})
-      : _repository = repository,
+  AuthCubit({
+    required AuthRepository repository,
+    required AnalyticsService analytics,
+    FcmService? fcm,
+  })  : _repository = repository,
+        _analytics = analytics,
+        _fcm = fcm,
         super(const AuthInitial());
 
   Future<void> signInAnonymously() async {
@@ -18,9 +27,13 @@ class AuthCubit extends Cubit<AuthState> {
     final result = await _repository.signInAnonymously();
     if (isClosed) return;
     result.fold(
-      (failure) => emit(AuthError(failure.message)),
+      (failure) {
+        emit(AuthError(failure.message));
+        _analytics.logAuthFailure(method: 'anonymous', reason: failure.message);
+      },
       (user) {
         emit(AuthAuthenticated(user));
+        _analytics.logLogin(method: 'anonymous');
         _repository.restoreCloudData(user.uid);
       },
     );
@@ -31,9 +44,13 @@ class AuthCubit extends Cubit<AuthState> {
     final result = await _repository.signInWithGoogle();
     if (isClosed) return;
     result.fold(
-      (failure) => emit(AuthError(failure.message)),
+      (failure) {
+        emit(AuthError(failure.message));
+        _analytics.logAuthFailure(method: 'google', reason: failure.message);
+      },
       (user) {
         emit(AuthAuthenticated(user));
+        _analytics.logLogin(method: 'google');
         unawaited(_repository.restoreCloudData(user.uid));
       },
     );
@@ -44,9 +61,13 @@ class AuthCubit extends Cubit<AuthState> {
     final result = await _repository.signInWithEmail(email, password);
     if (isClosed) return;
     result.fold(
-      (failure) => emit(AuthError(failure.message)),
+      (failure) {
+        emit(AuthError(failure.message));
+        _analytics.logAuthFailure(method: 'email', reason: failure.message);
+      },
       (user) {
         emit(AuthAuthenticated(user));
+        _analytics.logLogin(method: 'email');
         _repository.restoreCloudData(user.uid);
       },
     );
@@ -59,9 +80,13 @@ class AuthCubit extends Cubit<AuthState> {
         email, password, displayName);
     if (isClosed) return;
     result.fold(
-      (failure) => emit(AuthError(failure.message)),
+      (failure) {
+        emit(AuthError(failure.message));
+        _analytics.logAuthFailure(method: 'email', reason: failure.message);
+      },
       (user) {
         emit(AuthAuthenticated(user));
+        _analytics.logSignUp(method: 'email');
         // A new user has no cloud data yet, but for consistency we can call it
         // or just rely on local state. It's harmless.
         _repository.restoreCloudData(user.uid);
@@ -70,6 +95,10 @@ class AuthCubit extends Cubit<AuthState> {
   }
 
   Future<void> signOut() async {
+    // Remove this device's push token BEFORE signing out — deleteToken()
+    // reads FirebaseAuth.instance.currentUser to know whose Firestore doc to
+    // clean up, which is gone the moment signOut() completes.
+    await _fcm?.deleteToken();
     await _repository.signOut();
     if (isClosed) return;
     emit(const AuthInitial());

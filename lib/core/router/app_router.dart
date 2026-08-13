@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
+import 'package:firebase_analytics/firebase_analytics.dart';
 import '../../main.dart';
 import '../../features/auth/presentation/screens/splash_screen.dart';
 import '../../features/auth/presentation/screens/onboarding_screen.dart';
@@ -25,6 +26,7 @@ import 'page_transitions.dart';
 import '../constants/app_colors.dart';
 import '../constants/app_strings.dart';
 import '../di/injection.dart';
+import '../services/analytics_service.dart';
 
 final GlobalKey<NavigatorState> _rootNavigatorKey =
     GlobalKey<NavigatorState>(debugLabel: 'root');
@@ -38,6 +40,9 @@ class AppRouter {
     navigatorKey: _rootNavigatorKey,
     initialLocation: '/',
     debugLogDiagnostics: true,
+    observers: [
+      FirebaseAnalyticsObserver(analytics: sl<AnalyticsService>().analytics),
+    ],
     refreshListenable: Listenable.merge([_authNotifier, appLocale]),
     redirect: (context, state) {
       final isAuthenticated = sl<AuthRepository>().isAuthenticated;

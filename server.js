@@ -114,6 +114,11 @@ function placesCacheDb() {
   return _cacheDb;
 }
 
+// Same lazy-init singleton as placesCacheDb — aliased under a name that
+// doesn't imply "cache" for non-cache Firestore consumers (per-user quota,
+// FCM token lookups) added later in this file.
+const firestoreDb = placesCacheDb;
+
 // Cache keys contain '/', '|' and commas, none of which are safe in a
 // Firestore document id — hash to a fixed-length one and keep the real key in
 // the document so the warm-up can restore it.
@@ -178,6 +183,73 @@ async function warmPlacesCache() {
   } catch (e) {
     console.warn('[CACHE] warm-up skipped (ignored):', e.message);
   }
+}
+
+// ─── Per-user trip-generation quota ─────────────────────────────────────────
+// Caps how many trips a single authenticated user can generate, independent
+// of the IP-based tripLimiter below (which stops a burst but not one account
+// spread over days). Every generation costs real money (Groq/Gemini + Places),
+// so this must reject BEFORE those calls fire, not just log after the fact.
+const TRIP_QUOTA_DAILY_MAX = 5;
+const TRIP_QUOTA_MONTHLY_MAX = 30;
+
+/// Atomically checks and — if allowed — consumes one unit of both the daily
+/// and monthly quota for `uid`, in a single Firestore transaction so two
+/// concurrent requests from the same user can't both slip through on a stale
+/// read.
+///
+/// Fails OPEN: a missing/unreachable Firestore must never block trip
+/// generation for every user (that would turn a cost-control feature into an
+/// availability incident). Contrast with authenticateFirebaseToken, which
+/// fails CLOSED — that's a security boundary; this is a cost boundary layered
+/// after auth already passed, so the asymmetry is intentional.
+async function checkAndConsumeQuota(uid) {
+  const db = firestoreDb();
+  if (!db) return { allowed: true, reason: 'firestore-unavailable' };
+
+  const now = new Date();
+  const dayId = `d_${now.toISOString().slice(0, 10)}`; // YYYY-MM-DD, UTC
+  const monthId = `m_${now.toISOString().slice(0, 7)}`; // YYYY-MM, UTC
+  const usageRef = db.collection('users').doc(uid).collection('usage');
+  const dayRef = usageRef.doc(dayId);
+  const monthRef = usageRef.doc(monthId);
+
+  try {
+    return await db.runTransaction(async (tx) => {
+      const [daySnap, monthSnap] = await Promise.all([tx.get(dayRef), tx.get(monthRef)]);
+      const dayCount = daySnap.exists ? (daySnap.data().count || 0) : 0;
+      const monthCount = monthSnap.exists ? (monthSnap.data().count || 0) : 0;
+
+      if (dayCount >= TRIP_QUOTA_DAILY_MAX) return { allowed: false, reason: 'daily' };
+      if (monthCount >= TRIP_QUOTA_MONTHLY_MAX) return { allowed: false, reason: 'monthly' };
+
+      tx.set(dayRef, { count: dayCount + 1, updatedAt: admin.firestore.FieldValue.serverTimestamp() }, { merge: true });
+      tx.set(monthRef, { count: monthCount + 1, updatedAt: admin.firestore.FieldValue.serverTimestamp() }, { merge: true });
+      return { allowed: true };
+    });
+  } catch (e) {
+    console.warn('[QUOTA] transaction failed — fail-open:', e.message);
+    return { allowed: true, reason: 'error' };
+  }
+}
+
+/// Middleware form of checkAndConsumeQuota — must run AFTER
+/// authenticateFirebaseToken since it needs req.user.uid. Rejects before the
+/// route handler ever calls Groq/Gemini/Places.
+async function enforceTripQuota(req, res, next) {
+  const result = await checkAndConsumeQuota(req.user.uid);
+  if (!result.allowed) {
+    console.log(`[QUOTA] Rejected uid=${req.user.uid} — ${result.reason} limit reached`);
+    return res.status(429).json({
+      error: 'quota-exceeded',
+      scope: result.reason,
+      message:
+        result.reason === 'daily'
+          ? `لقد استخدمت الحد الأقصى (${TRIP_QUOTA_DAILY_MAX}) لإنشاء الرحلات اليوم. حاول مجدداً غداً.`
+          : `لقد استخدمت الحد الأقصى (${TRIP_QUOTA_MONTHLY_MAX}) لإنشاء الرحلات هذا الشهر. حاول مجدداً الشهر القادم.`,
+    });
+  }
+  return next();
 }
 
 // How often the Firestore copy is pruned, and how much per run.
@@ -1310,7 +1382,7 @@ async function authenticateFirebaseToken(req, res, next) {
 }
 
 app.use('/api/', limiter);
-app.use('/api/generate-trip', tripLimiter, authenticateFirebaseToken);
+app.use('/api/generate-trip', tripLimiter, authenticateFirebaseToken, enforceTripQuota);
 app.use('/api/chat', chatLimiter, authenticateFirebaseToken);
 // Translation spends the same paid AI quota as chat, so it gets the same gate
 // and its own limiter — one trip is a single call, so this is generous for a
@@ -4960,6 +5032,46 @@ function startSelfPing() {
     }
   }, SELF_PING_INTERVAL_MS);
 }
+
+// Manual FCM test-send — infrastructure-only push tooling, no automatic
+// campaigns/cron. Gated behind an explicit allowlist on top of normal auth,
+// since it's otherwise a push-spam vector for any authenticated user.
+app.post('/api/admin/send-test-push', authenticateFirebaseToken, async (req, res) => {
+  const adminUids = (process.env.ADMIN_UIDS || '').split(',').map((s) => s.trim()).filter(Boolean);
+  if (!adminUids.includes(req.user.uid)) {
+    return res.status(403).json({ error: 'Not authorized.' });
+  }
+
+  const { targetUid, title, body } = req.body || {};
+  if (typeof targetUid !== 'string' || !targetUid.trim()) {
+    return res.status(400).json({ error: 'targetUid is required.' });
+  }
+
+  const db = firestoreDb();
+  if (!db) return res.status(503).json({ error: 'Firestore unavailable.' });
+
+  try {
+    const userDoc = await db.collection('users').doc(targetUid).get();
+    const tokens = Object.keys(userDoc.data()?.fcmTokens || {});
+    if (!tokens.length) {
+      return res.status(404).json({ error: 'No registered push tokens for this user.' });
+    }
+
+    const results = await Promise.allSettled(
+      tokens.map((token) =>
+        admin.messaging().send({
+          token,
+          notification: { title: String(title || 'Test'), body: String(body || '') },
+        })
+      )
+    );
+    const sent = results.filter((r) => r.status === 'fulfilled').length;
+    return res.status(200).json({ sent, total: tokens.length });
+  } catch (e) {
+    console.error('[PUSH] send-test-push failed:', e.message);
+    return res.status(500).json({ error: 'Failed to send push.' });
+  }
+});
 
 // Global error handler — must be the LAST middleware registered, after every
 // route. Express's default finalhandler writes err.stack into the response

@@ -473,6 +473,11 @@ class AppStrings {
     'احصل على نصائح سفر وتوصيات مخصصة',
     'Get personalized travel tips and recommendations',
   );
+  String get notifPush => _t('إشعارات فورية', 'Push Notifications');
+  String get notifPushDesc => _t(
+    'تلقي إشعارات مباشرة من الخادم على هذا الجهاز',
+    'Receive push notifications from the server on this device',
+  );
   /// Shown when a category is toggled on but the OS notification permission
   /// is actually denied, so the toggle alone doesn't guarantee anything fires.
   /// No in-app "open settings" action — this app has no native-settings
@@ -849,6 +854,12 @@ class AppStrings {
   String get genErrorRateLimit => _t(
       '⏱ تجاوزت الحد المسموح من الطلبات.\nانتظر دقيقة ثم أعد المحاولة.',
       '⏱ You have exceeded the request limit.\nWait a minute and try again.');
+  String get genErrorQuotaDaily => _t(
+      '📅 لقد استخدمت الحد الأقصى لإنشاء الرحلات اليوم.\nحاول مجدداً غداً.',
+      '📅 You\'ve used today\'s trip generation limit.\nTry again tomorrow.');
+  String get genErrorQuotaMonthly => _t(
+      '📆 لقد استخدمت الحد الأقصى لإنشاء الرحلات هذا الشهر.\nحاول مجدداً الشهر القادم.',
+      '📆 You\'ve used this month\'s trip generation limit.\nTry again next month.');
   String get genErrorServer => _t(
       '🛠 خطأ في الخادم.\nيرجى المحاولة مجدداً بعد قليل.',
       '🛠 Server error.\nPlease try again shortly.');

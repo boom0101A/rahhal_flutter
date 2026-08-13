@@ -2,14 +2,17 @@ import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:equatable/equatable.dart';
 import '../../domain/entities/trip_entity.dart';
 import '../../domain/repositories/trip_repository.dart';
+import '../../../../core/services/analytics_service.dart';
 
 part 'trip_planner_state.dart';
 
 class TripPlannerCubit extends Cubit<TripPlannerState> {
   final TripRepository _tripRepository;
+  final AnalyticsService _analytics;
 
-  TripPlannerCubit({required TripRepository tripRepository})
+  TripPlannerCubit({required TripRepository tripRepository, required AnalyticsService analytics})
       : _tripRepository = tripRepository,
+        _analytics = analytics,
         super(const TripPlannerInitial());
 
   Future<void> generateTripPlan({
@@ -25,6 +28,11 @@ class TripPlannerCubit extends Cubit<TripPlannerState> {
     double? targetBudgetUsd,
   }) async {
     emit(const TripPlannerGenerating());
+    _analytics.logTripGenerationStart(
+      destination: destination,
+      durationDays: durationDays,
+      budgetTier: budgetTier,
+    );
 
     final result = await _tripRepository.generateTripPlan(
       destination: destination,
@@ -41,8 +49,14 @@ class TripPlannerCubit extends Cubit<TripPlannerState> {
 
     if (isClosed) return;
     result.fold(
-      (failure) => emit(TripPlannerError(failure.message)),
-      (trip) => emit(TripPlannerSuccess(trip)),
+      (failure) {
+        emit(TripPlannerError(failure.message));
+        _analytics.logTripGenerationFailure(destination: destination, reason: failure.message);
+      },
+      (trip) {
+        emit(TripPlannerSuccess(trip));
+        _analytics.logTripGenerationSuccess(destination: destination, durationDays: durationDays);
+      },
     );
   }
 

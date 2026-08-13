@@ -18,6 +18,7 @@ class NotificationService {
   /// just reads these back as SharedPreferences keys.
   static const categoryTripReminders = 'notifications_trip_reminders';
   static const categoryAiSuggestions = 'notifications_ai_suggestions';
+  static const categoryPush = 'notifications_push';
 
   /// flutter_local_notifications has no concept of categories — only
   /// individual numeric ids or cancel-everything. So each schedule call also
@@ -267,6 +268,22 @@ class NotificationService {
       await _plugin.cancel(id);
     } catch (e) {
       debugPrint('NotificationService cancel error: $e');
+    }
+  }
+
+  /// Shows a notification right now, via the same channel/details as every
+  /// scheduled one — used by FcmService to display a push received while the
+  /// app is in the foreground (Android only shows FCM's own tray notification
+  /// automatically in the background/terminated, not while foregrounded).
+  static Future<void> showImmediate({
+    required String title,
+    required String body,
+  }) async {
+    try {
+      final id = DateTime.now().millisecondsSinceEpoch & 0x7fffffff;
+      await _plugin.show(id, title, body, _details);
+    } catch (e) {
+      debugPrint('NotificationService showImmediate error: $e');
     }
   }
 

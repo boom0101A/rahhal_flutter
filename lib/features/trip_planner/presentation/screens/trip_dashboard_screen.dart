@@ -10,6 +10,7 @@ import '../../../../core/constants/app_text_styles.dart';
 import '../../../../core/constants/app_strings.dart';
 import '../../../../core/di/injection.dart';
 import '../../../../core/network/trip_translation_service.dart';
+import '../../../../core/services/analytics_service.dart';
 import '../../../../core/services/location_share_service.dart';
 import '../../../../core/services/trip_notification_scheduler.dart';
 import '../../../../shared/widgets/app_badges.dart';
@@ -645,6 +646,7 @@ class _TripDashboardScreenState extends State<TripDashboardScreen>
         text: '${strings.appName} — ${trip.displayDestination(context)}\n${strings.appTagline}',
         subject: trip.displayDestination(context),
       );
+      sl<AnalyticsService>().logTripShare(tripId: trip.id);
     } catch (e) {
       debugPrint('Error sharing trip: $e');
       if (mounted) {

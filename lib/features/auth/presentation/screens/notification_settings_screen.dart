@@ -2,6 +2,8 @@ import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import '../../../../core/services/notification_preferences.dart';
 import '../../../../core/services/notification_service.dart';
+import '../../../../core/services/fcm_service.dart';
+import '../../../../core/di/injection.dart';
 import '../../../../core/constants/app_colors.dart';
 import '../../../../core/constants/app_text_styles.dart';
 import '../../../../core/constants/app_strings.dart';
@@ -16,6 +18,7 @@ class NotificationSettingsScreen extends StatefulWidget {
 class _NotificationSettingsScreenState extends State<NotificationSettingsScreen> {
   bool _tripReminders = true;
   bool _aiSuggestions = true;
+  bool _push = true;
   bool _loading = true;
   // Checked, not requested — this screen only ever reads the current OS
   // state so it can tell the user their toggle isn't actually doing
@@ -33,11 +36,14 @@ class _NotificationSettingsScreenState extends State<NotificationSettingsScreen>
         await NotificationPreferences.isEnabled(NotificationPreferences.tripReminders);
     final ai =
         await NotificationPreferences.isEnabled(NotificationPreferences.aiSuggestions);
+    final push =
+        await NotificationPreferences.isEnabled(NotificationPreferences.push);
     final hasPermission = await NotificationService.hasPermission();
     if (!mounted) return;
     setState(() {
       _tripReminders = trip;
       _aiSuggestions = ai;
+      _push = push;
       _hasOsPermission = hasPermission;
       _loading = false;
     });
@@ -57,6 +63,20 @@ class _NotificationSettingsScreenState extends State<NotificationSettingsScreen>
         NotificationPreferences.aiSuggestions, value);
     if (!mounted) return;
     setState(() => _aiSuggestions = value);
+  }
+
+  // Push has nothing locally scheduled to cancel — turning it off actually
+  // removes this device's FCM token so the server truly can't reach it,
+  // rather than just flipping a flag nobody outside this device checks.
+  Future<void> _togglePush(bool value) async {
+    await NotificationPreferences.setEnabled(NotificationPreferences.push, value);
+    if (value) {
+      await sl<FcmService>().enable();
+    } else {
+      await sl<FcmService>().deleteToken();
+    }
+    if (!mounted) return;
+    setState(() => _push = value);
   }
 
   @override
@@ -130,6 +150,13 @@ class _NotificationSettingsScreenState extends State<NotificationSettingsScreen>
                   subtitle: strings.notifAiSuggestionsDesc,
                   value: _aiSuggestions,
                   onChanged: _toggleAiSuggestions,
+                ),
+                const SizedBox(height: 16),
+                _buildToggleCard(
+                  title: strings.notifPush,
+                  subtitle: strings.notifPushDesc,
+                  value: _push,
+                  onChanged: _togglePush,
                 ),
               ],
             ),

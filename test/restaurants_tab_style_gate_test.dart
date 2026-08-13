@@ -4,6 +4,7 @@ import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:flutter_localizations/flutter_localizations.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:mocktail/mocktail.dart';
+import 'package:rahhal_flutter/core/services/analytics_service.dart';
 import 'package:rahhal_flutter/features/favorites/domain/repositories/favorites_repository.dart';
 import 'package:rahhal_flutter/features/favorites/presentation/cubit/favorites_cubit.dart';
 import 'package:rahhal_flutter/features/restaurants/domain/entities/restaurant_entity.dart';
@@ -19,6 +20,7 @@ import 'package:rahhal_flutter/features/restaurants/presentation/widgets/restaur
 /// rather than reflecting the user's own choice.
 class _MockRepo extends Mock implements RestaurantRepository {}
 class _MockFavoritesRepo extends Mock implements FavoritesRepository {}
+class _MockAnalyticsService extends Mock implements AnalyticsService {}
 
 RestaurantEntity _restaurant(String id) => RestaurantEntity(
       id: id,
@@ -44,7 +46,7 @@ void main() {
     cubit = RestaurantsCubit(repository: repo);
     favoritesRepo = _MockFavoritesRepo();
     when(() => favoritesRepo.getFavorites()).thenAnswer((_) async => const Right([]));
-    favoritesCubit = FavoritesCubit(repository: favoritesRepo);
+    favoritesCubit = FavoritesCubit(repository: favoritesRepo, analytics: _MockAnalyticsService());
   });
 
   Future<void> pumpTab(WidgetTester tester, {List<String>? travelStyles}) async {

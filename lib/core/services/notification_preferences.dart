@@ -15,6 +15,12 @@ class NotificationPreferences {
   /// The assistant's contextual nudges: book today's restaurant, closing soon.
   static const aiSuggestions = NotificationService.categoryAiSuggestions;
 
+  /// Server-sent push (FCM). Unlike the two categories above, there's nothing
+  /// locally scheduled to cancel — FcmService handles this key specially by
+  /// deleting/re-registering the device's FCM token instead of going through
+  /// [setEnabled]'s default cancel-scheduled path.
+  static const push = NotificationService.categoryPush;
+
   static Future<bool> isEnabled(String key) async {
     final prefs = await SharedPreferences.getInstance();
     // Default to on: a user who has never opened settings still wants the

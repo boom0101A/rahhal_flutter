@@ -4,6 +4,7 @@ import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:flutter_localizations/flutter_localizations.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:mocktail/mocktail.dart';
+import 'package:rahhal_flutter/core/services/analytics_service.dart';
 import 'package:rahhal_flutter/features/favorites/domain/repositories/favorites_repository.dart';
 import 'package:rahhal_flutter/features/favorites/presentation/cubit/favorites_cubit.dart';
 import 'package:rahhal_flutter/features/hotels/domain/entities/hotel_entity.dart';
@@ -15,6 +16,7 @@ import 'package:rahhal_flutter/features/hotels/presentation/widgets/hotels_tab.d
 /// "stay" style gating hotels the same way "food" gates restaurants.
 class _MockRepo extends Mock implements HotelRepository {}
 class _MockFavoritesRepo extends Mock implements FavoritesRepository {}
+class _MockAnalyticsService extends Mock implements AnalyticsService {}
 
 HotelEntity _hotel(String id) => HotelEntity(
       id: id,
@@ -37,7 +39,7 @@ void main() {
     cubit = HotelsCubit(repository: repo);
     favoritesRepo = _MockFavoritesRepo();
     when(() => favoritesRepo.getFavorites()).thenAnswer((_) async => const Right([]));
-    favoritesCubit = FavoritesCubit(repository: favoritesRepo);
+    favoritesCubit = FavoritesCubit(repository: favoritesRepo, analytics: _MockAnalyticsService());
   });
 
   Future<void> pumpTab(WidgetTester tester, {List<String>? travelStyles}) async {

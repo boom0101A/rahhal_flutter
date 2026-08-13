@@ -2,14 +2,17 @@ import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:equatable/equatable.dart';
 import '../../domain/entities/favorite_item.dart';
 import '../../domain/repositories/favorites_repository.dart';
+import '../../../../core/services/analytics_service.dart';
 
 part 'favorites_state.dart';
 
 class FavoritesCubit extends Cubit<FavoritesState> {
   final FavoritesRepository _repository;
+  final AnalyticsService _analytics;
 
-  FavoritesCubit({required FavoritesRepository repository})
+  FavoritesCubit({required FavoritesRepository repository, required AnalyticsService analytics})
       : _repository = repository,
+        _analytics = analytics,
         super(const FavoritesLoading());
 
   Future<void> loadFavorites() async {
@@ -33,6 +36,7 @@ class FavoritesCubit extends Cubit<FavoritesState> {
   }) async {
     final current = state;
     final String key = '$itemType:$itemRefId';
+    final bool wasFavorited = current is FavoritesLoaded && current.favoritedKeys.contains(key);
 
     // Optimistic UI updates if already loaded
     if (current is FavoritesLoaded) {
@@ -67,7 +71,14 @@ class FavoritesCubit extends Cubit<FavoritesState> {
         _emitActionError(failure.message);
         loadFavorites();
       },
-      (_) => loadFavorites(),
+      (_) {
+        _analytics.logFavoriteToggle(
+          itemType: itemType,
+          itemId: itemRefId,
+          isFavorited: !wasFavorited,
+        );
+        loadFavorites();
+      },
     );
   }
 

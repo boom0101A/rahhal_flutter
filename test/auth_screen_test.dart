@@ -3,6 +3,7 @@ import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:flutter_localizations/flutter_localizations.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:mocktail/mocktail.dart';
+import 'package:rahhal_flutter/core/services/analytics_service.dart';
 import 'package:rahhal_flutter/features/auth/domain/repositories/auth_repository.dart';
 import 'package:rahhal_flutter/features/auth/presentation/cubit/auth_cubit.dart';
 import 'package:rahhal_flutter/features/auth/presentation/screens/auth_screen.dart';
@@ -10,11 +11,15 @@ import 'package:rahhal_flutter/shared/widgets/gradient_button.dart';
 
 class _MockAuthRepository extends Mock implements AuthRepository {}
 
+class _MockAnalyticsService extends Mock implements AnalyticsService {}
+
 void main() {
   late _MockAuthRepository repository;
+  late _MockAnalyticsService analytics;
 
   setUp(() {
     repository = _MockAuthRepository();
+    analytics = _MockAnalyticsService();
   });
 
   Future<void> pumpScreen(WidgetTester tester, {bool isLogin = true}) async {
@@ -36,7 +41,7 @@ void main() {
           GlobalCupertinoLocalizations.delegate,
         ],
         home: BlocProvider<AuthCubit>(
-          create: (_) => AuthCubit(repository: repository),
+          create: (_) => AuthCubit(repository: repository, analytics: analytics),
           child: AuthScreen(isLogin: isLogin),
         ),
       ),

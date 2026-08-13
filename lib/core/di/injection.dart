@@ -9,6 +9,8 @@ import '../../features/currency/data/currency_service.dart';
 import '../../features/nearby/data/nearby_service.dart';
 import '../services/notification_service.dart';
 import '../services/location_service.dart';
+import '../services/analytics_service.dart';
+import '../services/fcm_service.dart';
 import '../services/place_resolver_service.dart';
 import '../services/location_share_service.dart';
 import '../services/offline_prep_service.dart';
@@ -81,6 +83,12 @@ Future<void> setupDependencies() async {
 
   // Location Service
   sl.registerLazySingleton<LocationService>(() => LocationService());
+
+  // Analytics Service
+  sl.registerLazySingleton<AnalyticsService>(() => AnalyticsService());
+
+  // FCM Service (Android push)
+  sl.registerLazySingleton<FcmService>(() => FcmService());
 
   // ─── Repositories ─────────────────────────────────────────────────────────
 
@@ -182,7 +190,10 @@ Future<void> setupDependencies() async {
   // ─── Cubits (factory — new instance per use) ──────────────────────────────
 
   sl.registerFactory<TripPlannerCubit>(
-    () => TripPlannerCubit(tripRepository: sl<TripRepository>()),
+    () => TripPlannerCubit(
+      tripRepository: sl<TripRepository>(),
+      analytics: sl<AnalyticsService>(),
+    ),
   );
 
   sl.registerFactory<ItineraryCubit>(
@@ -217,7 +228,11 @@ Future<void> setupDependencies() async {
   // once at the app root (main.dart) and is meant to be the single shared
   // source of truth for auth state across every screen.
   sl.registerLazySingleton<AuthCubit>(
-    () => AuthCubit(repository: sl<AuthRepository>()),
+    () => AuthCubit(
+      repository: sl<AuthRepository>(),
+      analytics: sl<AnalyticsService>(),
+      fcm: sl<FcmService>(),
+    ),
   );
 
   sl.registerFactory<DocumentCubit>(
@@ -225,6 +240,9 @@ Future<void> setupDependencies() async {
   );
 
   sl.registerLazySingleton<FavoritesCubit>(
-    () => FavoritesCubit(repository: sl<FavoritesRepository>()),
+    () => FavoritesCubit(
+      repository: sl<FavoritesRepository>(),
+      analytics: sl<AnalyticsService>(),
+    ),
   );
 }

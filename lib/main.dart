@@ -10,6 +10,7 @@ import 'core/di/injection.dart';
 import 'core/di/app_bloc_observer.dart';
 import 'core/network/cloud_sync_service.dart';
 import 'core/services/notification_service.dart';
+import 'core/services/fcm_service.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'core/theme/app_theme.dart';
 import 'core/constants/app_text_styles.dart';
@@ -82,6 +83,11 @@ void main() async {
 
   // Initialize Local Notification Service
   await NotificationService.initialize();
+
+  // FCM push registration needs a live Firebase app — skip if init failed.
+  if (firebaseReady) {
+    await sl<FcmService>().initialize();
+  }
 
   // Pre-load locale settings
   final prefs = await SharedPreferences.getInstance();

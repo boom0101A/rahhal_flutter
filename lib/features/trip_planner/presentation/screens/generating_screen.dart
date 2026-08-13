@@ -229,6 +229,12 @@ class _GeneratingScreenBodyState extends State<_GeneratingScreenBody>
     if (code.contains('invalid-api-key') || code.contains('missing-api-key')) {
       return strings.genErrorApiKey;
     }
+    if (code.contains('quota-exceeded-daily')) {
+      return strings.genErrorQuotaDaily;
+    }
+    if (code.contains('quota-exceeded-monthly')) {
+      return strings.genErrorQuotaMonthly;
+    }
     if (code.contains('rate-limit')) {
       return strings.genErrorRateLimit;
     }
