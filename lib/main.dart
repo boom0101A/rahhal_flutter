@@ -91,7 +91,16 @@ void main() async {
 
   // Pre-load locale settings
   final prefs = await SharedPreferences.getInstance();
-  final langCode = prefs.getString('language_code') ?? 'ar';
+  var langCode = prefs.getString('language_code');
+  if (langCode == null) {
+    // First launch, no saved preference yet: match the device's system
+    // language when it's one the app actually supports, otherwise fall back
+    // to Arabic. Persisted immediately (not just read) so Settings shows the
+    // right selection from the start, rather than "Arabic" until the user
+    // happens to open Settings and re-save it themselves.
+    langCode = PlatformDispatcher.instance.locale.languageCode == 'en' ? 'en' : 'ar';
+    await prefs.setString('language_code', langCode);
+  }
   final countryCode = langCode == 'ar' ? 'AE' : 'US';
   appLocale.value = Locale(langCode, countryCode);
 
