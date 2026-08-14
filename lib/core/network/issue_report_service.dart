@@ -1,6 +1,7 @@
 import 'package:flutter/foundation.dart';
 import 'dio_client.dart';
 import '../config/app_config.dart';
+import '../services/crash_reporter.dart';
 
 /// Submits "this AI result is wrong" reports to the backend.
 class IssueReportService {
@@ -32,8 +33,9 @@ class IssueReportService {
         },
       );
       return true;
-    } catch (e) {
+    } catch (e, st) {
       debugPrint('[IssueReportService] submitReport failed: $e');
+      reportNonFatal(e, st, reason: 'IssueReportService.submitReport failed');
       return false;
     }
   }

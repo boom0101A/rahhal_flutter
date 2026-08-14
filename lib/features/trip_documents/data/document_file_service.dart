@@ -5,6 +5,7 @@ import 'package:flutter/services.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:uuid/uuid.dart';
+import '../../../core/services/crash_reporter.dart';
 
 /// Thrown by [DocumentFileService.pickAndSave] when the OS denied camera or
 /// gallery access — distinct from the user simply cancelling the picker.
@@ -117,8 +118,9 @@ class DocumentFileService {
     try {
       final dir = Directory('${(await getApplicationDocumentsDirectory()).path}/$_folder');
       if (await dir.exists()) await dir.delete(recursive: true);
-    } catch (e) {
+    } catch (e, st) {
       debugPrint('[DocumentFile] deleteAll failed: $e');
+      reportNonFatal(e, st, reason: 'DocumentFileService.deleteAll failed');
     }
   }
 }

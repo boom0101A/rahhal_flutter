@@ -6,6 +6,7 @@ import 'package:google_sign_in/google_sign_in.dart';
 import '../../../../core/database/database_helper.dart';
 import '../../../../core/errors/failures.dart';
 import '../../../../core/network/cloud_sync_service.dart';
+import '../../../../core/services/crash_reporter.dart';
 import '../../trip_documents/data/document_file_service.dart';
 import '../domain/entities/user_entity.dart';
 import '../domain/repositories/auth_repository.dart';
@@ -285,8 +286,9 @@ class AuthRepositoryImpl implements AuthRepository {
           .collection('users')
           .doc(user.uid)
           .delete();
-    } catch (e) {
+    } catch (e, st) {
       debugPrint('[Auth] cloud data delete failed (continuing): $e');
+      reportNonFatal(e, st, reason: 'AuthRepository.deleteAccount: cloud data delete failed');
     }
 
     // Wipe local data unconditionally too, BEFORE attempting user.delete()
@@ -373,13 +375,15 @@ class AuthRepositoryImpl implements AuthRepository {
       // so unowned ones have to be claimed here or they'd be invisible to
       // every account and look like they were deleted by the update.
       await _dbHelper.claimOrphanedFavorites(uid);
-    } catch (e) {
+    } catch (e, st) {
       debugPrint('AuthRepository: Failed to claim orphaned trips: $e');
+      reportNonFatal(e, st, reason: 'AuthRepository.restoreCloudData: claim orphaned trips failed');
     }
     try {
       await _syncService.restoreTripsFromCloud(uid);
-    } catch (e) {
+    } catch (e, st) {
       debugPrint('AuthRepository: Failed to restore cloud data: $e');
+      reportNonFatal(e, st, reason: 'AuthRepository.restoreCloudData: restore from cloud failed');
     }
     // Push anything created/edited locally (e.g. while offline) that never
     // made it to the cloud — catches failures the fire-and-forget sync calls
@@ -395,16 +399,18 @@ class AuthRepositoryImpl implements AuthRepository {
   Future<void> clearLocalData() async {
     try {
       await _dbHelper.clearAllData();
-    } catch (e) {
+    } catch (e, st) {
       debugPrint('[Auth] local data wipe failed: $e');
+      reportNonFatal(e, st, reason: 'AuthRepository.clearLocalData: local wipe failed');
     }
     // Document photos are files, not rows, so clearAllData doesn't reach them.
     // Done here rather than inside DatabaseHelper, which has no business
     // touching path_provider.
     try {
       await DocumentFileService.deleteAll();
-    } catch (e) {
+    } catch (e, st) {
       debugPrint('[Auth] document image wipe failed: $e');
+      reportNonFatal(e, st, reason: 'AuthRepository.clearLocalData: document image wipe failed');
     }
   }
 }

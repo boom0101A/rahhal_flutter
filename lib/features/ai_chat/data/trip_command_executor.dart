@@ -104,10 +104,27 @@ class TripCommandExecutor {
 
   Future<TripCommandPreview> _previewStop(
       String tripId, TripCommand command) async {
+    final target = command.target;
+    if (target == null) {
+      // Defense in depth: parseTripCommand never builds a deleteStop/
+      // markVisited command with a null target today (it returns null for
+      // the whole command instead) — but nothing at the type level enforces
+      // that. An explicit guard here means a future change (a new parser, a
+      // different TripCommand(...) call site) fails safely instead of
+      // throwing.
+      return TripCommandPreview(
+        command: command,
+        tripId: tripId,
+        targetLabel: '',
+        affectedIds: const [],
+        problem: 'error',
+      );
+    }
+
     final stops = await _dbHelper
         .query('stops', where: 'trip_id = ?', whereArgs: [tripId]);
 
-    final query = command.target!.toLowerCase();
+    final query = target.toLowerCase();
     final matches = stops.where((s) {
       final name = ((s['name'] as String?) ?? '').toLowerCase();
       final nameEn = ((s['name_en'] as String?) ?? '').toLowerCase();
@@ -120,7 +137,7 @@ class TripCommandExecutor {
       return TripCommandPreview(
         command: command,
         tripId: tripId,
-        targetLabel: command.target!,
+        targetLabel: target,
         affectedIds: const [],
         problem: 'not-found',
       );

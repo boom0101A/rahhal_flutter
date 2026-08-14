@@ -3,6 +3,7 @@ import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:timezone/data/latest_all.dart' as tz;
 import 'package:timezone/timezone.dart' as tz;
+import 'crash_reporter.dart';
 
 /// Local (device) notifications: trip-start reminders and travel-document
 /// expiry warnings. All scheduling goes through [_scheduleAt] so callers only
@@ -65,8 +66,9 @@ class NotificationService {
       await _plugin.initialize(
         const InitializationSettings(android: androidSettings, iOS: iosSettings),
       );
-    } catch (e) {
+    } catch (e, st) {
       debugPrint('NotificationService initialize error: $e');
+      reportNonFatal(e, st, reason: 'NotificationService.initialize failed');
     }
   }
 

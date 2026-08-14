@@ -3146,6 +3146,8 @@ async function resolveDestinationEN(rawDestination) {
   }
 }
 
+const BUDGET_TIERS = new Set(['economy', 'mid', 'luxury']);
+
 app.post('/api/generate-trip', async (req, res) => {
   const {
     destination,
@@ -3203,11 +3205,17 @@ app.post('/api/generate-trip', async (req, res) => {
     // 2-21 days; 1 is allowed here as a bit more permissive on the low end,
     // since the real risk this bug class carries is on the upper/type side.
     !Number.isInteger(durationDays) || durationDays < 1 || durationDays > 21 ||
-    !budgetTier ||
+    typeof budgetTier !== 'string' || !BUDGET_TIERS.has(budgetTier) ||
     // Same class of bug, one field further down: travelStyles is interpolated
     // with .join() when building the prompt. A truthy non-array (a bare string,
     // an object) throws there — outside any try — and takes the process down.
-    (travelStyles != null && !Array.isArray(travelStyles))
+    (travelStyles != null && !Array.isArray(travelStyles)) ||
+    // travelersCount stays optional (the `${travelersCount || 1}` fallback in
+    // the prompt below is unchanged) — only rejected if sent with a garbage
+    // value, mirroring trip_input_screen.dart's own stepper bounds (adults
+    // 1-12 + children 0-10).
+    (travelersCount != null &&
+      (!Number.isInteger(travelersCount) || travelersCount < 1 || travelersCount > 22))
   ) {
     return res.status(400).json({ error: 'Missing required parameters' });
   }

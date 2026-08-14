@@ -3,6 +3,7 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart' as firebase_auth;
 import 'package:firebase_messaging/firebase_messaging.dart';
 import 'package:flutter/foundation.dart';
+import 'crash_reporter.dart';
 import 'notification_service.dart';
 
 /// FCM (server-push) token lifecycle — separate from [NotificationService],
@@ -56,8 +57,9 @@ class FcmService {
     try {
       final token = await FirebaseMessaging.instance.getToken();
       if (token != null) await _persistToken(uid, token);
-    } catch (e) {
+    } catch (e, st) {
       debugPrint('FcmService sync token error: $e');
+      reportNonFatal(e, st, reason: 'FcmService._syncToken failed');
     }
   }
 

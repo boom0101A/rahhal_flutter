@@ -5,6 +5,7 @@ import 'package:connectivity_plus/connectivity_plus.dart';
 import 'package:flutter/foundation.dart';
 import 'package:sqflite/sqflite.dart';
 import '../database/database_helper.dart';
+import '../services/crash_reporter.dart';
 
 class CloudSyncService {
   final DatabaseHelper _dbHelper = DatabaseHelper.instance;
@@ -151,9 +152,10 @@ class CloudSyncService {
         where: 'id = ?',
         whereArgs: [tripId],
       );
-    } catch (e) {
+    } catch (e, st) {
       // Fail silently to avoid interrupting the user's flow
       debugPrint('CloudSyncService: Error syncing trip $tripId: $e');
+      reportNonFatal(e, st, reason: 'CloudSyncService.syncTripToCloud failed');
     }
   }
 
@@ -204,8 +206,9 @@ class CloudSyncService {
           .get();
 
       return querySnapshot.docs.map((doc) => doc.data()).toList();
-    } catch (e) {
+    } catch (e, st) {
       debugPrint('CloudSyncService: Error fetching trips from cloud: $e');
+      reportNonFatal(e, st, reason: 'CloudSyncService.fetchTripsFromCloud failed');
       return [];
     }
   }
@@ -273,8 +276,9 @@ class CloudSyncService {
         debugPrint(
             'CloudSyncService: restoreTripsFromCloud — $restoredCount restored, $skippedCount skipped, $tombstonedCount tombstoned (deleted locally, retried cloud cleanup)');
       }
-    } catch (e) {
+    } catch (e, st) {
       debugPrint('CloudSyncService: Error restoring trips from cloud: $e');
+      reportNonFatal(e, st, reason: 'CloudSyncService.restoreTripsFromCloud failed');
     }
   }
 
@@ -499,8 +503,9 @@ class CloudSyncService {
         where: 'id = ?',
         whereArgs: [tripId],
       );
-    } catch (e) {
+    } catch (e, st) {
       debugPrint('CloudSyncService: Failed to mark trip $tripId dirty: $e');
+      reportNonFatal(e, st, reason: 'CloudSyncService.markTripDirtyAndSync failed');
       return;
     }
     await syncTripToCloud(tripId);
