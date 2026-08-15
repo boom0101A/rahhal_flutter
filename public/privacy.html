@@ -42,6 +42,9 @@
     <li><strong>رسائل المحادثة:</strong> الأسئلة التي ترسلها للمساعد الذكي داخل التطبيق.</li>
     <li><strong>صورة الملف الشخصي:</strong> إن اخترت إضافة صورة، تُحفظ محلياً على جهازك فقط ولا تُرفع لأي خادم.</li>
     <li><strong>تقارير الأعطال والتشخيص:</strong> إذا تعطّل التطبيق، نستخدم Firebase Crashlytics لجمع تقرير فني تلقائي (نوع الخطأ، تتبّع الاستدعاءات البرمجية، طراز الجهاز ونسخة نظام التشغيل) لمساعدتنا على إصلاح الأعطال — لا يحتوي هذا التقرير على محتوى رحلاتك أو رسائلك.</li>
+    <li><strong>بيانات الاستخدام:</strong> نستخدم Firebase Analytics لفهم كيفية استخدام الميزات (مثل توليد رحلة، تسجيل الدخول) بشكل مجمَّع وغير مرتبط باسمك — لتحسين التطبيق فقط.</li>
+    <li><strong>رمز إشعارات الجهاز:</strong> إن فعّلت الإشعارات، يُخزَّن رمز تعريف تقني لجهازك (لا يحدد هويتك الشخصية) لإرسال إشعارات من الخادم.</li>
+    <li><strong>بلاغات الأخطاء التي تُرسلها:</strong> إن أبلغت عن نتيجة ذكاء اصطناعي خاطئة، يُحفَظ نص بلاغك مع معرّف الرحلة/المكان المعني، لمراجعته يدويًا وتحسين النتائج.</li>
   </ul>
 
   <h2>كيف نستخدم بياناتك</h2>
@@ -51,6 +54,8 @@
     <li>حفظ نسخة احتياطية من رحلاتك في السحابة (Firebase) إن كنت مسجّلاً بحساب حقيقي (غير ضيف)، لاستعادتها عند تغيير جهازك.</li>
     <li>إرسال تنبيهات محلية على جهازك (تذكير برحلة، انتهاء وثيقة سفر) — تُعالَج بالكامل على جهازك، لا تُرسَل لأي خادم.</li>
     <li>اكتشاف الأعطال وإصلاحها عبر Firebase Crashlytics — معطَّل أثناء التطوير، ومفعَّل فقط في النسخة المنشورة للمستخدمين.</li>
+    <li>إرسال إشعارات من الخادم (Firebase Cloud Messaging) إن فعّلتها من الإعدادات — يمكنك تعطيلها في أي وقت.</li>
+    <li>تسجيل تقني لأعطال الخادم (منفصل عن بلاغاتك) لمساعدتنا على اكتشاف الأعطال العامة وإصلاحها بسرعة.</li>
   </ul>
 
   <h2>أين تُخزَّن بياناتك</h2>
@@ -85,6 +90,9 @@
     <li><strong>Chat messages:</strong> questions you send to the in-app AI assistant.</li>
     <li><strong>Profile photo:</strong> if you add one, it is stored locally on your device only and never uploaded to any server.</li>
     <li><strong>Crash and diagnostic reports:</strong> if the app crashes, we use Firebase Crashlytics to collect an automatic technical report (error type, code stack trace, device model, OS version) to help us fix the crash — this report never contains your trip content or messages.</li>
+    <li><strong>Usage data:</strong> we use Firebase Analytics to understand how features are used (e.g. generating a trip, signing in) in aggregate, not tied to your name — for improving the app only.</li>
+    <li><strong>Device notification token:</strong> if you enable notifications, a technical device identifier (not personally identifying) is stored to send you notifications from the server.</li>
+    <li><strong>Issue reports you submit:</strong> if you report a wrong AI result, your report text is saved along with the related trip/place identifier, for manual review and improving results.</li>
   </ul>
 
   <h2>How We Use Your Data</h2>
@@ -94,6 +102,8 @@
     <li>Backing up your trips to the cloud (Firebase) if you're signed in with a real account (not a guest), so you can restore them on a new device.</li>
     <li>Sending local notifications on your device (trip reminders, document expiry) — processed entirely on-device, never sent to any server.</li>
     <li>Detecting and fixing crashes via Firebase Crashlytics — disabled during development, enabled only in the published release users install.</li>
+    <li>Sending notifications from the server (Firebase Cloud Messaging) if you enable them in Settings — you can turn this off at any time.</li>
+    <li>Technical logging of server-side errors (separate from your issue reports), to help us detect and fix widespread problems quickly.</li>
   </ul>
 
   <h2>Where Your Data Is Stored</h2>

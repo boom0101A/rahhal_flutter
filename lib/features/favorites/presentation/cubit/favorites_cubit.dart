@@ -10,6 +10,12 @@ class FavoritesCubit extends Cubit<FavoritesState> {
   final FavoritesRepository _repository;
   final AnalyticsService _analytics;
 
+  // Guards toggleFavorite against a rapid double-tap on the same item: the
+  // repository does a read-then-write with no DB-level uniqueness, so two
+  // concurrent calls for the same key can both see "not favorited yet" and
+  // each insert their own row, leaving the item duplicated in the list.
+  final Set<String> _pendingToggles = {};
+
   FavoritesCubit({required FavoritesRepository repository, required AnalyticsService analytics})
       : _repository = repository,
         _analytics = analytics,
@@ -34,52 +40,60 @@ class FavoritesCubit extends Cubit<FavoritesState> {
     String? destinationName,
     String? notes,
   }) async {
-    final current = state;
     final String key = '$itemType:$itemRefId';
-    final bool wasFavorited = current is FavoritesLoaded && current.favoritedKeys.contains(key);
+    // A second tap on the same item while the first is still in flight is
+    // ignored outright, rather than racing the repository's read-then-write.
+    if (_pendingToggles.contains(key)) return;
+    _pendingToggles.add(key);
+    try {
+      final current = state;
+      final bool wasFavorited = current is FavoritesLoaded && current.favoritedKeys.contains(key);
 
-    // Optimistic UI updates if already loaded
-    if (current is FavoritesLoaded) {
-      final isFav = current.favoritedKeys.contains(key);
-      final updatedKeys = Set<String>.from(current.favoritedKeys);
-      
-      List<FavoriteItem> updatedItems = List.from(current.items);
-      if (isFav) {
-        updatedKeys.remove(key);
-        updatedItems.removeWhere((i) => i.favorite.itemType == itemType && i.favorite.itemRefId == itemRefId);
-      } else {
-        updatedKeys.add(key);
+      // Optimistic UI updates if already loaded
+      if (current is FavoritesLoaded) {
+        final isFav = current.favoritedKeys.contains(key);
+        final updatedKeys = Set<String>.from(current.favoritedKeys);
+
+        List<FavoriteItem> updatedItems = List.from(current.items);
+        if (isFav) {
+          updatedKeys.remove(key);
+          updatedItems.removeWhere((i) => i.favorite.itemType == itemType && i.favorite.itemRefId == itemRefId);
+        } else {
+          updatedKeys.add(key);
+        }
+        emit(FavoritesLoaded(items: updatedItems, favoritedKeys: updatedKeys));
       }
-      emit(FavoritesLoaded(items: updatedItems, favoritedKeys: updatedKeys));
+
+      final result = await _repository.toggleFavorite(
+        itemType,
+        itemRefId,
+        tripId: tripId,
+        destinationName: destinationName,
+        notes: notes,
+      );
+
+      if (isClosed) return;
+      result.fold(
+        (failure) {
+          // Was a bare emit(FavoritesError(...)) — replaced the whole list with
+          // a full-screen error for one failed toggle. loadFavorites() right
+          // after is what actually rolls back the optimistic update above; the
+          // error is now surfaced without destroying the list in between.
+          _emitActionError(failure.message);
+          loadFavorites();
+        },
+        (_) {
+          _analytics.logFavoriteToggle(
+            itemType: itemType,
+            itemId: itemRefId,
+            isFavorited: !wasFavorited,
+          );
+          loadFavorites();
+        },
+      );
+    } finally {
+      _pendingToggles.remove(key);
     }
-
-    final result = await _repository.toggleFavorite(
-      itemType,
-      itemRefId,
-      tripId: tripId,
-      destinationName: destinationName,
-      notes: notes,
-    );
-
-    if (isClosed) return;
-    result.fold(
-      (failure) {
-        // Was a bare emit(FavoritesError(...)) — replaced the whole list with
-        // a full-screen error for one failed toggle. loadFavorites() right
-        // after is what actually rolls back the optimistic update above; the
-        // error is now surfaced without destroying the list in between.
-        _emitActionError(failure.message);
-        loadFavorites();
-      },
-      (_) {
-        _analytics.logFavoriteToggle(
-          itemType: itemType,
-          itemId: itemRefId,
-          isFavorited: !wasFavorited,
-        );
-        loadFavorites();
-      },
-    );
   }
 
   bool isKeyFavorite(String itemType, String itemRefId) {

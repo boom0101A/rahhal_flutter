@@ -102,8 +102,12 @@ class BookingContactSection extends StatelessWidget {
     final strings = AppStrings.of(context);
     final wa = whatsAppNumber(phone, countryCode: countryCode);
 
-    // Nothing at all to offer — don't render a dead section.
-    if (!_hasPhone && !_hasLocation) return const SizedBox.shrink();
+    // Only truly nothing to render when there's neither contact info NOR a
+    // report affordance — a place with no phone/location is exactly the
+    // "AI hallucinated this" case the report button exists for, so it must
+    // not be hidden away along with the (genuinely empty) contact buttons.
+    final hasContactInfo = _hasPhone || _hasLocation;
+    if (!hasContactInfo && onReport == null) return const SizedBox.shrink();
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -123,79 +127,81 @@ class BookingContactSection extends StatelessWidget {
               ),
           ],
         ),
-        const SizedBox(height: 10),
-        if (!_hasPhone)
-          Padding(
-            padding: const EdgeInsets.only(bottom: 10),
-            child: Row(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Icon(Icons.info_outline_rounded,
-                    size: 15, color: AppColors.adaptiveTextSecondary(context)),
-                const SizedBox(width: 6),
+        if (hasContactInfo) ...[
+          const SizedBox(height: 10),
+          if (!_hasPhone)
+            Padding(
+              padding: const EdgeInsets.only(bottom: 10),
+              child: Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Icon(Icons.info_outline_rounded,
+                      size: 15, color: AppColors.adaptiveTextSecondary(context)),
+                  const SizedBox(width: 6),
+                  Expanded(
+                    child: Text(
+                      strings.bookingNoContact,
+                      style: AppTextStyles.labelSmall.copyWith(
+                        color: AppColors.adaptiveTextSecondary(context),
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          Row(
+            children: [
+              if (wa != null)
                 Expanded(
-                  child: Text(
-                    strings.bookingNoContact,
-                    style: AppTextStyles.labelSmall.copyWith(
-                      color: AppColors.adaptiveTextSecondary(context),
+                  child: _ActionButton(
+                    icon: Icons.chat_rounded,
+                    label: strings.bookingWhatsApp,
+                    color: const Color(0xFF25D366),
+                    onTap: () => _open(
+                      context,
+                      Uri.parse('https://wa.me/$wa'),
+                      strings.bookingLaunchFailed,
                     ),
                   ),
                 ),
-              ],
-            ),
+              if (wa != null && _hasPhone) const SizedBox(width: 8),
+              if (_hasPhone)
+                Expanded(
+                  child: _ActionButton(
+                    icon: Icons.call_rounded,
+                    label: strings.callAction,
+                    color: AppColors.accentTurquoise,
+                    onTap: () => _open(
+                      context,
+                      Uri.parse('tel:${phone!.replaceAll(RegExp(r'\s'), '')}'),
+                      strings.bookingLaunchFailed,
+                    ),
+                  ),
+                ),
+              if (_hasPhone && _hasLocation) const SizedBox(width: 8),
+              if (_hasLocation)
+                Expanded(
+                  child: _ActionButton(
+                    icon: Icons.map_rounded,
+                    label: strings.bookingOpenMaps,
+                    color: AppColors.accentAmber,
+                    onTap: () {
+                      Haptics.tap();
+                      MapLauncherService.openInGoogleMaps(
+                        placeName: placeNameEn?.isNotEmpty == true
+                            ? placeNameEn!
+                            : placeName,
+                        city: address,
+                        lat: latitude,
+                        lon: longitude,
+                        placeId: placeId,
+                      );
+                    },
+                  ),
+                ),
+            ],
           ),
-        Row(
-          children: [
-            if (wa != null)
-              Expanded(
-                child: _ActionButton(
-                  icon: Icons.chat_rounded,
-                  label: strings.bookingWhatsApp,
-                  color: const Color(0xFF25D366),
-                  onTap: () => _open(
-                    context,
-                    Uri.parse('https://wa.me/$wa'),
-                    strings.bookingLaunchFailed,
-                  ),
-                ),
-              ),
-            if (wa != null && _hasPhone) const SizedBox(width: 8),
-            if (_hasPhone)
-              Expanded(
-                child: _ActionButton(
-                  icon: Icons.call_rounded,
-                  label: strings.callAction,
-                  color: AppColors.accentTurquoise,
-                  onTap: () => _open(
-                    context,
-                    Uri.parse('tel:${phone!.replaceAll(RegExp(r'\s'), '')}'),
-                    strings.bookingLaunchFailed,
-                  ),
-                ),
-              ),
-            if (_hasPhone && _hasLocation) const SizedBox(width: 8),
-            if (_hasLocation)
-              Expanded(
-                child: _ActionButton(
-                  icon: Icons.map_rounded,
-                  label: strings.bookingOpenMaps,
-                  color: AppColors.accentAmber,
-                  onTap: () {
-                    Haptics.tap();
-                    MapLauncherService.openInGoogleMaps(
-                      placeName: placeNameEn?.isNotEmpty == true
-                          ? placeNameEn!
-                          : placeName,
-                      city: address,
-                      lat: latitude,
-                      lon: longitude,
-                      placeId: placeId,
-                    );
-                  },
-                ),
-              ),
-          ],
-        ),
+        ],
       ],
     );
   }

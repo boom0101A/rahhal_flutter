@@ -17,11 +17,14 @@ class _MockSync extends Mock implements CloudSyncService {}
 
 void main() {
   late _MockDb db;
+  late _MockSync sync;
   late TripCommandExecutor executor;
 
   setUp(() {
     db = _MockDb();
-    executor = TripCommandExecutor(dbHelper: db, syncService: _MockSync());
+    sync = _MockSync();
+    when(() => sync.markTripDirtyAndSync(any())).thenAnswer((_) async {});
+    executor = TripCommandExecutor(dbHelper: db, syncService: sync);
   });
 
   group('null target', () {
@@ -88,6 +91,103 @@ void main() {
 
       expect(preview.problem, 'ambiguous');
       expect(preview.affectedIds, isEmpty);
+    });
+  });
+
+  group('apply() reflects whether a row was actually changed', () {
+    // Simulates the target having already been removed by something else
+    // (another device's sync, another command) between preview and this
+    // confirmation — the doc comment on apply() promises `false` here, but
+    // it used to unconditionally return `true` regardless of row count.
+    test('deleteStop returns false when 0 rows were actually deleted', () async {
+      when(() => db.delete('stops', where: 'id = ?', whereArgs: ['s1']))
+          .thenAnswer((_) async => 0);
+      final preview = TripCommandPreview(
+        command: const TripCommand(kind: TripCommandKind.deleteStop, target: 'x'),
+        tripId: 't1',
+        targetLabel: 'x',
+        affectedIds: const ['s1'],
+      );
+
+      final ok = await executor.apply(preview);
+
+      expect(ok, isFalse);
+      verifyNever(() => sync.markTripDirtyAndSync(any()));
+    });
+
+    test('deleteStop returns true when a row was actually deleted', () async {
+      when(() => db.delete('stops', where: 'id = ?', whereArgs: ['s1']))
+          .thenAnswer((_) async => 1);
+      final preview = TripCommandPreview(
+        command: const TripCommand(kind: TripCommandKind.deleteStop, target: 'x'),
+        tripId: 't1',
+        targetLabel: 'x',
+        affectedIds: const ['s1'],
+      );
+
+      final ok = await executor.apply(preview);
+
+      expect(ok, isTrue);
+    });
+
+    test('markVisited returns false when 0 rows were actually updated', () async {
+      when(() => db.update('stops', {'is_visited': 1}, where: 'id = ?', whereArgs: ['s1']))
+          .thenAnswer((_) async => 0);
+      final preview = TripCommandPreview(
+        command: const TripCommand(kind: TripCommandKind.markVisited, target: 'x'),
+        tripId: 't1',
+        targetLabel: 'x',
+        affectedIds: const ['s1'],
+      );
+
+      final ok = await executor.apply(preview);
+
+      expect(ok, isFalse);
+      verifyNever(() => sync.markTripDirtyAndSync(any()));
+    });
+
+    test('markVisited returns true when a row was actually updated', () async {
+      when(() => db.update('stops', {'is_visited': 1}, where: 'id = ?', whereArgs: ['s1']))
+          .thenAnswer((_) async => 1);
+      final preview = TripCommandPreview(
+        command: const TripCommand(kind: TripCommandKind.markVisited, target: 'x'),
+        tripId: 't1',
+        targetLabel: 'x',
+        affectedIds: const ['s1'],
+      );
+
+      final ok = await executor.apply(preview);
+
+      expect(ok, isTrue);
+    });
+
+    test('deleteDay returns false when 0 day rows were actually deleted', () async {
+      when(() => db.executeInTransaction<int>(any())).thenAnswer((_) async => 0);
+      final preview = TripCommandPreview(
+        command: const TripCommand(kind: TripCommandKind.deleteDay, dayNumber: 1),
+        tripId: 't1',
+        targetLabel: '1|2',
+        affectedIds: const ['d1'],
+      );
+
+      final ok = await executor.apply(preview);
+
+      expect(ok, isFalse);
+      verifyNever(() => sync.markTripDirtyAndSync(any()));
+    });
+
+    test('deleteDay returns true when the day row was actually deleted', () async {
+      when(() => db.executeInTransaction<int>(any())).thenAnswer((_) async => 1);
+      final preview = TripCommandPreview(
+        command: const TripCommand(kind: TripCommandKind.deleteDay, dayNumber: 1),
+        tripId: 't1',
+        targetLabel: '1|2',
+        affectedIds: const ['d1'],
+      );
+
+      final ok = await executor.apply(preview);
+
+      expect(ok, isTrue);
     });
   });
 }

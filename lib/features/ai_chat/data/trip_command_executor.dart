@@ -174,26 +174,33 @@ class TripCommandExecutor {
           // Both deletes run in one transaction — otherwise the app being
           // killed between them leaves an empty day with no stops behind.
           final dayId = preview.affectedIds.first;
-          await _dbHelper.executeInTransaction((txn) async {
+          final deletedDays = await _dbHelper.executeInTransaction((txn) async {
             await txn.delete('stops', where: 'day_id = ?', whereArgs: [dayId]);
-            await txn.delete('days', where: 'id = ?', whereArgs: [dayId]);
+            return txn.delete('days', where: 'id = ?', whereArgs: [dayId]);
           });
+          // 0 rows means the day was already gone by the time this ran (e.g.
+          // removed by a cloud sync from another device, or another command,
+          // between preview and this confirmation) — nothing to report as
+          // successfully applied.
+          if (deletedDays == 0) return false;
           unawaited(_syncService.markTripDirtyAndSync(preview.tripId));
           return true;
 
         case TripCommandKind.deleteStop:
-          await _dbHelper.delete('stops',
+          final deletedStops = await _dbHelper.delete('stops',
               where: 'id = ?', whereArgs: [preview.affectedIds.first]);
+          if (deletedStops == 0) return false;
           unawaited(_syncService.markTripDirtyAndSync(preview.tripId));
           return true;
 
         case TripCommandKind.markVisited:
-          await _dbHelper.update(
+          final updatedStops = await _dbHelper.update(
             'stops',
             {'is_visited': 1},
             where: 'id = ?',
             whereArgs: [preview.affectedIds.first],
           );
+          if (updatedStops == 0) return false;
           unawaited(_syncService.markTripDirtyAndSync(preview.tripId));
           return true;
       }

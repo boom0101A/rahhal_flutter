@@ -299,14 +299,19 @@ async function checkAndConsumeQuota(uid) {
   }
 }
 
-/// Middleware form of checkAndConsumeQuota — must run AFTER
-/// authenticateFirebaseToken since it needs req.user.uid. Rejects before the
-/// route handler ever calls Groq/Gemini/Places.
-async function enforceTripQuota(req, res, next) {
+/// Rejects with 429 if `uid` is over its daily/monthly quota, in the exact
+/// response shape the client's AIException classifier expects. Called
+/// directly from the /api/generate-trip handler, AFTER input validation —
+/// NOT as middleware — so a malformed request (bad destination/budgetTier/
+/// travelersCount) never consumes a quota unit before it's even known the
+/// request could succeed. Previously ran as middleware before validation,
+/// which meant an invalid request still burned a unit for a 400 with no
+/// generation ever attempted.
+async function rejectIfOverQuota(req, res) {
   const result = await checkAndConsumeQuota(req.user.uid);
   if (!result.allowed) {
     console.log(`[QUOTA] Rejected uid=${req.user.uid} — ${result.reason} limit reached`);
-    return res.status(429).json({
+    res.status(429).json({
       error: 'quota-exceeded',
       scope: result.reason,
       message:
@@ -314,8 +319,9 @@ async function enforceTripQuota(req, res, next) {
           ? `لقد استخدمت الحد الأقصى (${TRIP_QUOTA_DAILY_MAX}) لإنشاء الرحلات اليوم. حاول مجدداً غداً.`
           : `لقد استخدمت الحد الأقصى (${TRIP_QUOTA_MONTHLY_MAX}) لإنشاء الرحلات هذا الشهر. حاول مجدداً الشهر القادم.`,
     });
+    return true; // caller must stop processing
   }
-  return next();
+  return false;
 }
 
 // How often the Firestore copy is pruned, and how much per run.
@@ -1458,7 +1464,7 @@ async function authenticateFirebaseToken(req, res, next) {
 }
 
 app.use('/api/', limiter);
-app.use('/api/generate-trip', tripLimiter, authenticateFirebaseToken, enforceTripQuota);
+app.use('/api/generate-trip', tripLimiter, authenticateFirebaseToken);
 app.use('/api/chat', chatLimiter, authenticateFirebaseToken);
 // Translation spends the same paid AI quota as chat, so it gets the same gate
 // and its own limiter — one trip is a single call, so this is generous for a
@@ -3219,6 +3225,10 @@ app.post('/api/generate-trip', async (req, res) => {
   ) {
     return res.status(400).json({ error: 'Missing required parameters' });
   }
+
+  // Quota is consumed here, not earlier — only a request that just passed
+  // validation should ever cost the user a unit.
+  if (await rejectIfOverQuota(req, res)) return;
 
   // Resolve the (possibly Arabic) destination to a canonical English city so
   // the model can't quietly swap it for a more famous one.

@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter_localizations/flutter_localizations.dart';
@@ -85,8 +86,14 @@ void main() async {
   await NotificationService.initialize();
 
   // FCM push registration needs a live Firebase app — skip if init failed.
+  // Deliberately NOT awaited: it requests the OS notification permission,
+  // whose Future doesn't complete until the user answers that system
+  // dialog — awaiting it here blocked the very first frame from rendering,
+  // so a fresh install looked frozen behind a permission prompt before
+  // showing any app UI at all. Runs in the background instead, so the
+  // prompt appears over a real screen instead of before one.
   if (firebaseReady) {
-    await sl<FcmService>().initialize();
+    unawaited(sl<FcmService>().initialize());
   }
 
   // Pre-load locale settings

@@ -95,7 +95,16 @@ class ItineraryCubit extends Cubit<ItineraryState> {
       (failure) => emit(current.withError(failure.message)),
       (_) {},
     );
-    await selectDay(current.selectedDayIndex);
+    // Re-read state now rather than reusing `current` captured before the
+    // await: the reorder sheet closes as soon as it saves, so the user can
+    // already be looking at (and have tapped into) a different day by the
+    // time this repository call resolves. Reloading `current`'s stale index
+    // would snap the screen back to the day that was just reordered instead
+    // of respecting whatever the user selected in the meantime.
+    final latest = state;
+    if (latest is ItineraryLoaded) {
+      await selectDay(latest.selectedDayIndex);
+    }
   }
 
   /// Called by the UI right after it shows the action-error snackbar, so a
