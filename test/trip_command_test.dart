@@ -48,6 +48,34 @@ void main() {
     });
   });
 
+  group('swap stop', () {
+    test('Arabic replace verbs capture the place name', () {
+      final a = parseTripCommand('بدّل مطعم بغداد');
+      expect(a?.kind, TripCommandKind.swapStop);
+      expect(a?.target, contains('مطعم بغداد'));
+
+      final b = parseTripCommand('استبدل متحف بغداد');
+      expect(b?.kind, TripCommandKind.swapStop);
+      expect(b?.target, contains('متحف بغداد'));
+    });
+
+    test('English replace verbs', () {
+      expect(parseTripCommand('replace Baghdad Museum')?.kind,
+          TripCommandKind.swapStop);
+      expect(parseTripCommand('swap Erbil Citadel')?.kind,
+          TripCommandKind.swapStop);
+    });
+
+    test('is checked before delete verbs so it never gets misread', () {
+      // "استبدل" contains no delete-verb substring, and delete verbs
+      // contain no replace-verb substring — both stay distinct.
+      expect(parseTripCommand('احذف متحف بغداد')?.kind,
+          TripCommandKind.deleteStop);
+      expect(parseTripCommand('بدّل متحف بغداد')?.kind,
+          TripCommandKind.swapStop);
+    });
+  });
+
   group('ordinary questions are never commands', () {
     test('questions and chatter pass through untouched', () {
       expect(parseTripCommand('ما هي أفضل الأماكن في بغداد؟'), isNull);

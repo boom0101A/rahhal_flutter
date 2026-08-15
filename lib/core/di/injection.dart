@@ -185,6 +185,7 @@ Future<void> setupDependencies() async {
     () => TripCommandExecutor(
       dbHelper: sl<DatabaseHelper>(),
       syncService: sl<CloudSyncService>(),
+      nearbyService: sl<NearbyService>(),
     ),
   );
 

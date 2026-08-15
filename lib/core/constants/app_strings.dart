@@ -597,6 +597,9 @@ class AppStrings {
   String cmdMarkVisitedBody(String name) =>
       _t('سيتم تعليم "$name" كمكان زُرته.',
          '"$name" will be marked as visited.');
+  String cmdSwapStopBody(String oldName, String newName) => _t(
+      'سيتم استبدال "$oldName" بـ "$newName" في رحلتك. لا يمكن التراجع.',
+      '"$oldName" will be replaced with "$newName" in your trip. This cannot be undone.');
   String get cmdConfirmDelete => _t('نعم، احذف', 'Yes, delete');
   String get cmdConfirmApply => _t('تأكيد', 'Confirm');
   String get cmdDone => _t('تم التعديل ✅', 'Change applied ✅');
@@ -606,6 +609,9 @@ class AppStrings {
   String cmdAmbiguous(String matches) => _t(
       'وجدت أكثر من نتيجة ($matches) — حدّد الاسم بدقة أكبر.',
       'Multiple matches ($matches) — please be more specific.');
+  String get cmdNoAlternative => _t(
+      'لم أجد بديلاً قريباً مناسباً لهذا المكان.',
+      'I couldn\'t find a suitable nearby alternative for that place.');
   String get nearbyClosedNow => _t('مغلق', 'Closed');
   String get itineraryStopsTitle => _t('محطات اليوم', 'Today\'s Stops');
   String get markVisited => _t('وضع علامة زُرت', 'Mark as visited');
@@ -833,6 +839,7 @@ class AppStrings {
   String get expenseCategoryTitle => _t('الفئة والمبلغ', 'Category & Amount');
   String get expenseAmountHint => _t('أدخل المبلغ...', 'Enter amount...');
   String get expenseDescriptionHint => _t('مثال: تذاكر المترو، غداء...', 'e.g. Metro tickets, Lunch...');
+  String get expenseAttachReceipt => _t('إيصال (اختياري)', 'Receipt (optional)');
   String get expenseSelectCategory => _t('اختر الفئة', 'Select Category');
   String get expenseSelectDay => _t('اختر اليوم', 'Select Day');
   String get expenseDeleteConfirm => _t('هل تريد حذف هذا المصروف؟', 'Do you want to delete this expense?');

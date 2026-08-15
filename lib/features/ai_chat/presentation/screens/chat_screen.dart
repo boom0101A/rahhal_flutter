@@ -161,6 +161,7 @@ class _ChatScreenState extends State<ChatScreen> {
       final message = switch (preview.problem) {
         'ambiguous' => strings.cmdAmbiguous(preview.targetLabel),
         'not-found' => strings.cmdNotFound(preview.targetLabel),
+        'no-alternative' => strings.cmdNoAlternative,
         _ => strings.cmdFailed,
       };
       messenger.showSnackBar(SnackBar(content: Text(message)));
@@ -180,6 +181,8 @@ class _ChatScreenState extends State<ChatScreen> {
         strings.cmdDeleteStopBody(preview.targetLabel),
       TripCommandKind.markVisited =>
         strings.cmdMarkVisitedBody(preview.targetLabel),
+      TripCommandKind.swapStop => strings.cmdSwapStopBody(
+          preview.targetLabel, preview.swapCandidate?.name ?? ''),
     };
 
     final confirmed = await showDialog<bool>(

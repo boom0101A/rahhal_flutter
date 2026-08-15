@@ -340,6 +340,11 @@ class _TripDashboardScreenState extends State<TripDashboardScreen>
           icon: Icon(Icons.chat_bubble_outline_rounded,
               color: iconColor, size: 22),
         ),
+        IconButton(
+          tooltip: AppStrings.of(context).nearbyTitle,
+          onPressed: () => context.push('/nearby'),
+          icon: Icon(Icons.explore_rounded, color: iconColor, size: 22),
+        ),
         const SizedBox(width: 8),
       ],
       flexibleSpace: FlexibleSpaceBar(

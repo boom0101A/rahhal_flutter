@@ -10,7 +10,7 @@
 /// ordinary question. Guessing here would mean deleting someone's day.
 library;
 
-enum TripCommandKind { deleteDay, deleteStop, markVisited }
+enum TripCommandKind { deleteDay, deleteStop, markVisited, swapStop }
 
 class TripCommand {
   final TripCommandKind kind;
@@ -27,13 +27,47 @@ class TripCommand {
   String toString() => 'TripCommand($kind, day=$dayNumber, target=$target)';
 }
 
+/// A real, nearby place found to replace a stop for [TripCommandKind.swapStop].
+/// Populated during preview, once a candidate has actually been looked up —
+/// never guessed or fabricated.
+class SwapCandidate {
+  final String name;
+  final String nameEn;
+  final String address;
+  final String category;
+  final double lat;
+  final double lng;
+  final String? placeId;
+
+  const SwapCandidate({
+    required this.name,
+    required this.nameEn,
+    required this.address,
+    required this.category,
+    required this.lat,
+    required this.lng,
+    this.placeId,
+  });
+}
+
 /// Returns a command when the text unambiguously asks for one, else null.
 TripCommand? parseTripCommand(String input) {
   final text = _normalize(input);
   if (text.isEmpty) return null;
 
+  final isReplace = _hasAny(text, _replaceVerbs);
   final isDelete = _hasAny(text, _deleteVerbs);
   final isVisited = _hasAny(text, _visitedVerbs);
+
+  // "swap X" / "بدّل المطعم الفلاني" — checked first so a replace verb never
+  // gets misread as a delete.
+  if (isReplace) {
+    final target = _extractTarget(text, _replaceVerbs);
+    if (target != null) {
+      return TripCommand(kind: TripCommandKind.swapStop, target: target);
+    }
+    return null;
+  }
 
   // "delete day 3" / "احذف اليوم الثالث"
   if (isDelete && _hasAny(text, _dayWords)) {
@@ -80,6 +114,7 @@ String _normalize(String s) {
   return t.replaceAll(RegExp(r'\s+'), ' ').trim();
 }
 
+const _replaceVerbs = ['بدل', 'استبدل', 'غير لي', 'replace', 'swap'];
 const _deleteVerbs = ['احذف', 'حذف', 'الغي', 'الغاء', 'شيل', 'ازل', 'remove', 'delete', 'cancel'];
 const _visitedVerbs = ['زرت', 'زرته', 'زرنا', 'تم زياره', 'علم', 'visited', 'mark visited', 'been to'];
 const _dayWords = ['اليوم', 'يوم', 'day'];

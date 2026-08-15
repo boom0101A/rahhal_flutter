@@ -1,7 +1,10 @@
+import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:flutter_animate/flutter_animate.dart';
+import 'package:image_picker/image_picker.dart';
 import 'package:uuid/uuid.dart';
+import '../../../trip_documents/data/document_file_service.dart';
 import '../../../../../core/constants/app_colors.dart';
 import '../../../../../core/constants/app_strings.dart';
 import '../../../../../core/constants/app_text_styles.dart';
@@ -782,7 +785,7 @@ class _BudgetTabState extends State<BudgetTab> {
               ),
             ),
             const SizedBox(width: 8),
-            // Price + Delete
+            // Price + Receipt + Delete
             Column(
               crossAxisAlignment: CrossAxisAlignment.end,
               children: [
@@ -793,15 +796,70 @@ class _BudgetTabState extends State<BudgetTab> {
                     fontWeight: FontWeight.bold,
                   ),
                 ),
-                IconButton(
-                  tooltip: AppStrings.of(context).delete,
-                  onPressed: () => _confirmDeleteExpense(context, exp),
-                  icon: Icon(Icons.delete_outline_rounded,
-                      color: AppColors.adaptiveTextSecondary(context), size: 18),
-                  padding: EdgeInsets.zero,
-                  constraints: const BoxConstraints(minWidth: 44, minHeight: 44),
+                Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    if (exp.receiptImagePath != null)
+                      IconButton(
+                        tooltip: strings.expenseAttachReceipt,
+                        onPressed: () => _viewReceipt(context, exp.receiptImagePath!),
+                        icon: const Icon(Icons.receipt_long_rounded,
+                            color: AppColors.accentAmber, size: 18),
+                        padding: EdgeInsets.zero,
+                        constraints: const BoxConstraints(minWidth: 36, minHeight: 44),
+                      ),
+                    IconButton(
+                      tooltip: AppStrings.of(context).delete,
+                      onPressed: () => _confirmDeleteExpense(context, exp),
+                      icon: Icon(Icons.delete_outline_rounded,
+                          color: AppColors.adaptiveTextSecondary(context), size: 18),
+                      padding: EdgeInsets.zero,
+                      constraints: const BoxConstraints(minWidth: 44, minHeight: 44),
+                    ),
+                  ],
                 ),
               ],
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  void _viewReceipt(BuildContext context, String path) {
+    showDialog(
+      context: context,
+      builder: (ctx) => Dialog(
+        backgroundColor: Colors.black,
+        insetPadding: const EdgeInsets.all(10),
+        child: Stack(
+          alignment: Alignment.center,
+          children: [
+            InteractiveViewer(
+              maxScale: 4.0,
+              minScale: 0.5,
+              child: Image.file(
+                File(path),
+                fit: BoxFit.contain,
+                errorBuilder: (ctx, e, s) => Container(
+                  color: Colors.black12,
+                  padding: const EdgeInsets.all(24),
+                  child: Icon(Icons.broken_image_rounded,
+                      color: AppColors.adaptiveTextSecondary(ctx), size: 40),
+                ),
+              ),
+            ),
+            Positioned(
+              top: 10,
+              right: 10,
+              child: CircleAvatar(
+                backgroundColor: Colors.black54,
+                child: IconButton(
+                  tooltip: AppStrings.of(ctx).close,
+                  icon: const Icon(Icons.close_rounded, color: Colors.white),
+                  onPressed: () => Navigator.pop(ctx),
+                ),
+              ),
             ),
           ],
         ),
@@ -927,9 +985,15 @@ class _AddExpenseBottomSheetState extends State<_AddExpenseBottomSheet> {
   final _formKey = GlobalKey<FormState>();
   final _amountCtrl = TextEditingController();
   final _descCtrl = TextEditingController();
-  
+  final _fileService = DocumentFileService();
+
   String _selectedCategory = 'food';
   String? _selectedDayId;
+  String? _receiptPath;
+  // Picking copies the photo into permanent storage immediately, so a sheet
+  // dismissed without submitting has to clean up after itself, same as the
+  // document-attachment sheet this mirrors.
+  bool _receiptSaved = false;
 
   @override
   void initState() {
@@ -941,7 +1005,34 @@ class _AddExpenseBottomSheetState extends State<_AddExpenseBottomSheet> {
   void dispose() {
     _amountCtrl.dispose();
     _descCtrl.dispose();
+    if (!_receiptSaved) {
+      DocumentFileService.deleteFile(_receiptPath);
+    }
     super.dispose();
+  }
+
+  Future<void> _pickReceipt(ImageSource source) async {
+    String? saved;
+    try {
+      saved = await _fileService.pickAndSave(source);
+    } on DocumentImagePermissionDeniedException {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(AppStrings.of(context).avatarPermissionDenied)),
+      );
+      return;
+    }
+    if (saved == null) return; // cancelled
+    if (!mounted) return;
+    final replaced = _receiptPath;
+    setState(() => _receiptPath = saved);
+    await DocumentFileService.deleteFile(replaced);
+  }
+
+  void _removeReceipt() {
+    final discarded = _receiptPath;
+    setState(() => _receiptPath = null);
+    DocumentFileService.deleteFile(discarded);
   }
 
   @override
@@ -1099,6 +1190,65 @@ class _AddExpenseBottomSheetState extends State<_AddExpenseBottomSheet> {
                   contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
                 ),
               ),
+              const SizedBox(height: 20),
+
+              // Receipt Photo
+              Text(strings.expenseAttachReceipt, style: AppTextStyles.titleSmall),
+              const SizedBox(height: 10),
+              if (_receiptPath != null) ...[
+                Stack(
+                  children: [
+                    ClipRRect(
+                      borderRadius: BorderRadius.circular(12),
+                      child: Image.file(
+                        File(_receiptPath!),
+                        height: 140,
+                        width: double.infinity,
+                        fit: BoxFit.cover,
+                        errorBuilder: (ctx, e, s) => Container(
+                          height: 140,
+                          width: double.infinity,
+                          color: Colors.black12,
+                          child: Icon(Icons.broken_image_rounded,
+                              color: AppColors.adaptiveTextSecondary(context)),
+                        ),
+                      ),
+                    ),
+                    Positioned(
+                      top: 8,
+                      right: 8,
+                      child: CircleAvatar(
+                        backgroundColor: Colors.black54,
+                        child: IconButton(
+                          tooltip: strings.delete,
+                          icon: const Icon(Icons.delete_outline_rounded, color: Colors.white),
+                          onPressed: _removeReceipt,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ] else ...[
+                Row(
+                  children: [
+                    Expanded(
+                      child: OutlinedButton.icon(
+                        onPressed: () => _pickReceipt(ImageSource.gallery),
+                        icon: const Icon(Icons.photo_library_rounded),
+                        label: Text(strings.documentPickGallery),
+                      ),
+                    ),
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: OutlinedButton.icon(
+                        onPressed: () => _pickReceipt(ImageSource.camera),
+                        icon: const Icon(Icons.camera_alt_rounded),
+                        label: Text(strings.documentPickCamera),
+                      ),
+                    ),
+                  ],
+                ),
+              ],
               const SizedBox(height: 24),
 
               // Submit Button
@@ -1128,8 +1278,10 @@ class _AddExpenseBottomSheetState extends State<_AddExpenseBottomSheet> {
       amount: amount,
       spentAt: DateTime.now(),
       createdAt: DateTime.now(),
+      receiptImagePath: _receiptPath,
     );
 
+    _receiptSaved = true;
     context.read<BudgetCubit>().addExpense(expense);
     Navigator.pop(context);
   }
