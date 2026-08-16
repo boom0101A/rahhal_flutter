@@ -17,7 +17,7 @@ class DatabaseHelper {
 
   // ─── Init ─────────────────────────────────────────────────────────────────
 
-  static const int _dbVersion = 15;
+  static const int _dbVersion = 16;
   static const String _dbName = 'rahhal_ai.db';
 
   static final Map<int, List<String>> _migrations = {
@@ -375,6 +375,13 @@ class DatabaseHelper {
       'ALTER TABLE restaurants ADD COLUMN cuisine_type_en TEXT;',
       'ALTER TABLE hotels ADD COLUMN hotel_type_en TEXT;',
     ],
+    // Stops get the same English opening-hours column restaurants already
+    // have (v9) — powers the chat assistant's "is this place open now"
+    // live-context feature. Existing trips' stops stay NULL (unknown) until
+    // regenerated; closingTimeFor(null, ...) already handles that safely.
+    16: [
+      'ALTER TABLE stops ADD COLUMN opening_hours_en TEXT;',
+    ],
   };
 
   Future<Database> _initDatabase() async {
@@ -511,7 +518,8 @@ class DatabaseHelper {
       booking_url       TEXT,
       coords_verified   INTEGER DEFAULT 0,
       place_id          TEXT,
-      is_visited        INTEGER DEFAULT 0
+      is_visited        INTEGER DEFAULT 0,
+      opening_hours_en  TEXT
     )
   ''';
 

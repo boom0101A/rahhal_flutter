@@ -143,5 +143,6 @@ class ItineraryRepositoryImpl implements ItineraryRepository {
         bookingUrl: m['booking_url'] as String?,
         placeId: m['place_id'] as String?,
         isVisited: (m['is_visited'] as int? ?? 0) == 1,
+        openingHoursEn: m['opening_hours_en'] as String?,
       );
 }

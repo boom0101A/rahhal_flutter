@@ -289,6 +289,7 @@ class TripRepositoryImpl implements TripRepository {
               'image_url': stopImageUrl,
               'coords_verified': stop.coordsVerified ? 1 : 0,
               'place_id': stop.placeId,
+              'opening_hours_en': stop.openingHoursEn,
             });
           }
 
@@ -631,6 +632,7 @@ class TripRepositoryImpl implements TripRepository {
         bookingUrl: m['booking_url'] as String?,
         placeId: m['place_id'] as String?,
         isVisited: (m['is_visited'] as int? ?? 0) == 1,
+        openingHoursEn: m['opening_hours_en'] as String?,
       );
 
   String _priceTier(double price) {

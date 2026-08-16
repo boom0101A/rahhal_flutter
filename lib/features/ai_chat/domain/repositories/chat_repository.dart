@@ -11,6 +11,7 @@ abstract class ChatRepository {
     required String tripSummary,
     required String userMessage,
     required List<ChatMessageEntity> history,
+    String liveContext = '',
   });
   Future<Either<Failure, void>> clearHistory(String tripId);
   Future<Either<Failure, void>> saveMessage(ChatMessageEntity message);

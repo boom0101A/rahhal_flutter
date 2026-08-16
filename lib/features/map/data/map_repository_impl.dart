@@ -62,5 +62,6 @@ class MapRepositoryImpl implements MapRepository {
         imageUrl: m['image_url'] as String?,
         bookingRequired: (m['booking_required'] as int? ?? 0) == 1,
         bookingUrl: m['booking_url'] as String?,
+        openingHoursEn: m['opening_hours_en'] as String?,
       );
 }

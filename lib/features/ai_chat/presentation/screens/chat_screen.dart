@@ -8,9 +8,14 @@ import '../../../../core/di/injection.dart';
 import '../../../../core/constants/app_strings.dart';
 import '../../../../shared/widgets/glass_card.dart';
 import '../../../../shared/widgets/report_issue_dialog.dart';
+import '../../../../core/network/weather_service.dart';
+import '../../../../core/services/location_service.dart';
+import '../../../../core/utils/opening_hours.dart';
+import '../../../nearby/data/nearby_service.dart';
 import '../cubit/chat_cubit.dart';
 import '../../data/trip_command_executor.dart';
 import '../../domain/trip_command.dart';
+import '../../domain/live_context_builder.dart';
 import '../../domain/entities/chat_message_entity.dart';
 import '../../../trip_planner/domain/entities/trip_entity.dart';
 import '../../../trip_planner/domain/repositories/trip_repository.dart';
@@ -50,6 +55,12 @@ class _ChatScreenState extends State<ChatScreen> {
   String _itineraryContext = '';
   bool _contextReady = false;
 
+  // Real weather/nearby-places/opening-hours, attached to every message sent
+  // in this chat session. Fetched ONCE when the screen opens (not per
+  // message — see _loadLiveContext doc comment) and never blocks
+  // _contextReady: a GPS/weather failure must never keep chat from opening.
+  String _liveContext = '';
+
   @override
   void initState() {
     super.initState();
@@ -58,6 +69,7 @@ class _ChatScreenState extends State<ChatScreen> {
       _loadTrip();
     } else {
       _loadItineraryContext();
+      _loadLiveContext();
     }
   }
 
@@ -80,9 +92,83 @@ class _ChatScreenState extends State<ChatScreen> {
             _isLoading = false;
           });
           _loadItineraryContext();
+          _loadLiveContext();
         }
       },
     );
+  }
+
+  /// Fetches weather + live-GPS nearby places ONCE per chat session (not per
+  /// message) and folds in which of today's stops are still open. Fetching
+  /// once and reusing it for every message keeps this well under
+  /// `/api/nearby-places`'s rate limit (30/15min, sized for occasional tab
+  /// refreshes, not per-message calls) while still attaching real, if
+  /// session-start-fresh, data to every message — weather and nearby places
+  /// don't meaningfully change over the course of one chat session anyway.
+  /// Entirely best-effort: any missing piece (no GPS permission, a network
+  /// hiccup, no day matching today) is silently omitted, never surfaced as
+  /// an error and never blocks the chat itself.
+  Future<void> _loadLiveContext() async {
+    final lang = AppStrings.of(context).languageCode;
+    final destination = _trip?.destination ?? '';
+
+    WeatherData? weather;
+    try {
+      if (destination.isNotEmpty) {
+        weather = await sl<WeatherService>().getWeather(destination);
+      }
+    } catch (_) {}
+
+    var nearbyPlaces = const <NearbyPlace>[];
+    try {
+      final pos = await sl<LocationService>().getQuickPosition();
+      if (pos != null) {
+        final result = await sl<NearbyService>().getNearby(
+          lat: pos.latitude,
+          lng: pos.longitude,
+          lang: lang,
+        );
+        nearbyPlaces = result.places;
+      }
+    } catch (_) {}
+
+    final openStopsClosingTimes = <String, DateTime>{};
+    try {
+      final daysResult =
+          await sl<ItineraryRepository>().getDaysForTrip(widget.tripId);
+      await daysResult.fold(
+        (_) async {},
+        (days) async {
+          final now = DateTime.now();
+          final today = days.where((d) =>
+              d.date != null &&
+              d.date!.year == now.year &&
+              d.date!.month == now.month &&
+              d.date!.day == now.day);
+          if (today.isEmpty) return;
+          final stopsResult =
+              await sl<ItineraryRepository>().getStopsForDay(today.first.id);
+          stopsResult.fold((_) {}, (stops) {
+            for (final stop in stops) {
+              final closing = closingTimeFor(stop.openingHoursEn, now);
+              if (closing == null || !closing.isAfter(now)) continue;
+              final name = stop.nameEn?.isNotEmpty == true
+                  ? stop.nameEn!
+                  : stop.name;
+              openStopsClosingTimes[name] = closing;
+            }
+          });
+        },
+      );
+    } catch (_) {}
+
+    final summary = buildLiveContextSummary(
+      lang: lang,
+      weather: weather,
+      nearbyPlaces: nearbyPlaces,
+      openStopsClosingTimes: openStopsClosingTimes,
+    );
+    if (mounted) _liveContext = summary;
   }
 
   /// Best-effort: any failure just leaves the context empty and the assistant
@@ -140,7 +226,7 @@ class _ChatScreenState extends State<ChatScreen> {
       return;
     }
 
-    context.read<ChatCubit>().sendMessage(text);
+    context.read<ChatCubit>().sendMessage(text, liveContext: _liveContext);
     _scrollToBottom();
   }
 

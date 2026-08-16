@@ -130,6 +130,7 @@ class StopResponse {
   final String? imageSearchQuery;
   final String? placeId;
   final bool coordsVerified;
+  final String? openingHoursEn;
 
   const StopResponse({
     required this.orderIndex,
@@ -149,6 +150,7 @@ class StopResponse {
     this.imageSearchQuery,
     this.placeId,
     this.coordsVerified = false,
+    this.openingHoursEn,
   });
 
   factory StopResponse.fromJson(Map<String, dynamic> json) {
@@ -171,6 +173,7 @@ class StopResponse {
       imageSearchQuery: json['image_search_query'] as String?,
       placeId: json['place_id'] as String?,
       coordsVerified: json['coords_verified'] as bool? ?? false,
+      openingHoursEn: json['opening_hours_en'] as String?,
     );
   }
 }
@@ -488,6 +491,7 @@ class AITravelService {
     required String tripSummary,
     required List<Map<String, String>> conversationHistory,
     required String userMessage,
+    String liveContext = '',
   }) async {
     try {
       final response = await _dio.post(
@@ -497,6 +501,7 @@ class AITravelService {
           'tripSummary': tripSummary,
           'conversationHistory': conversationHistory,
           'userMessage': userMessage,
+          'liveContext': liveContext,
         },
       );
 

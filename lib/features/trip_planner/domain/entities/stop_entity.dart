@@ -29,6 +29,12 @@ class StopEntity extends Equatable {
   final String? placeId;
   final bool isVisited;
 
+  /// English `weekdayDescriptions`, " • "-joined — the format
+  /// `closingTimeFor` (core/utils/opening_hours.dart) parses. Only populated
+  /// for stops verified against Google Places; null for trips generated
+  /// before this field existed, or for a stop Places couldn't verify at all.
+  final String? openingHoursEn;
+
   const StopEntity({
     required this.id,
     required this.dayId,
@@ -51,6 +57,7 @@ class StopEntity extends Equatable {
     this.bookingUrl,
     this.placeId,
     this.isVisited = false,
+    this.openingHoursEn,
   });
 
   StopEntity copyWith({bool? isVisited}) => StopEntity(
@@ -75,6 +82,7 @@ class StopEntity extends Equatable {
         bookingUrl: bookingUrl,
         placeId: placeId,
         isVisited: isVisited ?? this.isVisited,
+        openingHoursEn: openingHoursEn,
       );
 
   bool get hasValidLocation =>
