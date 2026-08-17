@@ -245,6 +245,51 @@ void main() {
       expect(preview.swapCandidate?.placeId, 'new_pid');
     });
 
+    test('threads the app language through to the nearby-places search',
+        () async {
+      when(() => db.query('stops', where: 'trip_id = ?', whereArgs: ['t1']))
+          .thenAnswer((_) async => [
+                {
+                  'id': 's1',
+                  'name': 'مطعم بغداد',
+                  'name_en': 'Baghdad Restaurant',
+                  'category': 'restaurant',
+                  'latitude': 33.3,
+                  'longitude': 44.4,
+                },
+              ]);
+      when(() => nearby.getNearby(
+            lat: any(named: 'lat'),
+            lng: any(named: 'lng'),
+            lang: 'en',
+          )).thenAnswer((_) async => const NearbyResult(
+            source: 'google',
+            places: [
+              NearbyPlace(
+                id: 'p1',
+                name: 'Al Rasheed Restaurant',
+                nameEn: 'Al Rasheed Restaurant',
+                lat: 33.31,
+                lng: 44.41,
+                type: 'restaurant',
+                rating: 4.5,
+                placeId: 'new_pid',
+              ),
+            ],
+          ));
+
+      final preview = await executor.preview(
+          tripId: 't1', command: command, lang: 'en');
+
+      expect(preview.problem, isNull);
+      expect(preview.swapCandidate?.name, 'Al Rasheed Restaurant');
+      verify(() => nearby.getNearby(
+            lat: any(named: 'lat'),
+            lng: any(named: 'lng'),
+            lang: 'en',
+          )).called(1);
+    });
+
     test('no nearby candidates returns problem=no-alternative', () async {
       when(() => db.query('stops', where: 'trip_id = ?', whereArgs: ['t1']))
           .thenAnswer((_) async => [

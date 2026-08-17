@@ -37,6 +37,7 @@ class RestaurantDetailSheet extends StatelessWidget {
   Widget build(BuildContext context) {
     final strings = AppStrings.of(context);
     final isDark = Theme.of(context).brightness == Brightness.dark;
+    final displayHours = restaurant.displayOpeningHours(context);
 
     return DraggableScrollableSheet(
       initialChildSize: 0.6,
@@ -138,8 +139,7 @@ class RestaurantDetailSheet extends StatelessWidget {
                 ),
               ],
 
-              if (restaurant.openingHours != null &&
-                  restaurant.openingHours!.isNotEmpty) ...[
+              if (displayHours != null && displayHours.isNotEmpty) ...[
                 const SizedBox(height: 8),
                 Row(
                   crossAxisAlignment: CrossAxisAlignment.start,
@@ -149,7 +149,7 @@ class RestaurantDetailSheet extends StatelessWidget {
                     const SizedBox(width: 6),
                     Expanded(
                       child: Text(
-                        restaurant.openingHours!,
+                        displayHours,
                         style: AppTextStyles.bodySmall
                             .copyWith(color: AppColors.adaptiveTextSecondary(context)),
                       ),

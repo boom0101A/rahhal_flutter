@@ -100,6 +100,7 @@ class TripCommandExecutor {
   Future<TripCommandPreview> preview({
     required String tripId,
     required TripCommand command,
+    String lang = 'ar',
   }) async {
     try {
       switch (command.kind) {
@@ -109,7 +110,7 @@ class TripCommandExecutor {
         case TripCommandKind.markVisited:
           return _previewStop(tripId, command);
         case TripCommandKind.swapStop:
-          return _previewSwap(tripId, command);
+          return _previewSwap(tripId, command, lang);
       }
     } catch (e) {
       debugPrint('[TripCommand] preview failed: $e');
@@ -219,7 +220,7 @@ class TripCommandExecutor {
   }
 
   Future<TripCommandPreview> _previewSwap(
-      String tripId, TripCommand command) async {
+      String tripId, TripCommand command, String lang) async {
     final target = command.target;
     if (target == null) {
       return TripCommandPreview(
@@ -271,7 +272,8 @@ class TripCommandExecutor {
       );
     }
 
-    final nearby = await _nearbyService.getNearby(lat: oldLat, lng: oldLng);
+    final nearby = await _nearbyService.getNearby(
+        lat: oldLat, lng: oldLng, lang: lang);
 
     // Never "replace" a stop with itself or with somewhere already on the
     // itinerary.

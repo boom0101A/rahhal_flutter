@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_animate/flutter_animate.dart';
 import '../../core/constants/app_colors.dart';
 import '../../core/constants/app_text_styles.dart';
+import '../../core/constants/app_strings.dart';
 import '../../core/network/weather_service.dart';
 import '../../core/di/injection.dart';
 
@@ -26,8 +27,9 @@ class _WeatherWidgetState extends State<WeatherWidget> {
   }
 
   Future<void> _loadWeather() async {
+    final lang = AppStrings.of(context).languageCode;
     final data = await sl<WeatherService>()
-        .getWeather(widget.city, countryCode: widget.countryCode);
+        .getWeather(widget.city, countryCode: widget.countryCode, lang: lang);
     if (mounted) setState(() { _data = data; _loading = false; });
   }
 

@@ -492,6 +492,7 @@ class AITravelService {
     required List<Map<String, String>> conversationHistory,
     required String userMessage,
     String liveContext = '',
+    String lang = 'ar',
   }) async {
     try {
       final response = await _dio.post(
@@ -502,6 +503,7 @@ class AITravelService {
           'conversationHistory': conversationHistory,
           'userMessage': userMessage,
           'liveContext': liveContext,
+          'lang': lang,
         },
       );
 

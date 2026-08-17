@@ -36,7 +36,8 @@ class ChatCubit extends Cubit<ChatState> {
     );
   }
 
-  Future<void> sendMessage(String text, {String liveContext = ''}) async {
+  Future<void> sendMessage(String text,
+      {String liveContext = '', String lang = 'ar'}) async {
     if (_tripId == null || text.trim().isEmpty) return;
     final content = text.trim();
 
@@ -62,6 +63,7 @@ class ChatCubit extends Cubit<ChatState> {
       userMessage: content,
       history: state.messages.where((m) => m.id != userMsg.id).toList(),
       liveContext: liveContext,
+      lang: lang,
     );
 
     if (isClosed) return;

@@ -99,6 +99,10 @@ class RestaurantEntity extends Equatable {
   String? displayAiDescription(BuildContext context) =>
       localizedProse(context, aiDescription, aiDescriptionEn);
 
+  /// Opening hours in the app's current language.
+  String? displayOpeningHours(BuildContext context) =>
+      localizedProse(context, openingHours, openingHoursEn);
+
   @override
   List<Object?> get props => [
         id, tripId, dayId, name, nameEn, cuisineType, halalCertified, rating,

@@ -168,6 +168,7 @@ class _GeneratingScreenBodyState extends State<_GeneratingScreenBody>
     }
     if (!mounted) return;
     final strings = AppStrings.of(context);
+    final displayDestination = trip.displayDestination(context);
     // The result used to be discarded — scheduling was attempted regardless,
     // so a denied OS prompt left the Settings toggle showing "on" with
     // nothing actually queued. Skipping the call outright when denied is
@@ -176,7 +177,7 @@ class _GeneratingScreenBodyState extends State<_GeneratingScreenBody>
     if (!await NotificationService.requestPermission()) return;
     await NotificationService.scheduleTripReminder(
       tripId: trip.id,
-      title: strings.notifTripSoonTitle(trip.destination),
+      title: strings.notifTripSoonTitle(displayDestination),
       body: strings.notifTripSoonBody,
       tripStartDate: start,
     );

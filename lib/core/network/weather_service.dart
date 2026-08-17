@@ -51,13 +51,15 @@ class WeatherData {
 class WeatherService {
   final Dio _dio = DioClient.general;
 
-  Future<WeatherData> getWeather(String city, {String? countryCode}) async {
+  Future<WeatherData> getWeather(String city,
+      {String? countryCode, String lang = 'ar'}) async {
     try {
       final response = await _dio.get(
         '${AppConfig.proxyBaseUrl}/api/weather',
         queryParameters: {
           'city': city,
           if (countryCode != null) 'countryCode': countryCode,
+          'lang': lang,
         },
       );
       if (response.data != null && response.data is Map<String, dynamic>) {
@@ -71,7 +73,7 @@ class WeatherService {
     return WeatherData(
       temp: 24,
       feelsLike: 22,
-      description: 'مشمس',
+      description: lang == 'en' ? 'Sunny' : 'مشمس',
       icon: '01d',
       humidity: 45,
       windSpeed: 3.2,

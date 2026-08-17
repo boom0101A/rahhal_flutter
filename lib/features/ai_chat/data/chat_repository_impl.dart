@@ -42,6 +42,7 @@ class ChatRepositoryImpl implements ChatRepository {
     required String userMessage,
     required List<ChatMessageEntity> history,
     String liveContext = '',
+    String lang = 'ar',
   }) async {
     try {
       // Save user message to DB
@@ -71,6 +72,7 @@ class ChatRepositoryImpl implements ChatRepository {
         conversationHistory: apiHistory,
         userMessage: userMessage,
         liveContext: liveContext,
+        lang: lang,
       );
 
       // Save assistant message

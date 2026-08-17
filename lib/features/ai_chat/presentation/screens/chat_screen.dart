@@ -115,7 +115,7 @@ class _ChatScreenState extends State<ChatScreen> {
     WeatherData? weather;
     try {
       if (destination.isNotEmpty) {
-        weather = await sl<WeatherService>().getWeather(destination);
+        weather = await sl<WeatherService>().getWeather(destination, lang: lang);
       }
     } catch (_) {}
 
@@ -226,7 +226,11 @@ class _ChatScreenState extends State<ChatScreen> {
       return;
     }
 
-    context.read<ChatCubit>().sendMessage(text, liveContext: _liveContext);
+    context.read<ChatCubit>().sendMessage(
+          text,
+          liveContext: _liveContext,
+          lang: AppStrings.of(context).languageCode,
+        );
     _scrollToBottom();
   }
 
@@ -239,8 +243,11 @@ class _ChatScreenState extends State<ChatScreen> {
     final messenger = ScaffoldMessenger.of(context);
     final executor = sl<TripCommandExecutor>();
 
-    final preview =
-        await executor.preview(tripId: widget.tripId, command: command);
+    final preview = await executor.preview(
+      tripId: widget.tripId,
+      command: command,
+      lang: strings.languageCode,
+    );
     if (!mounted) return;
 
     if (!preview.canRun) {

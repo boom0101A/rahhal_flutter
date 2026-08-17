@@ -12,6 +12,7 @@ abstract class ChatRepository {
     required String userMessage,
     required List<ChatMessageEntity> history,
     String liveContext = '',
+    String lang = 'ar',
   });
   Future<Either<Failure, void>> clearHistory(String tripId);
   Future<Either<Failure, void>> saveMessage(ChatMessageEntity message);

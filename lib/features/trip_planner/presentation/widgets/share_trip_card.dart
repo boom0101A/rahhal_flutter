@@ -97,7 +97,7 @@ class ShareTripCard extends StatelessWidget {
               // Destination Title — cap at two lines so a very long name
               // can't push the fixed-height card's content past its bounds.
               Text(
-                trip.destination,
+                trip.displayDestination(context),
                 maxLines: 2,
                 overflow: TextOverflow.ellipsis,
                 style: AppTextStyles.displayLarge.copyWith(
