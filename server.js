@@ -4277,7 +4277,16 @@ RULES:
     // Roughly 1 token per 2 chars in, and the output is a similar size, plus
     // JSON overhead — with generous headroom, since a truncated reply here
     // costs a whole retry.
-    const maxTokens = Math.min(Math.max(1500, Math.round(totalChars / 1.5)), 16000);
+    //
+    // totalChars only counts the `t` values, but the model has to echo every
+    // `k` back too — and those are long ("day.theme|<uuid>" ≈ 47 chars each),
+    // so on a big batch they were a sizeable slice of the output that nothing
+    // budgeted for. Counting them keeps the ceiling honest.
+    const keyChars = clean.reduce((n, c) => n + c.k.length, 0);
+    const maxTokens = Math.min(
+      Math.max(1500, Math.round((totalChars + keyChars) / 1.5)),
+      16000
+    );
     const raw = await callAI(systemPrompt, [{ role: 'user', content: userPayload }], maxTokens);
 
     let text = raw.trim();

@@ -261,11 +261,11 @@ class _StopDetailScreenState extends State<StopDetailScreen> {
                   const SizedBox(height: 20),
 
                   // Address
-                  if (stop.address != null) ...[
+                  if (stop.displayAddress(context) != null) ...[
                     Text(AppStrings.of(context).addressLabel, style: AppTextStyles.titleMedium),
                     const SizedBox(height: 8),
                     Text(
-                      stop.address!,
+                      stop.displayAddress(context)!,
                       style: AppTextStyles.bodyMedium,
                     ),
                     const SizedBox(height: 20),

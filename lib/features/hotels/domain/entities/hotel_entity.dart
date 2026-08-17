@@ -16,6 +16,9 @@ class HotelEntity extends Equatable {
   final double rating;
   final double pricePerNight;
   final String? address;
+
+  /// English copy of [address], filled in on demand like the other prose.
+  final String? addressEn;
   final double latitude;
   final double longitude;
   final String? phone;
@@ -38,6 +41,7 @@ class HotelEntity extends Equatable {
     required this.rating,
     required this.pricePerNight,
     this.address,
+    this.addressEn,
     required this.latitude,
     required this.longitude,
     this.phone,
@@ -79,10 +83,20 @@ class HotelEntity extends Equatable {
   String? displayAiDescription(BuildContext context) =>
       localizedProse(context, aiDescription, aiDescriptionEn);
 
+  /// The address in the app's current language. Display only — the Maps and
+  /// ride-hailing deep links deliberately keep using the raw [address].
+  String? displayAddress(BuildContext context) =>
+      localizedProse(context, address, addressEn);
+
+  // Every `*En` field belongs here: without them a freshly translated hotel
+  // compares EQUAL to its pre-translation self, so a cubit's emit() is
+  // dropped as a no-op and the UI keeps showing Arabic even though the
+  // database already holds the English text.
   @override
   List<Object?> get props => [
-        id, tripId, name, nameEn, hotelType, rating, pricePerNight, address,
-        latitude, longitude, phone, imageUrl, aiDescription, bookingUrl,
+        id, tripId, name, nameEn, hotelType, hotelTypeEn, rating,
+        pricePerNight, address, addressEn, latitude, longitude, phone,
+        imageUrl, aiDescription, aiDescriptionEn, bookingUrl,
         placeId, coordsVerified,
       ];
 }

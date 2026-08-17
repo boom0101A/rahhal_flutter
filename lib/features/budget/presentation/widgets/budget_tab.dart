@@ -65,11 +65,24 @@ class _BudgetTabState extends State<BudgetTab> {
             children: [
               _buildSubTabSelector(context),
               Expanded(
+                // The incoming view fades and eases up into place, matching
+                // the .fadeIn().slideY() idiom used elsewhere in the app.
+                //
+                // Deliberately NOT AnimatedSwitcher: that keeps the outgoing
+                // view mounted and lays BOTH out for the duration of the
+                // crossfade, and re-laying-out the comparison view that way
+                // made a row inside it overflow by 241px — a visible glitch
+                // the instant swap never had. Animating only the new child
+                // keeps exactly one view laid out, so the constraints these
+                // views see are byte-for-byte what they were before.
                 child: switch (_activeSubTab) {
                   0 => _buildComparisonView(context, state),
                   1 => _buildActualExpensesView(context, state),
                   _ => _buildDailyPlanView(context, state),
-                },
+                }
+                    .animate(key: ValueKey(_activeSubTab))
+                    .fadeIn(duration: 250.ms, curve: Curves.easeOut)
+                    .slideY(begin: 0.015, end: 0, duration: 250.ms, curve: Curves.easeOut),
               ),
             ],
           );
@@ -124,18 +137,31 @@ class _BudgetTabState extends State<BudgetTab> {
         _activeSubTab = index;
       }),
       child: AnimatedContainer(
-        duration: const Duration(milliseconds: 200),
-        padding: const EdgeInsets.symmetric(vertical: 10),
+        // 250ms matches the day-selector pills in itinerary_tab.dart.
+        duration: const Duration(milliseconds: 250),
+        // A fixed height keeps all three pills identical regardless of label
+        // length — previously the pill sized itself to its text, so a label
+        // that wrapped made its pill taller than its neighbours.
+        height: 36,
+        padding: const EdgeInsets.symmetric(horizontal: 8),
         decoration: BoxDecoration(
           color: isSelected ? AppColors.accentAmber : Colors.transparent,
           borderRadius: BorderRadius.circular(50),
         ),
         child: Center(
-          child: Text(
-            label,
-            style: AppTextStyles.labelSmall.copyWith(
-              color: isSelected ? AppColors.bgPrimary : AppColors.adaptiveTextSecondary(context),
-              fontWeight: FontWeight.bold,
+          // Same treatment as the dashboard's outer tab bar: scale a long
+          // label down rather than let it wrap or get ellipsized, so English
+          // labels ("Budget Comparison") stay on one fully-readable line.
+          child: FittedBox(
+            fit: BoxFit.scaleDown,
+            child: Text(
+              label,
+              maxLines: 1,
+              textAlign: TextAlign.center,
+              style: AppTextStyles.labelSmall.copyWith(
+                color: isSelected ? AppColors.bgPrimary : AppColors.adaptiveTextSecondary(context),
+                fontWeight: FontWeight.bold,
+              ),
             ),
           ),
         ),
@@ -181,34 +207,48 @@ class _BudgetTabState extends State<BudgetTab> {
                 style: AppTextStyles.titleMedium.copyWith(color: AppColors.adaptiveTextSecondary(context)),
               ),
               const SizedBox(height: 16),
+              // Both halves are Expanded: these two labels are far longer in
+              // English ("Total Estimated Budget" / "Total Actual Expenses")
+              // than in Arabic, and unconstrained Columns sized to their full
+              // natural width — overflowing this row by ~240px on a narrow
+              // screen. Sharing the width lets the labels wrap instead.
               Row(
-                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(strings.expenseEstimatedTotal, style: AppTextStyles.bodySmall),
-                      const SizedBox(height: 4),
-                      DualCurrencyText(
-                        amountUsd: estimatedTotal,
-                        countryCode: widget.countryCode,
-                        primaryStyle: AppTextStyles.headlineLarge,
-                      ),
-                    ],
-                  ),
-                  Column(
-                    crossAxisAlignment: CrossAxisAlignment.end,
-                    children: [
-                      Text(strings.expenseActualTotal, style: AppTextStyles.bodySmall),
-                      const SizedBox(height: 4),
-                      DualCurrencyText(
-                        amountUsd: actualTotal,
-                        countryCode: widget.countryCode,
-                        primaryStyle: AppTextStyles.headlineLarge.copyWith(
-                          color: isOverBudget ? AppColors.error : AppColors.accentTurquoise,
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(strings.expenseEstimatedTotal, style: AppTextStyles.bodySmall),
+                        const SizedBox(height: 4),
+                        DualCurrencyText(
+                          amountUsd: estimatedTotal,
+                          countryCode: widget.countryCode,
+                          primaryStyle: AppTextStyles.headlineLarge,
                         ),
-                      ),
-                    ],
+                      ],
+                    ),
+                  ),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.end,
+                      children: [
+                        Text(
+                          strings.expenseActualTotal,
+                          style: AppTextStyles.bodySmall,
+                          textAlign: TextAlign.end,
+                        ),
+                        const SizedBox(height: 4),
+                        DualCurrencyText(
+                          amountUsd: actualTotal,
+                          countryCode: widget.countryCode,
+                          primaryStyle: AppTextStyles.headlineLarge.copyWith(
+                            color: isOverBudget ? AppColors.error : AppColors.accentTurquoise,
+                          ),
+                        ),
+                      ],
+                    ),
                   ),
                 ],
               ),

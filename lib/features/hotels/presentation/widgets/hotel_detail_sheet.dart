@@ -114,9 +114,11 @@ class HotelDetailSheet extends StatelessWidget {
                 ],
               ),
 
-              if (hotel.address != null && hotel.address!.isNotEmpty) ...[
+              if (hotel.displayAddress(context) != null &&
+                  hotel.displayAddress(context)!.isNotEmpty) ...[
                 const SizedBox(height: 16),
-                _infoRow(context, Icons.place_rounded, hotel.address!),
+                _infoRow(
+                    context, Icons.place_rounded, hotel.displayAddress(context)!),
               ],
 
               if (hotel.phone != null && hotel.phone!.isNotEmpty) ...[

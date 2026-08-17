@@ -141,9 +141,14 @@ class TripEntity extends Equatable {
       localizedProse(context, bestTimeToVisit, bestTimeToVisitEn);
 
   @override
+  // The `*En` fields have to be here too, or a trip that just gained its
+  // English prose compares EQUAL to its old self and the cubit's emit() is
+  // dropped as a no-op — leaving Arabic on screen despite the database
+  // already holding the English text.
   List<Object?> get props => [
-        id, userId, destination, countryCode, startDate, endDate,
+        id, userId, destination, destinationEn, countryCode, startDate, endDate,
         durationDays, budgetTier, budgetTotal, travelStyles, travelersCount,
-        status, heroImageUrl, aiSummary, currency, timezone, createdAt, updatedAt,
+        status, heroImageUrl, aiSummary, aiSummaryEn, travelTipsEn,
+        bestTimeToVisitEn, currency, timezone, createdAt, updatedAt,
       ];
 }

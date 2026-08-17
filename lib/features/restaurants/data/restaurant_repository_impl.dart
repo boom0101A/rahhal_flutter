@@ -54,6 +54,7 @@ class RestaurantRepositoryImpl implements RestaurantRepository {
         pricePerPerson: (m['price_per_person'] as num? ?? 0).toDouble(),
         priceTier: m['price_tier'] as String? ?? 'mid',
         address: m['address'] as String?,
+        addressEn: m['address_en'] as String?,
         latitude: (m['latitude'] as num? ?? 0).toDouble(),
         longitude: (m['longitude'] as num? ?? 0).toDouble(),
         openingHours: m['opening_hours'] as String?,

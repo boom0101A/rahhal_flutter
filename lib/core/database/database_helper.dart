@@ -17,7 +17,7 @@ class DatabaseHelper {
 
   // ─── Init ─────────────────────────────────────────────────────────────────
 
-  static const int _dbVersion = 16;
+  static const int _dbVersion = 17;
   static const String _dbName = 'rahhal_ai.db';
 
   static final Map<int, List<String>> _migrations = {
@@ -382,6 +382,14 @@ class DatabaseHelper {
     16: [
       'ALTER TABLE stops ADD COLUMN opening_hours_en TEXT;',
     ],
+    // Addresses were the last user-visible text with no English counterpart at
+    // all, so they stayed Arabic in English mode no matter what the translation
+    // pass did. Filled by TripTranslationService like every other prose column.
+    17: [
+      'ALTER TABLE stops ADD COLUMN address_en TEXT;',
+      'ALTER TABLE restaurants ADD COLUMN address_en TEXT;',
+      'ALTER TABLE hotels ADD COLUMN address_en TEXT;',
+    ],
   };
 
   Future<Database> _initDatabase() async {
@@ -519,7 +527,8 @@ class DatabaseHelper {
       coords_verified   INTEGER DEFAULT 0,
       place_id          TEXT,
       is_visited        INTEGER DEFAULT 0,
-      opening_hours_en  TEXT
+      opening_hours_en  TEXT,
+      address_en        TEXT
     )
   ''';
 
@@ -547,7 +556,8 @@ class DatabaseHelper {
       place_id          TEXT,
       coords_verified   INTEGER DEFAULT 0,
       phone             TEXT,
-      opening_hours_en  TEXT
+      opening_hours_en  TEXT,
+      address_en        TEXT
     )
   ''';
 
@@ -570,7 +580,8 @@ class DatabaseHelper {
       ai_description_en TEXT,
       booking_url       TEXT,
       place_id          TEXT,
-      coords_verified   INTEGER DEFAULT 0
+      coords_verified   INTEGER DEFAULT 0,
+      address_en        TEXT
     )
   ''';
 

@@ -630,8 +630,8 @@ class _StopBottomCard extends StatelessWidget {
                           style: AppTextStyles.titleMedium,
                           maxLines: 1,
                           overflow: TextOverflow.ellipsis),
-                      if (stop.address != null)
-                        Text(stop.address!,
+                      if (stop.displayAddress(context) != null)
+                        Text(stop.displayAddress(context)!,
                             style: AppTextStyles.bodySmall,
                             maxLines: 1,
                             overflow: TextOverflow.ellipsis),

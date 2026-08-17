@@ -35,6 +35,7 @@ class HotelRepositoryImpl implements HotelRepository {
         rating: (m['rating'] as num? ?? 0).toDouble(),
         pricePerNight: (m['price_per_night'] as num? ?? 0).toDouble(),
         address: m['address'] as String?,
+        addressEn: m['address_en'] as String?,
         latitude: (m['latitude'] as num? ?? 0).toDouble(),
         longitude: (m['longitude'] as num? ?? 0).toDouble(),
         phone: m['phone'] as String?,

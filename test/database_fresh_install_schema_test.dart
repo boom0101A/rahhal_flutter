@@ -52,9 +52,19 @@ void main() {
     // service.dart) actually writes to — the exact set that was missing.
     expect(tripsCols, containsAll(['ai_summary_en', 'travel_tips_en', 'best_time_to_visit_en']));
     expect(daysCols, containsAll(['theme_en', 'summary_en']));
-    expect(stopsCols, contains('ai_tip_en'));
-    expect(restaurantsCols, containsAll(['ai_description_en', 'cuisine_type_en']));
-    expect(hotelsCols, containsAll(['ai_description_en', 'hotel_type_en']));
+    expect(stopsCols, containsAll(['ai_tip_en', 'address_en']));
+    expect(
+        restaurantsCols,
+        containsAll([
+          'ai_description_en',
+          'cuisine_type_en',
+          // Added to _targets so a venue Places couldn't verify stops being
+          // stuck with Arabic-Indic-digit hours forever.
+          'opening_hours_en',
+          'address_en',
+        ]));
+    expect(hotelsCols,
+        containsAll(['ai_description_en', 'hotel_type_en', 'address_en']));
 
     // And a write to each actually succeeds — the failure mode wasn't just
     // "missing from a list," it was a thrown DatabaseException on first use.

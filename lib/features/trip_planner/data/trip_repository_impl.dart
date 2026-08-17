@@ -624,6 +624,7 @@ class TripRepositoryImpl implements TripRepository {
         latitude: (m['latitude'] as num? ?? 0).toDouble(),
         longitude: (m['longitude'] as num? ?? 0).toDouble(),
         address: m['address'] as String?,
+        addressEn: m['address_en'] as String?,
         costUsd: (m['cost_usd'] as num? ?? 0).toDouble(),
         aiTip: m['ai_tip'] as String?,
         aiTipEn: m['ai_tip_en'] as String?,

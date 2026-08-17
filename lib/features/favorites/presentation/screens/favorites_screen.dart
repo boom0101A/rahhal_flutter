@@ -315,10 +315,11 @@ class _FavoritesScreenState extends State<FavoritesScreen> {
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
                     ),
-                    if (stop.address != null && stop.address!.isNotEmpty) ...[
+                    if (stop.displayAddress(context) != null &&
+                        stop.displayAddress(context)!.isNotEmpty) ...[
                       const SizedBox(height: 4),
                       Text(
-                        stop.address!,
+                        stop.displayAddress(context)!,
                         style: AppTextStyles.bodySmall.copyWith(
                           fontSize: 10,
                           color: isDark ? AppColors.adaptiveTextSecondary(context) : const Color(0xFF4B5563),
@@ -497,10 +498,11 @@ class _FavoritesScreenState extends State<FavoritesScreen> {
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
                     ),
-                    if (hotel.address != null && hotel.address!.isNotEmpty) ...[
+                    if (hotel.displayAddress(context) != null &&
+                        hotel.displayAddress(context)!.isNotEmpty) ...[
                       const SizedBox(height: 4),
                       Text(
-                        hotel.address!,
+                        hotel.displayAddress(context)!,
                         style: AppTextStyles.bodySmall.copyWith(
                           fontSize: 10,
                           color: isDark ? AppColors.adaptiveTextSecondary(context) : const Color(0xFF4B5563),

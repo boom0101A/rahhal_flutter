@@ -414,7 +414,8 @@ class _MapLocationButton extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final address = restaurant.address;
+    // Display only — _openMaps still queries with the raw address.
+    final address = restaurant.displayAddress(context);
     return InkWell(
       onTap: () => _openMaps(context),
       borderRadius: BorderRadius.circular(8),
