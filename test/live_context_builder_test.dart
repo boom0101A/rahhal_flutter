@@ -4,6 +4,36 @@ import 'package:rahhal_flutter/core/network/weather_service.dart';
 import 'package:rahhal_flutter/features/nearby/data/nearby_service.dart';
 
 void main() {
+  group('stillOpenAt', () {
+    final now = DateTime(2026, 8, 17, 18, 0);
+
+    test('excludes stops that already closed', () {
+      final result = stillOpenAt({
+        'متحف بغداد': DateTime(2026, 8, 17, 17, 0), // closed an hour ago
+      }, now);
+      expect(result, isEmpty);
+    });
+
+    test('keeps stops that are still open', () {
+      final result = stillOpenAt({
+        'متحف بغداد': DateTime(2026, 8, 17, 20, 0), // closes in 2 hours
+      }, now);
+      expect(result, {'متحف بغداد': DateTime(2026, 8, 17, 20, 0)});
+    });
+
+    test('handles a mix of open and closed stops', () {
+      final result = stillOpenAt({
+        'Open Stop': DateTime(2026, 8, 17, 21, 0),
+        'Closed Stop': DateTime(2026, 8, 17, 12, 0),
+      }, now);
+      expect(result.keys, ['Open Stop']);
+    });
+
+    test('an empty map stays empty', () {
+      expect(stillOpenAt(const {}, now), isEmpty);
+    });
+  });
+
   group('buildLiveContextSummary', () {
     test('returns an empty string when every data source is missing', () {
       final result = buildLiveContextSummary(lang: 'ar');

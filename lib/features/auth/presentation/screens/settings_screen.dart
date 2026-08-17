@@ -147,7 +147,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                 },
               ),
               ListTile(
-                title: Text('English', style: AppTextStyles.bodyLarge),
+                title: Text(AppStrings.of(context).languageEnglish, style: AppTextStyles.bodyLarge),
                 trailing: _languageCode == 'en'
                     ? const Icon(Icons.check_rounded, color: AppColors.accentAmber)
                     : null,

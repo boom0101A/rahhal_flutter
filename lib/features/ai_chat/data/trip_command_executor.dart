@@ -108,7 +108,7 @@ class TripCommandExecutor {
           return _previewDeleteDay(tripId, command);
         case TripCommandKind.deleteStop:
         case TripCommandKind.markVisited:
-          return _previewStop(tripId, command);
+          return _previewStop(tripId, command, lang);
         case TripCommandKind.swapStop:
           return _previewSwap(tripId, command, lang);
       }
@@ -152,7 +152,7 @@ class TripCommandExecutor {
   }
 
   Future<TripCommandPreview> _previewStop(
-      String tripId, TripCommand command) async {
+      String tripId, TripCommand command, String lang) async {
     final target = command.target;
     if (target == null) {
       // Defense in depth: parseTripCommand never builds a deleteStop/
@@ -190,7 +190,9 @@ class TripCommandExecutor {
       return TripCommandPreview(
         command: command,
         tripId: tripId,
-        targetLabel: matches.map((m) => m['name'] as String).join('، '),
+        targetLabel: matches
+            .map((m) => _stopDisplayLabel(m, lang))
+            .join(lang == 'en' ? ', ' : '، '),
         affectedIds: const [],
         problem: 'ambiguous',
       );
@@ -199,9 +201,19 @@ class TripCommandExecutor {
     return TripCommandPreview(
       command: command,
       tripId: tripId,
-      targetLabel: matches.first['name'] as String,
+      targetLabel: _stopDisplayLabel(matches.first, lang),
       affectedIds: [matches.first['id'] as String],
     );
+  }
+
+  /// The stop's name in [lang] — English when available and requested,
+  /// Arabic otherwise. Shared by [_previewStop] and [_previewSwap] so a
+  /// user's chosen app language is reflected consistently in every command
+  /// confirmation dialog.
+  String _stopDisplayLabel(Map<String, dynamic> stop, String lang) {
+    final nameEn = stop['name_en'] as String?;
+    if (lang == 'en' && nameEn != null && nameEn.isNotEmpty) return nameEn;
+    return stop['name'] as String;
   }
 
   /// Stops whose name (Arabic or English) fuzzy-matches [target] in either
@@ -249,14 +261,16 @@ class TripCommandExecutor {
       return TripCommandPreview(
         command: command,
         tripId: tripId,
-        targetLabel: matches.map((m) => m['name'] as String).join('، '),
+        targetLabel: matches
+            .map((m) => _stopDisplayLabel(m, lang))
+            .join(lang == 'en' ? ', ' : '، '),
         affectedIds: const [],
         problem: 'ambiguous',
       );
     }
 
     final oldStop = matches.first;
-    final oldName = oldStop['name'] as String;
+    final oldName = _stopDisplayLabel(oldStop, lang);
     final oldLat = (oldStop['latitude'] as num?)?.toDouble() ?? 0.0;
     final oldLng = (oldStop['longitude'] as num?)?.toDouble() ?? 0.0;
     final hasValidLocation = oldLat.abs() > 0.001 && oldLng.abs() > 0.001;

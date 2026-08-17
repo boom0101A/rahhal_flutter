@@ -103,7 +103,7 @@ class BudgetRepositoryImpl implements BudgetRepository {
     // only — enforce it here too so any future/other caller can't insert a
     // zero or negative expense just by skipping that form.
     if (expense.amount <= 0) {
-      return const Left(ValidationFailure('المبلغ يجب أن يكون أكبر من صفر'));
+      return const Left(ValidationFailure('budget/invalid-amount'));
     }
     try {
       await _dbHelper.insert('actual_expenses', ExpenseMapper.toMap(expense));

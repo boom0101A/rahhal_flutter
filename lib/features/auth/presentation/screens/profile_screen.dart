@@ -478,6 +478,12 @@ class _ProfileScreenState extends State<ProfileScreen> {
         content: Text(strings.avatarPermissionDenied),
         backgroundColor: AppColors.error,
       ));
+    } on AvatarSaveFailedException {
+      if (!mounted) return;
+      messenger.showSnackBar(SnackBar(
+        content: Text(strings.errorGeneral),
+        backgroundColor: AppColors.error,
+      ));
     }
   }
 

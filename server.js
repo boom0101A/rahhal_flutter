@@ -4504,7 +4504,7 @@ app.get('/api/weather', async (req, res) => {
   const mockWeather = {
     temp: 24,
     feelsLike: 22,
-    description: 'مشمس (بيانات محاكاة)',
+    description: lang === 'en' ? 'Sunny (mock data)' : 'مشمس (بيانات محاكاة)',
     icon: '01d',
     humidity: 45,
     windSpeed: 3.2,

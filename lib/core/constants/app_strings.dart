@@ -840,6 +840,8 @@ class AppStrings {
   String get expenseAmountHint => _t('أدخل المبلغ...', 'Enter amount...');
   String get expenseDescriptionHint => _t('مثال: تذاكر المترو، غداء...', 'e.g. Metro tickets, Lunch...');
   String get expenseAttachReceipt => _t('إيصال (اختياري)', 'Receipt (optional)');
+  String get expenseInvalidAmount =>
+      _t('المبلغ يجب أن يكون أكبر من صفر', 'Amount must be greater than zero');
   String get expenseSelectCategory => _t('اختر الفئة', 'Select Category');
   String get expenseSelectDay => _t('اختر اليوم', 'Select Day');
   String get expenseDeleteConfirm => _t('هل تريد حذف هذا المصروف؟', 'Do you want to delete this expense?');

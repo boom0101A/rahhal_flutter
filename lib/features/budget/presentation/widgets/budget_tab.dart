@@ -41,7 +41,10 @@ class _BudgetTabState extends State<BudgetTab> {
       listenWhen: (previous, current) =>
           current is BudgetLoaded && current.actionError != null,
       listener: (context, state) {
-        final message = (state as BudgetLoaded).actionError!;
+        final code = (state as BudgetLoaded).actionError!;
+        final message = code == 'budget/invalid-amount'
+            ? AppStrings.of(context).expenseInvalidAmount
+            : code;
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(content: Text(message), backgroundColor: AppColors.error),
         );

@@ -54,17 +54,18 @@ class _TripInputScreenState extends State<TripInputScreen> {
     try {
       final locationData = await sl<LocationService>().getCurrentLocation();
       if (locationData != null && mounted) {
+        final displayLocation = locationData.fullLocationDisplay(strings.languageCode);
         setState(() {
-          _destinationCtrl.text = locationData.fullLocationDisplay;
+          _destinationCtrl.text = displayLocation;
           _detectedLat = locationData.latitude;
           _detectedLng = locationData.longitude;
           _detectedCountryCode = locationData.countryCode;
-          _lastAutoFilledText = locationData.fullLocationDisplay;
+          _lastAutoFilledText = displayLocation;
           _isDetectingLocation = false;
         });
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text(AppStrings.of(context).locationDetected(locationData.fullLocationDisplay)),
+            content: Text(AppStrings.of(context).locationDetected(displayLocation)),
             backgroundColor: AppColors.accentAmber,
             behavior: SnackBarBehavior.floating,
           ),

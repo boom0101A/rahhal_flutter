@@ -83,7 +83,7 @@ class _NearbyScreenState extends State<NearbyScreen> {
 
       // 3. Resolve a friendly location label in the background (non-blocking).
       sl<LocationService>()
-          .reverseGeocode(pos.latitude, pos.longitude)
+          .reverseGeocode(pos.latitude, pos.longitude, lang: _lang)
           .then((label) {
         if (mounted) setState(() => _locationLabel = label);
       });

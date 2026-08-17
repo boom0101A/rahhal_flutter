@@ -8,6 +8,7 @@ import '../../../../core/errors/failures.dart';
 import '../../../../core/network/cloud_sync_service.dart';
 import '../../../../core/services/crash_reporter.dart';
 import '../../trip_documents/data/document_file_service.dart';
+import 'local_avatar_service.dart';
 import '../domain/entities/user_entity.dart';
 import '../domain/repositories/auth_repository.dart';
 
@@ -411,6 +412,15 @@ class AuthRepositoryImpl implements AuthRepository {
     } catch (e, st) {
       debugPrint('[Auth] document image wipe failed: $e');
       reportNonFatal(e, st, reason: 'AuthRepository.clearLocalData: document image wipe failed');
+    }
+    // The profile photo is device-scoped, not account-scoped (see
+    // LocalAvatarService's doc comment) — without this, a deleted account's
+    // photo would keep showing for the next guest/account on this device.
+    try {
+      await LocalAvatarService().clear();
+    } catch (e, st) {
+      debugPrint('[Auth] avatar wipe failed: $e');
+      reportNonFatal(e, st, reason: 'AuthRepository.clearLocalData: avatar wipe failed');
     }
   }
 }

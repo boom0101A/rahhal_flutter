@@ -79,8 +79,12 @@ class TripNotificationScheduler {
     );
     if (stops.isEmpty) return;
 
-    final firstName = (stops.first['name'] as String?)?.trim();
-    if (firstName == null || firstName.isEmpty) return;
+    final firstName = pickLocalizedName(
+      stops.first['name'] as String?,
+      stops.first['name_en'] as String?,
+      strings.languageCode,
+    );
+    if (firstName == null) return;
 
     await NotificationService.scheduleDayPlan(
       tripId: tripId,
@@ -102,8 +106,12 @@ class TripNotificationScheduler {
     if (rows.isEmpty) return;
 
     final r = rows.first;
-    final name = (r['name'] as String?)?.trim();
-    if (name == null || name.isEmpty) return;
+    final name = pickLocalizedName(
+      r['name'] as String?,
+      r['name_en'] as String?,
+      strings.languageCode,
+    );
+    if (name == null) return;
 
     await NotificationService.scheduleBookingReminder(
       tripId: tripId,
@@ -124,5 +132,15 @@ class TripNotificationScheduler {
         closingTime: closing,
       );
     }
+  }
+
+  /// Prefers the English name when the app is in English mode and one
+  /// exists; falls back to Arabic. Returns null only when neither is usable
+  /// (mirrors the old `?.trim(); if empty return` guard at each call site).
+  String? pickLocalizedName(String? nameAr, String? nameEn, String lang) {
+    final ar = nameAr?.trim();
+    final en = nameEn?.trim();
+    if (lang == 'en' && en != null && en.isNotEmpty) return en;
+    return (ar != null && ar.isNotEmpty) ? ar : null;
   }
 }

@@ -75,6 +75,27 @@ void main() {
       expect(preview.canRun, isTrue);
     });
 
+    test('lang: en resolves the targetLabel to the English name', () async {
+      final preview =
+          await executor.preview(tripId: 't1', command: command, lang: 'en');
+
+      expect(preview.targetLabel, 'Baghdad Restaurant');
+    });
+
+    test('lang: en with no English name falls back to Arabic', () async {
+      when(() => db.query('stops', where: 'trip_id = ?', whereArgs: ['t3']))
+          .thenAnswer((_) async => [
+                {'id': 's5', 'name': 'مطعم بلا اسم إنجليزي', 'name_en': null},
+              ]);
+      final noEnglishCommand =
+          TripCommand(kind: command.kind, target: 'مطعم بلا اسم إنجليزي');
+
+      final preview = await executor.preview(
+          tripId: 't3', command: noEnglishCommand, lang: 'en');
+
+      expect(preview.targetLabel, 'مطعم بلا اسم إنجليزي');
+    });
+
     test('no match returns not-found with the target as the label', () async {
       final noMatch = TripCommand(kind: command.kind, target: 'مكان غير موجود');
 
@@ -283,6 +304,10 @@ void main() {
 
       expect(preview.problem, isNull);
       expect(preview.swapCandidate?.name, 'Al Rasheed Restaurant');
+      // The OLD stop's own label must also be English, not just the new
+      // candidate's — regression check for the fix that made oldName
+      // language-aware too.
+      expect(preview.targetLabel, 'Baghdad Restaurant');
       verify(() => nearby.getNearby(
             lat: any(named: 'lat'),
             lng: any(named: 'lng'),

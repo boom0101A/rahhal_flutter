@@ -56,10 +56,24 @@ class _ChatScreenState extends State<ChatScreen> {
   bool _contextReady = false;
 
   // Real weather/nearby-places/opening-hours, attached to every message sent
-  // in this chat session. Fetched ONCE when the screen opens (not per
-  // message — see _loadLiveContext doc comment) and never blocks
-  // _contextReady: a GPS/weather failure must never keep chat from opening.
-  String _liveContext = '';
+  // in this chat session. Weather and nearby places are fetched ONCE when the
+  // screen opens (not per message — see _loadLiveContext doc comment) and
+  // never block _contextReady: a GPS/weather failure must never keep chat
+  // from opening. Stop closing times are stored raw (unfiltered) and
+  // re-filtered against "now" at every send — see stillOpenAt — since
+  // open/closed status, unlike weather/nearby, genuinely goes stale over a
+  // long session.
+  WeatherData? _weather;
+  List<NearbyPlace> _nearbyPlaces = const [];
+  Map<String, DateTime> _openStopsClosingTimes = const {};
+
+  String _buildLiveContext(String lang) => buildLiveContextSummary(
+        lang: lang,
+        weather: _weather,
+        nearbyPlaces: _nearbyPlaces,
+        openStopsClosingTimes:
+            stillOpenAt(_openStopsClosingTimes, DateTime.now()),
+      );
 
   @override
   void initState() {
@@ -132,6 +146,8 @@ class _ChatScreenState extends State<ChatScreen> {
       }
     } catch (_) {}
 
+    // Unfiltered — "still open" is decided fresh at send time via
+    // stillOpenAt, not baked in here.
     final openStopsClosingTimes = <String, DateTime>{};
     try {
       final daysResult =
@@ -151,7 +167,7 @@ class _ChatScreenState extends State<ChatScreen> {
           stopsResult.fold((_) {}, (stops) {
             for (final stop in stops) {
               final closing = closingTimeFor(stop.openingHoursEn, now);
-              if (closing == null || !closing.isAfter(now)) continue;
+              if (closing == null) continue;
               final name = stop.nameEn?.isNotEmpty == true
                   ? stop.nameEn!
                   : stop.name;
@@ -162,13 +178,11 @@ class _ChatScreenState extends State<ChatScreen> {
       );
     } catch (_) {}
 
-    final summary = buildLiveContextSummary(
-      lang: lang,
-      weather: weather,
-      nearbyPlaces: nearbyPlaces,
-      openStopsClosingTimes: openStopsClosingTimes,
-    );
-    if (mounted) _liveContext = summary;
+    if (mounted) {
+      _weather = weather;
+      _nearbyPlaces = nearbyPlaces;
+      _openStopsClosingTimes = openStopsClosingTimes;
+    }
   }
 
   /// Best-effort: any failure just leaves the context empty and the assistant
@@ -226,10 +240,11 @@ class _ChatScreenState extends State<ChatScreen> {
       return;
     }
 
+    final lang = AppStrings.of(context).languageCode;
     context.read<ChatCubit>().sendMessage(
           text,
-          liveContext: _liveContext,
-          lang: AppStrings.of(context).languageCode,
+          liveContext: _buildLiveContext(lang),
+          lang: lang,
         );
     _scrollToBottom();
   }

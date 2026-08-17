@@ -359,7 +359,7 @@ class _SavedTripsScreenState extends State<SavedTripsScreen> {
       // Navigate to plan screen with pre-filled destination
       // The AI will generate a REAL plan based on the real city name
       context.push('/plan', extra: {
-        'prefillDestination': locationData.fullLocationDisplay,
+        'prefillDestination': locationData.fullLocationDisplay(strings.languageCode),
         'lat': locationData.latitude,
         'lng': locationData.longitude,
         'countryCode': locationData.countryCode,

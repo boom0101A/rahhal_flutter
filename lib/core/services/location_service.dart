@@ -18,18 +18,22 @@ class UserLocationResult {
     this.countryCode,
   });
 
-  String get fullLocationDisplay {
+  /// Human-readable "City, Country" (or whichever part is known), in [lang].
+  /// [cityName]/[countryName] are only ever real geocoded values now — the
+  /// "unknown location" fallback text is decided here, not baked into them.
+  String fullLocationDisplay(String lang) {
     final validCity = cityName.trim();
     final validCountry = countryName.trim();
+    final isArabic = lang != 'en';
 
-    if (validCity.isNotEmpty && validCity != 'الموقع الحالي' && validCountry.isNotEmpty) {
-      return '$validCity، $validCountry';
-    } else if (validCity.isNotEmpty && validCity != 'الموقع الحالي') {
+    if (validCity.isNotEmpty && validCountry.isNotEmpty) {
+      return isArabic ? '$validCity، $validCountry' : '$validCity, $validCountry';
+    } else if (validCity.isNotEmpty) {
       return validCity;
     } else if (validCountry.isNotEmpty) {
       return validCountry;
     }
-    return 'الموقع الحالي';
+    return isArabic ? 'الموقع الحالي' : 'Current location';
   }
 }
 
@@ -108,8 +112,8 @@ class LocationService {
         }
       }
 
-      if (cityName.isEmpty) cityName = 'الموقع الحالي';
-
+      // Left empty when unresolvable — fullLocationDisplay(lang) decides the
+      // localized "unknown location" fallback text at display time, not here.
       return UserLocationResult(
         latitude: position.latitude,
         longitude: position.longitude,
@@ -164,9 +168,9 @@ class LocationService {
     }
   }
 
-  /// Best-effort human label ("City, Country") for a coordinate. Safe to call
-  /// in the background after results already render.
-  Future<String> reverseGeocode(double lat, double lon) async {
+  /// Best-effort human label ("City, Country") for a coordinate, in [lang].
+  /// Safe to call in the background after results already render.
+  Future<String> reverseGeocode(double lat, double lon, {String lang = 'ar'}) async {
     String cityName = '';
     String countryName = '';
     if (!kIsWeb) {
@@ -197,9 +201,9 @@ class LocationService {
     return UserLocationResult(
       latitude: lat,
       longitude: lon,
-      cityName: cityName.isEmpty ? 'الموقع الحالي' : cityName,
+      cityName: cityName,
       countryName: countryName,
-    ).fullLocationDisplay;
+    ).fullLocationDisplay(lang);
   }
 
   String _firstNonEmpty(List<String?> items) {

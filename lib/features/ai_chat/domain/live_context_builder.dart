@@ -11,9 +11,20 @@ library;
 import '../../../core/network/weather_service.dart';
 import '../../nearby/data/nearby_service.dart';
 
+/// Filters [closingTimes] (stop display name → closing time today) down to
+/// the entries still open at [now]. Callers should re-run this at send time
+/// rather than caching its result — unlike weather/nearby-places, "still
+/// open" is inherently time-sensitive and would otherwise go stale over a
+/// long chat session. Pure and free (no network), so recomputing per
+/// message costs nothing.
+Map<String, DateTime> stillOpenAt(
+        Map<String, DateTime> closingTimes, DateTime now) =>
+    Map.fromEntries(closingTimes.entries.where((e) => e.value.isAfter(now)));
+
 /// [openStopsClosingTimes] maps a stop's display name to when it closes
 /// today; only stops still open (closing time in the future) should be
-/// passed in — the caller decides that using `closingTimeFor`.
+/// passed in — the caller decides that using `closingTimeFor`, then
+/// [stillOpenAt] to keep it fresh at send time.
 String buildLiveContextSummary({
   required String lang,
   WeatherData? weather,

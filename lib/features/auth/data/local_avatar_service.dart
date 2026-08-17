@@ -11,6 +11,12 @@ import 'package:shared_preferences/shared_preferences.dart';
 /// the caller can tell the two apart and show something instead of nothing.
 class AvatarPermissionDeniedException implements Exception {}
 
+/// Thrown by [LocalAvatarService.pickAndSave] when a photo was picked but
+/// couldn't be copied into app storage (disk full, filesystem error) — also
+/// distinct from cancellation, for the same reason: a real failure deserves
+/// a message, not silence.
+class AvatarSaveFailedException implements Exception {}
+
 /// A locally-stored profile picture.
 ///
 /// There's no Firebase Storage in this project, so a picked photo can't be
@@ -46,7 +52,8 @@ class LocalAvatarService {
 
   /// Opens the picker, copies the chosen image into app-private storage, and
   /// remembers its path. Returns null if the user cancelled; throws
-  /// [AvatarPermissionDeniedException] if the OS denied access instead.
+  /// [AvatarPermissionDeniedException] if the OS denied access, or
+  /// [AvatarSaveFailedException] if a photo was picked but couldn't be saved.
   Future<File?> pickAndSave(ImageSource source) async {
     final XFile? picked;
     try {
@@ -86,7 +93,7 @@ class LocalAvatarService {
       return saved;
     } catch (e) {
       debugPrint('[LocalAvatar] pickAndSave failed: $e');
-      return null;
+      throw AvatarSaveFailedException();
     }
   }
 
