@@ -57,3 +57,7 @@ ios/Runner/GoogleService-Info.plist
 
 # JVM heap dumps (e.g. from a Gradle/R8 OutOfMemoryError) — can be gigabytes
 *.hprof
+
+# Auto-generated codebase snapshots — regenerate locally, never track
+/rahhal_codebase_md/
+/rahhal_full_codebase.md
