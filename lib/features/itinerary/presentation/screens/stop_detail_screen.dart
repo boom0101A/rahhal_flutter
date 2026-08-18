@@ -77,6 +77,38 @@ class _StopDetailScreenState extends State<StopDetailScreen> {
     }
   }
 
+  Future<void> _openMaps(BuildContext context) async {
+    final stop = _stop!;
+    final messenger = ScaffoldMessenger.of(context);
+    final failureMessage = AppStrings.of(context).mapsOpenFailed;
+    final launched = await MapLauncherService.openInGoogleMaps(
+      placeName: stop.displayName(context),
+      city: stop.address,
+      lat: stop.latitude,
+      lon: stop.longitude,
+      placeId: stop.placeId,
+      persistTable: 'stops',
+      persistRowId: stop.id,
+    );
+    if (!launched) {
+      messenger.showSnackBar(SnackBar(content: Text(failureMessage)));
+    }
+  }
+
+  Future<void> _openUber(BuildContext context) async {
+    final stop = _stop!;
+    final messenger = ScaffoldMessenger.of(context);
+    final failureMessage = AppStrings.of(context).mapsOpenFailed;
+    final launched = await MapLauncherService.openUberRide(
+      placeName: stop.displayName(context),
+      lat: stop.latitude,
+      lon: stop.longitude,
+    );
+    if (!launched) {
+      messenger.showSnackBar(SnackBar(content: Text(failureMessage)));
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -331,15 +363,7 @@ class _StopDetailScreenState extends State<StopDetailScreen> {
                       children: [
                         Expanded(
                           child: ElevatedButton.icon(
-                            onPressed: () => MapLauncherService.openInGoogleMaps(
-                              placeName: stop.displayName(context),
-                              city: stop.address,
-                              lat: stop.latitude,
-                              lon: stop.longitude,
-                              placeId: stop.placeId,
-                              persistTable: 'stops',
-                              persistRowId: stop.id,
-                            ),
+                            onPressed: () => _openMaps(context),
                             icon: const Icon(Icons.directions_outlined, size: 18),
                             label: Text(
                               AppStrings.of(context).openInMaps,
@@ -357,11 +381,7 @@ class _StopDetailScreenState extends State<StopDetailScreen> {
                         const SizedBox(width: 8),
                         Expanded(
                           child: OutlinedButton.icon(
-                            onPressed: () => MapLauncherService.openUberRide(
-                              placeName: stop.displayName(context),
-                              lat: stop.latitude,
-                              lon: stop.longitude,
-                            ),
+                            onPressed: () => _openUber(context),
                             icon: const Icon(Icons.local_taxi_rounded, size: 18, color: AppColors.accentAmber),
                             label: Text(
                               AppStrings.of(context).orderUber,

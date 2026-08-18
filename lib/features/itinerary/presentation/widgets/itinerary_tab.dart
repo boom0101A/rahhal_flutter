@@ -635,15 +635,7 @@ class _StopTimelineItem extends StatelessWidget {
                             children: [
                               Expanded(
                                 child: GestureDetector(
-                                  onTap: () => MapLauncherService.openInGoogleMaps(
-                                    placeName: stop.displayName(context),
-                                    city: stop.address,
-                                    lat: stop.latitude,
-                                    lon: stop.longitude,
-                                    placeId: stop.placeId,
-                                    persistTable: 'stops',
-                                    persistRowId: stop.id,
-                                  ),
+                                  onTap: () => _openMaps(context, stop),
                                   child: Container(
                                     padding: const EdgeInsets.symmetric(vertical: 6, horizontal: 8),
                                     decoration: BoxDecoration(
@@ -668,11 +660,7 @@ class _StopTimelineItem extends StatelessWidget {
                               const SizedBox(width: 8),
                               Expanded(
                                 child: GestureDetector(
-                                  onTap: () => MapLauncherService.openUberRide(
-                                    placeName: stop.displayName(context),
-                                    lat: stop.latitude,
-                                    lon: stop.longitude,
-                                  ),
+                                  onTap: () => _openUber(context, stop),
                                   child: Container(
                                     padding: const EdgeInsets.symmetric(vertical: 6, horizontal: 8),
                                     decoration: BoxDecoration(
@@ -714,6 +702,36 @@ class _StopTimelineItem extends StatelessWidget {
             duration: 400.ms,
           ),
     );
+  }
+
+  Future<void> _openMaps(BuildContext context, StopEntity stop) async {
+    final messenger = ScaffoldMessenger.of(context);
+    final failureMessage = AppStrings.of(context).mapsOpenFailed;
+    final launched = await MapLauncherService.openInGoogleMaps(
+      placeName: stop.displayName(context),
+      city: stop.address,
+      lat: stop.latitude,
+      lon: stop.longitude,
+      placeId: stop.placeId,
+      persistTable: 'stops',
+      persistRowId: stop.id,
+    );
+    if (!launched) {
+      messenger.showSnackBar(SnackBar(content: Text(failureMessage)));
+    }
+  }
+
+  Future<void> _openUber(BuildContext context, StopEntity stop) async {
+    final messenger = ScaffoldMessenger.of(context);
+    final failureMessage = AppStrings.of(context).mapsOpenFailed;
+    final launched = await MapLauncherService.openUberRide(
+      placeName: stop.displayName(context),
+      lat: stop.latitude,
+      lon: stop.longitude,
+    );
+    if (!launched) {
+      messenger.showSnackBar(SnackBar(content: Text(failureMessage)));
+    }
   }
 
   Widget _infoChip(BuildContext context, IconData icon, String label) {

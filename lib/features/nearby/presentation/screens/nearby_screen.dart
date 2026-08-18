@@ -506,18 +506,22 @@ class _NearbyScreenState extends State<NearbyScreen> {
   Future<void> _openMaps(
       NearbyPlace place, String name, AppStrings strings) async {
     Haptics.tap();
+    final messenger = ScaffoldMessenger.of(context);
     // Places sourced from OSM carry no place_id, so MapLauncherService resolves
     // the exact Google listing first — that takes a moment, and without this
     // indicator the tap looks like it did nothing.
     setState(() => _openingId = place.id);
     try {
-      await MapLauncherService.openInGoogleMaps(
+      final launched = await MapLauncherService.openInGoogleMaps(
         placeName: name,
         city: place.address,
         lat: place.lat,
         lon: place.lng,
         placeId: place.placeId,
       );
+      if (!launched) {
+        messenger.showSnackBar(SnackBar(content: Text(strings.mapsOpenFailed)));
+      }
     } finally {
       if (mounted) setState(() => _openingId = null);
     }

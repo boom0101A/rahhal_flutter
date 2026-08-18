@@ -84,6 +84,11 @@ dev_dependencies:
   # directly to drive a real SQLite engine against DatabaseHelper's actual
   # onCreate path — the only way to prove the schema fix without a device.
   sqflite_common_ffi: ^2.3.3
+  # Already resolved transitively (pulled in by url_launcher); made explicit
+  # because map_launcher_failure_feedback_test.dart fakes UrlLauncherPlatform
+  # directly to force a launch failure without a real device.
+  url_launcher_platform_interface: ^2.3.2
+  plugin_platform_interface: ^2.1.8
 
 flutter_launcher_icons:
   android: "launcher_icon"
